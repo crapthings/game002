@@ -1,3 +1,4 @@
+import { createGameAudio } from '../audio/createGameAudio.js'
 import { Scene } from '@babylonjs/core/scene'
 import { createThirdPersonCamera } from '../cameras/createThirdPersonCamera.js'
 import { useGraphicsStore } from '../../stores/useGraphicsStore.js'
@@ -40,6 +41,8 @@ export function createWorldScene(engine, canvas, { onLoading, onReady } = {}) {
   sun.intensity = 0.9
   const player = createCharacterModel(scene, PLAYER_ASSET_ID)
   const locomotion = createLocomotion()
+  const audio=createGameAudio()
+  audio.setActive(useGameStore.getState().phase==='playing')
   const input = createMovementInput(scene, () => useGameStore.getState().phase === 'playing')
   let world = null, activePlan = null, lastSaved = null, lastSavedFog = null
   let stamina = createStamina(), lastSavedStamina = null
@@ -65,6 +68,7 @@ export function createWorldScene(engine, canvas, { onLoading, onReady } = {}) {
   }
   function syncWorld(document) {
     if (!document || document.world === activePlan) return
+    audio.reset()
     world?.dispose()
     useTeleportStore.getState().finish()
     teleportJob = null
@@ -122,6 +126,7 @@ export function createWorldScene(engine, canvas, { onLoading, onReady } = {}) {
   const unsubscribeWorld = useWorldStore.subscribe((state) => syncWorld(state.document))
   const unsubscribePhase = useGameStore.subscribe((state, previous) => {
     if (state.phase !== previous.phase) {
+      audio.setActive(state.phase==='playing')
       input.clear()
       locomotion.clearInput()
       thirdPerson.clear()
@@ -241,6 +246,14 @@ export function createWorldScene(engine, canvas, { onLoading, onReady } = {}) {
       player.root.rotation.y += turn * (1 - Math.exp(-dt * (motion.grounded ? 18 : 9)))
     }
     player.update(dt, moving, position.y, running, motion)
+    audio.update(dt,position,motion,running,()=>{
+      const floor=world.terrain.surfaceHeight(position.x,position.z)
+      if(motion.groundHeight>floor+.7)return 'tile'
+      const bridge=activePlan.city?.bridges.find(b=>Math.abs(position.x-b.x)<=b.width/2&&Math.abs(position.z-b.z)<=b.length/2)
+      if(bridge){const asset=activePlan.city.placements.find(p=>p.id===bridge.id);return asset?.assetId.includes('wood')?'wood':'stone'}
+      const road=world.terrain.nearbyRoad(position.x,position.z)
+      return road.distance<=road.width/2+.5?'stone':'grass'
+    })
     world.updateNpcs(dt,position.x,position.z)
     thirdPerson.follow(player.root, world.terrain, dt)
     navigationTimer += dt
@@ -274,6 +287,7 @@ export function createWorldScene(engine, canvas, { onLoading, onReady } = {}) {
     unsubscribePhase()
     window.removeEventListener('pagehide', checkpoint)
     unsubscribeGraphics()
+    audio.dispose()
     thirdPerson.dispose()
     input.dispose()
     delete canvas.dataset.runtime

@@ -178,10 +178,12 @@ export function createPlayer(scene) {
       if (motion.landed) landing = Math.min(0.15, motion.landingImpact * 0.012)
       landing *= Math.exp(-dt * 15)
       stride += ((moving && !airborne ? 1 : 0) - stride) * (1 - Math.exp(-dt * 14))
+      if (motion.wallMode) gait += dt * 15
       if (moving && !airborne) gait += dt * (running ? 18 : 12)
       root.position.y = height
       rig.position.y = Math.sin(gait * 2) * 0.018 * stride - landing
-      rig.rotation.x = motion.dashing ? 0.32 : airborne ? 0.04 : (running ? 0.12 : 0.035) * stride + landing * 0.7
+      rig.rotation.z=motion.wallMode==='run'&&motion.wallNormal?-.28*(motion.wallNormal.x*Math.cos(motion.heading)-motion.wallNormal.z*Math.sin(motion.heading)):0
+      rig.rotation.x = motion.wallMode==='climb' ? .22 : motion.dashing ? 0.32 : airborne ? 0.04 : (running ? 0.12 : 0.035) * stride + landing * 0.7
       // 翻滚围绕腰部旋转，根节点与镜头保持直立；落地即恢复站姿。
       tumble.rotation.x = flip === null ? 0 : Math.PI * 2 * (flip * flip * (3 - 2 * flip))
       for (let index = 0; index < 2; index++) {
@@ -192,6 +194,14 @@ export function createPlayer(scene) {
         arms[index].shoulder.rotation.z = arms[index].side * (airborne ? 0.25 * (1 - tuck) : 0.09)
         arms[index].elbow.rotation.x = -0.25 - tuck * 0.95 - (running ? 0.35 * stride : 0)
         skirts[index].rotation.x = -Math.max(0, swing) * 0.16 * stride - (airborne ? 0.28 : 0)
+      }
+      if(motion.wallMode)for(let index=0;index<2;index++) {
+        const swing=Math.sin(gait+index*Math.PI)
+        legs[index].hip.rotation.x=-.25+swing*.65
+        legs[index].knee.rotation.x=.5+Math.max(0,-swing)*.8
+        arms[index].shoulder.rotation.x=motion.wallMode==='climb'?-2.1+swing*.35:-.55-swing*.4
+        arms[index].shoulder.rotation.z=arms[index].side*.35
+        arms[index].elbow.rotation.x=-.65
       }
       cape.rotation.x = 0.04 + stride * (running ? 0.28 : 0.12) + (airborne ? 0.32 : 0) + tuck * 0.25
       for (let index = 0; index < capePanels.length; index++) {

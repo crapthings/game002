@@ -1,3 +1,4 @@
+import { buildingBodies, createTraversal } from './createTraversal.js'
 import { createNpcCrowd } from '../../npcs/createNpcCrowd.js'
 import { RawTexture } from '@babylonjs/core/Materials/Textures/rawTexture'
 import { Texture } from '@babylonjs/core/Materials/Textures/texture'
@@ -150,14 +151,17 @@ export function createStreamedWorld(scene, plan, initialViewDistance = 64) {
       if (placement.fortification || placement.infrastructure) { yield; continue }
       const definition = environmentCatalog[placement.assetId] || wuxiaDefinitions[placement.assetId]
       const footprint = placement.footprint || definition?.footprint
-      if (definition?.kind==='court') {
+      if (wuxiaDefinitions[placement.assetId]) {
+        if(definition.kind.startsWith('market-'))colliders.push({x,z,rotation:placement.rotation,halfWidth:definition.width*placement.scale/2,halfDepth:definition.depth*placement.scale/2,base:placement.position[1],top:box.maximumWorld.y})
+        else colliders.push(...buildingBodies(definition,placement))
+      } else if (definition?.kind==='court' || definition?.layout==='court' || definition?.layout==='wing') {
         const c=Math.cos(placement.rotation),s=Math.sin(placement.rotation)
-        for(const [ox,oz,w,d] of [[0,definition.depth/2-2,definition.width,4],[-definition.width/2+1.75,-2,3.5,definition.depth-4],[definition.width/2-1.75,-2,3.5,definition.depth-4]])colliders.push({x:x+c*ox+s*oz,z:z-s*ox+c*oz,rotation:placement.rotation,halfWidth:w/2,halfDepth:d/2})
+        for(const [ox,oz,w,d] of [[0,definition.depth/2-2,definition.width,4],[-definition.width/2+1.75,-2,3.5,definition.depth-4],...(definition.layout==='wing'?[]:[[definition.width/2-1.75,-2,3.5,definition.depth-4]])])colliders.push({x:x+c*ox+s*oz,z:z-s*ox+c*oz,rotation:placement.rotation,halfWidth:w/2,halfDepth:d/2})
       } else if (footprint) {
         colliders.push({ x, z, rotation: placement.rotation, halfWidth: footprint.width * placement.scale / 2, halfDepth: footprint.depth * placement.scale / 2 })
       } else {
         const radius = definition?.radius ?? (placement.assetId === 'nature.tree' ? 0.45 : 0.9)
-        if (radius > 0) colliders.push({ x, z, radius: radius * placement.scale })
+        if (radius > 0) colliders.push({ x, z, radius: radius * placement.scale, top:box.maximumWorld.y })
       }
       yield
     }
@@ -282,6 +286,7 @@ export function createStreamedWorld(scene, plan, initialViewDistance = 64) {
       bankMaterial.dispose()
     },
   }
+  Object.assign(api,createTraversal(loaded,plan.fortifications,terrain,(x,z)=>api.isLoaded(x,z),(x,z)=>insideWorld(plan.bounds,x,z,1),(x,z,r)=>(inCanal(plan.city,x,z,r)&&!onBridge(plan.city,x,z,r))||plan.city?.bridges.some(b=>Math.abs(z-b.z)<b.length/2&&Math.abs(Math.abs(x-b.x)-b.width/2-.12)<r+.12)))
   crowd=createNpcCrowd(scene,plan,api)
   return api
 }

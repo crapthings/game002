@@ -40,6 +40,7 @@ function addMeterGrid(scene, material) {
 export default function AssetPreview({ asset }) {
   const canvasRef = useRef(null)
   const runtimeRef = useRef(null)
+  const [attempt, setAttempt] = useState(0)
   const [ready, setReady] = useState(false)
   const [error, setError] = useState(null)
   const [motion, setMotion] = useState('idle')
@@ -47,10 +48,21 @@ export default function AssetPreview({ asset }) {
 
   useEffect(() => {
     const canvas = canvasRef.current
-    let engine
+    let engine, resize
+    let stage = '创建图形引擎'
+    setReady(false)
+    setError(null)
+    const onContextLost = event => {
+      event.preventDefault()
+      engine?.stopRenderLoop()
+      setReady(false)
+      setError('图形上下文已丢失，可以重新启动预览。')
+    }
+    canvas.addEventListener('webglcontextlost', onContextLost)
     try {
       engine = new Engine(canvas, true)
       engine.setHardwareScalingLevel(1 / Math.min(window.devicePixelRatio || 1, 2))
+      stage = '创建预览场景'
       const scene = new Scene(engine)
       scene.clearColor = new Color4(0.055, 0.075, 0.073, 1)
       const camera = new ArcRotateCamera('asset-camera', -Math.PI / 4, Math.PI / 3.1, 12, new Vector3(0, 1, 0), scene)
@@ -70,10 +82,11 @@ export default function AssetPreview({ asset }) {
       const groundMaterial = new StandardMaterial('asset-ground-material', scene)
       groundMaterial.diffuseColor = new Color3(0.13, 0.16, 0.15)
       groundMaterial.specularColor = Color3.Black()
+      stage = '创建米制网格'
       addMeterGrid(scene, groundMaterial)
       ground.material = groundMaterial
       ground.receiveShadows = true
-      const resize = new ResizeObserver(() => engine.resize())
+      resize = new ResizeObserver(() => engine.resize())
       resize.observe(canvas)
       const runtime = { engine, scene, camera, resize, registry: null, instance: null, reference: null, character: null }
       runtimeRef.current = runtime
@@ -86,10 +99,14 @@ export default function AssetPreview({ asset }) {
       setReady(true)
     } catch (cause) {
       console.error('Unable to initialize asset preview:', cause)
-      setError('预览启动失败，请检查 WebGL 与硬件加速。')
+      setReady(false)
+      setError(`${stage}失败：${cause instanceof Error ? cause.message : String(cause)}`)
+      resize?.disconnect()
       engine?.dispose()
+      runtimeRef.current = null
     }
     return () => {
+      canvas.removeEventListener('webglcontextlost', onContextLost)
       const runtime = runtimeRef.current
       runtime?.resize.disconnect()
       runtime?.character?.dispose()
@@ -99,7 +116,7 @@ export default function AssetPreview({ asset }) {
       runtime?.engine.dispose()
       runtimeRef.current = null
     }
-  }, [])
+  }, [attempt])
 
   useEffect(() => {
     if (!ready) return
@@ -115,6 +132,8 @@ export default function AssetPreview({ asset }) {
     runtime.registry = null
     motionRef.current = 'idle'
     setMotion('idle')
+    setError(null)
+    try {
     if (characterCatalog.some((item) => item.assetId === asset.assetId)) {
       runtime.character = createCharacterModel(runtime.scene, asset.assetId)
     } else {
@@ -136,7 +155,14 @@ export default function AssetPreview({ asset }) {
     runtime.camera.radius = Math.max(4, largest * 1.45)
     runtime.camera.lowerRadiusLimit = asset.category === 'road' ? 2 : Math.max(1.5, largest * 0.65)
     runtime.camera.upperRadiusLimit = Math.max(12, largest * 4)
+    } catch(cause) {
+      console.error('Unable to create preview asset:',asset.assetId,cause)
+      setError(`模型 ${asset.name} 加载失败：${cause instanceof Error ? cause.message : String(cause)}`)
+      // 未完成的模型也可能留下网格；下一次重试重建整个场景。
+      runtime.engine.stopRenderLoop()
+      setReady(false)
+    }
   }, [asset, ready])
 
-  return <div className="relative h-full min-h-0 overflow-hidden bg-[#0e1514]"><canvas ref={canvasRef} className="block h-full w-full outline-none" aria-label={`${asset.name} 三维预览`} />{asset.category === 'character' && <div className="absolute left-3 top-3 flex gap-1 rounded-md bg-black/65 p-1">{[['idle','待机'],['walk','行走'],['run','奔跑']].map(([key,label]) => <button key={key} aria-pressed={motion === key} onClick={() => { motionRef.current = key; setMotion(key) }} className={`rounded px-3 py-1.5 text-xs ${motion === key ? 'bg-emerald-900 text-emerald-100' : 'text-stone-400 hover:bg-white/10'}`}>{label}</button>)}</div>}{asset.description && <p className="pointer-events-none absolute bottom-12 left-3 max-w-sm rounded bg-black/60 px-3 py-2 text-xs leading-5 text-stone-300">{asset.description}</p>}{error && <p role="alert" className="absolute inset-x-4 top-4 rounded-lg bg-red-950 p-3 text-sm text-red-100">{error}</p>}<p className="pointer-events-none absolute bottom-3 right-3 rounded-md bg-black/45 px-2 py-1.5 text-[9px] text-stone-400 backdrop-blur-sm sm:bottom-4 sm:right-4">玩家模型 1.80m · 网格 1m · 拖动旋转 · 滚轮缩放</p></div>
+  return <div className="relative h-full min-h-0 overflow-hidden bg-[#0e1514]"><canvas key={attempt} ref={canvasRef} className="block h-full w-full outline-none" aria-label={`${asset.name} 三维预览`} />{asset.category === 'character' && <div className="absolute left-3 top-3 flex gap-1 rounded-md bg-black/65 p-1">{[['idle','待机'],['walk','行走'],['run','奔跑']].map(([key,label]) => <button key={key} aria-pressed={motion === key} onClick={() => { motionRef.current = key; setMotion(key) }} className={`rounded px-3 py-1.5 text-xs ${motion === key ? 'bg-emerald-900 text-emerald-100' : 'text-stone-400 hover:bg-white/10'}`}>{label}</button>)}</div>}{asset.description && <p className="pointer-events-none absolute bottom-12 left-3 max-w-sm rounded bg-black/60 px-3 py-2 text-xs leading-5 text-stone-300">{asset.description}</p>}{error && <div role="alert" className="absolute inset-x-4 top-4 rounded-lg bg-red-950 p-3 text-sm text-red-100"><p>{error}</p><button type="button" onClick={()=>{setReady(false);setAttempt(value=>value+1)}} className="mt-3 rounded border border-white/30 px-3 py-2">重新启动预览</button></div>}<p className="pointer-events-none absolute bottom-3 right-3 rounded-md bg-black/45 px-2 py-1.5 text-[9px] text-stone-400 backdrop-blur-sm sm:bottom-4 sm:right-4">玩家模型 1.80m · 网格 1m · 拖动旋转 · 滚轮缩放</p></div>
 }

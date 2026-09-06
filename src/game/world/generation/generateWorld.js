@@ -5,7 +5,7 @@ import { createTopography } from './topography.js'
 import { WORLD_BOUNDS, WORLD_SIZE, WORLD_UNIT } from '../worldConfig.js'
 import { biomeCatalog } from '../biomes/catalog.js'
 
-export const GENERATOR_VERSION = 9
+export const GENERATOR_VERSION = 10
 export const PLAN_VERSION = 2
 const colorHex = (color) => '#' + color.map((value) => Math.round(value * 255).toString(16).padStart(2, '0')).join('')
 

@@ -1,4 +1,6 @@
+import { residenceRecipes, residenceTraits } from './residences.js'
 const recipes = [
+  ...residenceRecipes,
   ['yamen','清平府衙',14,12,2,'#9f5141','府','government','重檐正堂、朱柱、鸣冤鼓与告示牌，衙前留出公共广场。'],
   ['market-produce','集市 · 果蔬摊',7,5,1,'#88a677','市','market-produce','浅绿布棚、竹筐和时鲜果蔬。'],
   ['market-food','集市 · 食肆摊',7,5,1,'#c39b62','食','market-food','杏色遮棚、蒸笼、陶锅与食案。'],
@@ -25,6 +27,9 @@ const recipes = [
 export const wuxiaCatalog = recipes.map(([id,name,w,d,floors,accent,sign,kind,description]) => ({
   assetId:`wuxia.${id}`, name, category:'wuxia-building', zones:['city','village'], tags:['wuxia',kind],
   width:w, depth:d, floors, accent, sign, kind, description,
+  ...(id.startsWith('house-') ? {wealth:['court','garden','scholar'].includes(kind)?'comfort':'common'} : {}),
+  ...(kind==='garden'?{layout:'wing'}:{}),
+  ...residenceTraits[`wuxia.${id}`],
   size:{width:w+5,height:floors*3.4+4,depth:d+6}, footprint:{width:w+2,depth:d+3},
 }))
 export const wuxiaDefinitions = Object.fromEntries(wuxiaCatalog.map(item=>[item.assetId,item]))

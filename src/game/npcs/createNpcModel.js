@@ -1,9 +1,11 @@
+import { createPorterModel } from './createPorterModel.js'
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode'
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder'
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial'
 import { Color3 } from '@babylonjs/core/Maths/math.color'
 import { npcDefinitions } from './catalog.js'
 export function createNpcModel(scene,id) {
+  if(id==='npc.porter')return createPorterModel(scene)
   const a=npcDefinitions[id],root=new TransformNode(id,scene),materials=[]
   const mat=color=>{const m=new StandardMaterial('npc-cloth',scene);m.diffuseColor=Color3.FromHexString(color);m.specularColor=Color3.Black();materials.push(m);return m}
   const cloth=mat(a.color),dark=mat('#45483f'),skin=mat('#cba983'),hair=mat('#333831'),straw=mat('#c3ac7c')

@@ -5,6 +5,8 @@ import { blocksRoad, overlapsPlacement } from '../settlements/frontage.js'
 
 export function createCityPlan(seed, hierarchy, fort) {
   const roads=[], placements=[], parcels=[]
+  const recentHomes=[]
+  const choose=(pool,random)=>{const fresh=pool.filter(a=>!recentHomes.slice(-3).includes(a.assetId));const choices=fresh.length?fresh:pool;const a=choices[Math.floor(random()*choices.length)];if(a?.wealth)recentHomes.push(a.assetId);return a}
   const extent=160, elevation=fort.elevation
   // 2×2 决定四区主功能；4×4 用父区配方分配街坊，而非逐地块独立抽签。
   const roles=['residential','market','academy','garden']
@@ -48,16 +50,24 @@ export function createCityPlan(seed, hierarchy, fort) {
     const parcel={id:detail.id,bounds:detail.bounds,use:detail.use,placementIds:[]}
     parcels.push(parcel)
     if(park || (civic&&!government))continue
-    const pool=government?wuxiaCatalog.filter(a=>a.kind==='government'):marketStreet?wuxiaCatalog.filter(a=>a.kind.startsWith('market-')):central?pools.market:waterside?houses:pools[district.landUse]
+    let pool=government?wuxiaCatalog.filter(a=>a.kind==='government'):marketStreet?wuxiaCatalog.filter(a=>a.kind.startsWith('market-')):central?pools.market:waterside?houses:pools[district.landUse]
+    let wealth=null
+    if(pool.every(a=>a.wealth)) {
+      const roll=random(),outer=Math.max(Math.abs(x),Math.abs(z))>128
+      wealth=roll<(outer ? .38 : .12)?'poor':roll<(outer ? .76 : .48)?'common':roll<.85?'comfort':'rich'
+      const tier=houses.filter(a=>a.wealth===wealth)
+      if(tier.length)pool=tier
+      parcel.wealth=wealth
+    }
     // 32 米单元只管理归属；沿街双铺开间替代一格一栋。
     const streetZ=government?64:Math.round(z/64)*64
     const side=z>streetZ?1:-1,rotation=side===1?0:Math.PI
     const roadWidth=streetZ===0?7:4
     const compact=pool.filter(a=>a.width<=11)
-    const count=government?1:compact.length && (marketStreet || random()>.18)?2:1
+    const count=government||wealth==='rich'||wealth==='comfort'?1:compact.length && (marketStreet || random()>.18)?2:1
     for(let slot=0;slot<count;slot++) {
       const choices=count===2?compact:pool
-      const asset=choices[Math.floor(random()*choices.length)] || houses[0]
+      const asset=choose(choices,random) || houses[0]
       const px=x+(count===2?(slot===0?-8:8):0)
       const pz=government?z:streetZ+side*(roadWidth/2+asset.depth/2+3.1)
       const candidate={id:`city/${detail.id}/${slot}`,assetId:asset.assetId,position:[px,elevation,pz],rotation,scale:1,
@@ -80,7 +90,7 @@ export function createCityPlan(seed, hierarchy, fort) {
   for(const laneZ of [-96,-32,96])for(const side of [-1,1])for(let x=-148;x<=148;x+=16) {
     if(laneZ===96&&Math.abs(x)<36)continue
     const random=createRandom(seed,'backstreet',laneZ,side,x)
-    const asset=smallHomes[Math.floor(random()*smallHomes.length)]
+    const asset=choose(smallHomes,random)
     const z=laneZ+side*(1.2+asset.depth/2+2.8)
     const item={id:`city/back/${laneZ}/${side}/${x}`,assetId:asset.assetId,position:[x,elevation,z],rotation:side===1?0:Math.PI,scale:1,footprint:{width:asset.width+3,depth:asset.depth+5.4},building:true,planned:true}
     if(blocksRoad(item,allSegments,.05)||placements.some(p=>p.building&&overlapsPlacement(item,p,.8)))continue
@@ -91,7 +101,7 @@ export function createCityPlan(seed, hierarchy, fort) {
   }
   // 桥面独立于建筑，不使用覆盖整个桥的实心碰撞体。
   for(const b of bridges)placements.push({id:b.id,assetId:b.x===0?'city.bridge-stone':'city.bridge-wood',position:[b.x,elevation,b.z],rotation:0,scale:1,infrastructure:true,planned:true})
-  return {version:3,plaza:{minX:4,maxX:28,minZ:80,maxZ:100},landmarks:[{name:'清平府衙',x:16,z:112},{name:'百业集市街',x:0,z:-64},{name:'中心商区',x:48,z:0}],elevation,extent,sectors,parcels,gardenMask:hierarchy.details.map(d=>d.use==='garden'),roads,water,bridges,placements}
+  return {version:4,plaza:{minX:4,maxX:28,minZ:80,maxZ:100},landmarks:[{name:'清平府衙',x:16,z:112},{name:'百业集市街',x:0,z:-64},{name:'中心商区',x:48,z:0}],elevation,extent,sectors,parcels,gardenMask:hierarchy.details.map(d=>d.use==='garden'),roads,water,bridges,placements}
 }
 
 export function cityContains(city,x,z) { return Boolean(city&&Math.max(Math.abs(x),Math.abs(z))<=176) }

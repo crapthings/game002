@@ -1,3 +1,4 @@
+import { createFortificationMaterials } from './fortifications/createFortificationMaterials.js'
 import { cityAssetDefinitions } from './city/catalog.js'
 import { createBridgeModel } from './city/createBridgeModel.js'
 import { wuxiaDefinitions } from './wuxia/catalog.js'
@@ -25,6 +26,7 @@ export function createAssetRegistry(scene) {
     }
     return materials.get(color)
   }
+  const fortMaterials=createFortificationMaterials(scene,material)
   function template(assetId) {
     if (templates.has(assetId)) return templates.get(assetId)
     let mesh
@@ -33,7 +35,7 @@ export function createAssetRegistry(scene) {
     } else if (wuxiaDefinitions[assetId]) {
       mesh = createWuxiaModel(scene, assetId, material)
     } else if (fortificationDefinitions[assetId]) {
-      mesh = createFortificationModel(scene, assetId, material)
+      mesh = createFortificationModel(scene, assetId, fortMaterials.get)
     } else if (environmentCatalog[assetId]) {
       mesh = createEnvironmentModel(scene, assetId, environmentCatalog[assetId], material)
     } else if (assetId === 'nature.tree') {
@@ -78,6 +80,7 @@ export function createAssetRegistry(scene) {
         mesh.dispose()
       }
       for (const entry of materials.values()) entry.dispose()
+      fortMaterials.dispose()
       templates.clear()
       materials.clear()
     },
