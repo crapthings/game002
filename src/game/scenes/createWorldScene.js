@@ -23,6 +23,7 @@ import { insideRegion, insideWorld } from '../world/worldConfig.js'
 import { createDayNightCycle } from '../world/createDayNightCycle.js'
 import { useWorldTimeStore } from '../../stores/useWorldTimeStore.js'
 import { createVisibility } from '../map/visibility.js'
+import { createFirstLoopScene } from '../worldLedger/createFirstLoopScene.js'
 
 export function createWorldScene(engine, canvas, { onLoading, onReady } = {}) {
   const scene = new Scene(engine)
@@ -45,6 +46,7 @@ export function createWorldScene(engine, canvas, { onLoading, onReady } = {}) {
   audio.setActive(useGameStore.getState().phase==='playing')
   const input = createMovementInput(scene, () => useGameStore.getState().phase === 'playing')
   let world = null, activePlan = null, lastSaved = null, lastSavedFog = null
+  let ledger = null, lastSavedLedgerRevision = -1
   let stamina = createStamina(), lastSavedStamina = null
   let dayNight = createDayNightCycle(), lastSavedWorldTime = null
   const visibility = () => createVisibility(dayNight.lighting().daylight)
@@ -69,6 +71,7 @@ export function createWorldScene(engine, canvas, { onLoading, onReady } = {}) {
   function syncWorld(document) {
     if (!document || document.world === activePlan) return
     audio.reset()
+    ledger?.dispose()
     world?.dispose()
     useTeleportStore.getState().finish()
     teleportJob = null
@@ -88,6 +91,8 @@ export function createWorldScene(engine, canvas, { onLoading, onReady } = {}) {
     if (!insideWorld(document.world.bounds, ...position, 1)) position = document.world.spawn
     player.root.position.set(position[0], world.terrain.surfaceHeight(...position), position[1])
     lastSaved = [...position]
+    ledger = createFirstLoopScene(scene, document.world, world, player, document.progress.ledger, () => checkpoint())
+    lastSavedLedgerRevision = document.progress.ledger?.revision ?? -1
     world.update(...position, 1)
     const initial = world.getStats()
     initialChunkCount = initial.required
@@ -110,12 +115,15 @@ export function createWorldScene(engine, canvas, { onLoading, onReady } = {}) {
     const staminaState = stamina.snapshot()
     const staminaKey = JSON.stringify(staminaState)
     const worldTime = dayNight.snapshot()
-    if (lastSaved && Math.hypot(position[0] - lastSaved[0], position[1] - lastSaved[1]) < 0.05 && fog === lastSavedFog && staminaKey === lastSavedStamina && Math.abs(worldTime - lastSavedWorldTime) < 0.0001) return
-    if (await useWorldStore.getState().dispatch({ type: 'checkpoint', position, fog, stamina: staminaState, worldTime }) && activePlan === owner) {
+    const ledgerRevision = ledger?.revision() ?? -1
+    if (lastSaved && Math.hypot(position[0] - lastSaved[0], position[1] - lastSaved[1]) < 0.05 && fog === lastSavedFog && staminaKey === lastSavedStamina && Math.abs(worldTime - lastSavedWorldTime) < 0.0001 && ledgerRevision === lastSavedLedgerRevision) return
+    const ledgerState = ledger?.snapshot()
+    if (await useWorldStore.getState().dispatch({ type: 'checkpoint', position, fog, stamina: staminaState, worldTime, ...(ledgerState ? { ledger: ledgerState } : {}) }) && activePlan === owner) {
       lastSaved = position
       lastSavedFog = fog
       lastSavedStamina = staminaKey
       lastSavedWorldTime = worldTime
+      lastSavedLedgerRevision = ledgerRevision
     }
   }
   syncWorld(useWorldStore.getState().document)
@@ -128,6 +136,7 @@ export function createWorldScene(engine, canvas, { onLoading, onReady } = {}) {
     if (state.phase !== previous.phase) {
       audio.setActive(state.phase==='playing')
       input.clear()
+      ledger?.clearCommands()
       locomotion.clearInput()
       thirdPerson.clear()
       usePlayerStatusStore.getState().publish({ ...stamina.hud(), mode: stamina.snapshot().exhausted ? 'exhausted' : 'idle' })
@@ -255,6 +264,7 @@ export function createWorldScene(engine, canvas, { onLoading, onReady } = {}) {
       return road.distance<=road.width/2+.5?'stone':'grass'
     })
     world.updateNpcs(dt,position.x,position.z)
+    ledger?.update(dt)
     thirdPerson.follow(player.root, world.terrain, dt)
     navigationTimer += dt
     if (navigationTimer >= 0.1) {
@@ -292,6 +302,7 @@ export function createWorldScene(engine, canvas, { onLoading, onReady } = {}) {
     input.dispose()
     delete canvas.dataset.runtime
     player.dispose()
+    ledger?.dispose()
     world?.dispose()
   })
   return scene

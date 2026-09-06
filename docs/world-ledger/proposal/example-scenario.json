@@ -1,0 +1,941 @@
+{
+  "schemaVersion": "0.1.0-draft",
+  "fixtureId": "fixture_01",
+  "worldId": "w_01",
+  "ruleVersion": "rules-mvp-draft-1",
+  "status": "design_fixture_not_execution_evidence",
+  "clock": {
+    "now": 40000,
+    "unit": "simulation_milliseconds"
+  },
+  "actors": [
+    {
+      "id": "e_01",
+      "kind": "player",
+      "publicName": "林舟",
+      "publicRole": "旅人",
+      "persistent": true,
+      "factionIds": [],
+      "privateTraits": {
+        "capabilities": [
+          "steal",
+          "heal"
+        ]
+      }
+    },
+    {
+      "id": "e_02",
+      "kind": "npc",
+      "publicName": "陈掌柜",
+      "publicRole": "商人",
+      "persistent": true,
+      "factionIds": [
+        "fa_03"
+      ],
+      "privateTraits": {
+        "capabilities": [
+          "trade"
+        ]
+      }
+    },
+    {
+      "id": "e_03",
+      "kind": "npc",
+      "publicName": "周先生",
+      "publicRole": "居民",
+      "persistent": true,
+      "factionIds": [],
+      "privateTraits": {
+        "capabilities": [
+          "report"
+        ]
+      }
+    },
+    {
+      "id": "e_04",
+      "kind": "npc",
+      "publicName": "何守卫",
+      "publicRole": "治安人员",
+      "persistent": true,
+      "factionIds": [
+        "fa_01"
+      ],
+      "privateTraits": {
+        "capabilities": [
+          "investigate",
+          "pursue"
+        ]
+      }
+    },
+    {
+      "id": "e_05",
+      "kind": "npc",
+      "publicName": "赵婆婆",
+      "publicRole": "摊贩",
+      "persistent": true,
+      "factionIds": [],
+      "privateTraits": {
+        "hiddenRole": "退休寻人猎手",
+        "capabilities": [
+          "offer_aid",
+          "locate_target"
+        ]
+      }
+    }
+  ],
+  "factions": [
+    {
+      "id": "fa_01",
+      "publicName": "镇治安所",
+      "kind": "authority",
+      "memberIds": [
+        "e_04"
+      ],
+      "reportReceiverIds": [
+        "e_04"
+      ],
+      "inboxKnowledgeIds": [
+        "kn_02"
+      ],
+      "jurisdictionZoneIds": [
+        "z_01"
+      ],
+      "treasuryMinor": 9900
+    },
+    {
+      "id": "fa_02",
+      "publicName": "河岸帮",
+      "kind": "gang",
+      "memberIds": [],
+      "reportReceiverIds": [],
+      "inboxKnowledgeIds": [],
+      "jurisdictionZoneIds": [
+        "z_01"
+      ],
+      "treasuryMinor": 0
+    },
+    {
+      "id": "fa_03",
+      "publicName": "街区商会",
+      "kind": "guild",
+      "memberIds": [
+        "e_02"
+      ],
+      "reportReceiverIds": [
+        "e_02"
+      ],
+      "inboxKnowledgeIds": [],
+      "jurisdictionZoneIds": [
+        "z_01"
+      ],
+      "treasuryMinor": 5000
+    }
+  ],
+  "relationships": [
+    {
+      "id": "rl_01",
+      "fromId": "e_05",
+      "toId": "e_01",
+      "kind": "gratitude",
+      "strength": 0.6,
+      "knownBy": [
+        "e_05"
+      ],
+      "evidenceEventIds": [
+        "ev_07",
+        "ev_08"
+      ],
+      "updatedAt": 30000,
+      "expiresAt": null
+    }
+  ],
+  "events": [
+    {
+      "schemaVersion": "0.1.0-draft",
+      "worldId": "w_01",
+      "id": "ev_01",
+      "sequence": 1,
+      "producerId": "adapter_a",
+      "idempotencyKey": "input_ev_01",
+      "occurredAt": 0,
+      "recordedAt": 0,
+      "causeEventIds": [],
+      "correlationId": "chain_01",
+      "ruleVersion": "rules-mvp-draft-1",
+      "fact": {
+        "type": "identity.familiarity_registered",
+        "payload": {
+          "observerId": "e_03",
+          "knownEntityId": "e_01",
+          "publicName": "林舟",
+          "basis": "scenario_seed"
+        }
+      }
+    },
+    {
+      "schemaVersion": "0.1.0-draft",
+      "worldId": "w_01",
+      "id": "ev_02",
+      "sequence": 2,
+      "producerId": "adapter_a",
+      "idempotencyKey": "input_ev_02",
+      "occurredAt": 0,
+      "recordedAt": 0,
+      "causeEventIds": [],
+      "correlationId": "chain_01",
+      "ruleVersion": "rules-mvp-draft-1",
+      "fact": {
+        "type": "identity.familiarity_registered",
+        "payload": {
+          "observerId": "e_05",
+          "knownEntityId": "e_01",
+          "publicName": "林舟",
+          "basis": "scenario_seed"
+        }
+      }
+    },
+    {
+      "schemaVersion": "0.1.0-draft",
+      "worldId": "w_01",
+      "id": "ev_03",
+      "sequence": 3,
+      "producerId": "adapter_a",
+      "idempotencyKey": "input_ev_03",
+      "occurredAt": 10000,
+      "recordedAt": 10000,
+      "causeEventIds": [],
+      "correlationId": "chain_01",
+      "ruleVersion": "rules-mvp-draft-1",
+      "fact": {
+        "type": "action.theft_completed",
+        "payload": {
+          "actorId": "e_01",
+          "victimId": "e_02",
+          "itemId": "it_01",
+          "quantity": 1,
+          "transferId": "tr_01",
+          "location": {
+            "spaceId": "s_01",
+            "pointM": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "zoneId": "z_01",
+            "capturedAt": 10000,
+            "frameId": "fr_01"
+          }
+        }
+      }
+    },
+    {
+      "schemaVersion": "0.1.0-draft",
+      "worldId": "w_01",
+      "id": "ev_04",
+      "sequence": 4,
+      "producerId": "adapter_a",
+      "idempotencyKey": "input_ev_04",
+      "occurredAt": 10000,
+      "recordedAt": 10000,
+      "causeEventIds": [
+        "ev_01",
+        "ev_03"
+      ],
+      "correlationId": "chain_01",
+      "ruleVersion": "rules-mvp-draft-1",
+      "fact": {
+        "type": "perception.captured",
+        "payload": {
+          "witnesses": [
+            {
+              "id": "wi_01",
+              "observerId": "e_03",
+              "sourceEventId": "ev_03",
+              "observedAt": 10000,
+              "observerPosition": {
+                "spaceId": "s_01",
+                "pointM": {
+                  "x": 3,
+                  "y": 0,
+                  "z": 0
+                },
+                "zoneId": "z_01",
+                "capturedAt": 10000,
+                "frameId": "fr_01"
+              },
+              "targetPosition": {
+                "spaceId": "s_01",
+                "pointM": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                },
+                "zoneId": "z_01",
+                "capturedAt": 10000,
+                "frameId": "fr_01"
+              },
+              "modality": "sight",
+              "fieldOfViewPassed": true,
+              "lineOfSight": "clear",
+              "distanceM": 3,
+              "perceptionRangeM": 20,
+              "perceptible": true,
+              "perceivedActor": {
+                "handle": "ps_01",
+                "description": "认识的旅人林舟，红色外衣",
+                "appearanceToken": "ap_01",
+                "recognizedEntityId": "e_01",
+                "recognitionConfidence": 0.95,
+                "recognitionEvidenceEventIds": [
+                  "ev_01"
+                ]
+              },
+              "perceivedAction": "theft",
+              "observationConfidence": 0.95,
+              "sensorVersion": "a-sensor-draft-1"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "schemaVersion": "0.1.0-draft",
+      "worldId": "w_01",
+      "id": "ev_05",
+      "sequence": 10,
+      "producerId": "adapter_a",
+      "idempotencyKey": "input_ev_05",
+      "occurredAt": 20000,
+      "recordedAt": 20000,
+      "causeEventIds": [
+        "ev_04"
+      ],
+      "correlationId": "chain_01",
+      "ruleVersion": "rules-mvp-draft-1",
+      "fact": {
+        "type": "report.delivered",
+        "payload": {
+          "goalId": "go_01",
+          "receiptId": "rc_01",
+          "fromNpcId": "e_03",
+          "toNpcId": "e_04",
+          "knowledgeIds": [
+            "kn_01"
+          ],
+          "channel": "in_person",
+          "location": {
+            "spaceId": "s_01",
+            "pointM": {
+              "x": 8,
+              "y": 0,
+              "z": 0
+            },
+            "zoneId": "z_01",
+            "capturedAt": 20000,
+            "frameId": "fr_02"
+          }
+        }
+      }
+    },
+    {
+      "schemaVersion": "0.1.0-draft",
+      "worldId": "w_01",
+      "id": "ev_06",
+      "sequence": 12,
+      "producerId": "adapter_a",
+      "idempotencyKey": "input_ev_06",
+      "occurredAt": 20000,
+      "recordedAt": 20000,
+      "causeEventIds": [
+        "ev_05"
+      ],
+      "correlationId": "chain_01",
+      "ruleVersion": "rules-mvp-draft-1",
+      "fact": {
+        "type": "goal.receipt_recorded",
+        "payload": {
+          "receipt": {
+            "id": "rc_01",
+            "goalId": "go_01",
+            "npcId": "e_03",
+            "observedAt": 20000,
+            "engineRevision": 20,
+            "status": "succeeded",
+            "terminal": true,
+            "outcomeEventIds": [
+              "ev_05"
+            ],
+            "reason": null
+          }
+        }
+      }
+    },
+    {
+      "schemaVersion": "0.1.0-draft",
+      "worldId": "w_01",
+      "id": "ev_07",
+      "sequence": 15,
+      "producerId": "adapter_a",
+      "idempotencyKey": "input_ev_07",
+      "occurredAt": 30000,
+      "recordedAt": 30000,
+      "causeEventIds": [],
+      "correlationId": "chain_02",
+      "ruleVersion": "rules-mvp-draft-1",
+      "fact": {
+        "type": "action.aid_completed",
+        "payload": {
+          "helperId": "e_01",
+          "beneficiaryId": "e_05",
+          "aidKind": "heal",
+          "transferId": "tr_02",
+          "location": {
+            "spaceId": "s_01",
+            "pointM": {
+              "x": 10,
+              "y": 0,
+              "z": 0
+            },
+            "zoneId": "z_01",
+            "capturedAt": 30000,
+            "frameId": "fr_03"
+          }
+        }
+      }
+    },
+    {
+      "schemaVersion": "0.1.0-draft",
+      "worldId": "w_01",
+      "id": "ev_08",
+      "sequence": 16,
+      "producerId": "adapter_a",
+      "idempotencyKey": "input_ev_08",
+      "occurredAt": 30000,
+      "recordedAt": 30000,
+      "causeEventIds": [
+        "ev_02",
+        "ev_07"
+      ],
+      "correlationId": "chain_02",
+      "ruleVersion": "rules-mvp-draft-1",
+      "fact": {
+        "type": "perception.captured",
+        "payload": {
+          "witnesses": [
+            {
+              "id": "wi_02",
+              "observerId": "e_05",
+              "sourceEventId": "ev_07",
+              "observedAt": 30000,
+              "observerPosition": {
+                "spaceId": "s_01",
+                "pointM": {
+                  "x": 11,
+                  "y": 0,
+                  "z": 0
+                },
+                "zoneId": "z_01",
+                "capturedAt": 30000,
+                "frameId": "fr_03"
+              },
+              "targetPosition": {
+                "spaceId": "s_01",
+                "pointM": {
+                  "x": 10,
+                  "y": 0,
+                  "z": 0
+                },
+                "zoneId": "z_01",
+                "capturedAt": 30000,
+                "frameId": "fr_03"
+              },
+              "modality": "sight",
+              "fieldOfViewPassed": true,
+              "lineOfSight": "clear",
+              "distanceM": 1,
+              "perceptionRangeM": 20,
+              "perceptible": true,
+              "perceivedActor": {
+                "handle": "ps_02",
+                "description": "认识的旅人林舟，红色外衣",
+                "appearanceToken": "ap_01",
+                "recognizedEntityId": "e_01",
+                "recognitionConfidence": 0.95,
+                "recognitionEvidenceEventIds": [
+                  "ev_02"
+                ]
+              },
+              "perceivedAction": "aid",
+              "observationConfidence": 1,
+              "sensorVersion": "a-sensor-draft-1"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "witnesses": [
+    {
+      "id": "wi_01",
+      "observerId": "e_03",
+      "sourceEventId": "ev_03",
+      "observedAt": 10000,
+      "observerPosition": {
+        "spaceId": "s_01",
+        "pointM": {
+          "x": 3,
+          "y": 0,
+          "z": 0
+        },
+        "zoneId": "z_01",
+        "capturedAt": 10000,
+        "frameId": "fr_01"
+      },
+      "targetPosition": {
+        "spaceId": "s_01",
+        "pointM": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "zoneId": "z_01",
+        "capturedAt": 10000,
+        "frameId": "fr_01"
+      },
+      "modality": "sight",
+      "fieldOfViewPassed": true,
+      "lineOfSight": "clear",
+      "distanceM": 3,
+      "perceptionRangeM": 20,
+      "perceptible": true,
+      "perceivedActor": {
+        "handle": "ps_01",
+        "description": "认识的旅人林舟，红色外衣",
+        "appearanceToken": "ap_01",
+        "recognizedEntityId": "e_01",
+        "recognitionConfidence": 0.95,
+        "recognitionEvidenceEventIds": [
+          "ev_01"
+        ]
+      },
+      "perceivedAction": "theft",
+      "observationConfidence": 0.95,
+      "sensorVersion": "a-sensor-draft-1"
+    },
+    {
+      "id": "wi_02",
+      "observerId": "e_05",
+      "sourceEventId": "ev_07",
+      "observedAt": 30000,
+      "observerPosition": {
+        "spaceId": "s_01",
+        "pointM": {
+          "x": 11,
+          "y": 0,
+          "z": 0
+        },
+        "zoneId": "z_01",
+        "capturedAt": 30000,
+        "frameId": "fr_03"
+      },
+      "targetPosition": {
+        "spaceId": "s_01",
+        "pointM": {
+          "x": 10,
+          "y": 0,
+          "z": 0
+        },
+        "zoneId": "z_01",
+        "capturedAt": 30000,
+        "frameId": "fr_03"
+      },
+      "modality": "sight",
+      "fieldOfViewPassed": true,
+      "lineOfSight": "clear",
+      "distanceM": 1,
+      "perceptionRangeM": 20,
+      "perceptible": true,
+      "perceivedActor": {
+        "handle": "ps_02",
+        "description": "认识的旅人林舟，红色外衣",
+        "appearanceToken": "ap_01",
+        "recognizedEntityId": "e_01",
+        "recognitionConfidence": 0.95,
+        "recognitionEvidenceEventIds": [
+          "ev_02"
+        ]
+      },
+      "perceivedAction": "aid",
+      "observationConfidence": 1,
+      "sensorVersion": "a-sensor-draft-1"
+    }
+  ],
+  "knowledge": [
+    {
+      "id": "kn_01",
+      "holderId": "e_03",
+      "claim": {
+        "predicate": "committed_theft",
+        "subject": {
+          "handle": "ps_01",
+          "description": "认识的旅人林舟，红色外衣",
+          "appearanceToken": "ap_01",
+          "recognizedEntityId": "e_01",
+          "recognitionConfidence": 0.95,
+          "recognitionEvidenceEventIds": [
+            "ev_01"
+          ]
+        },
+        "targetEntityId": "e_02",
+        "itemId": "it_01",
+        "zoneId": "z_01",
+        "happenedAt": 10000,
+        "lastKnownPosition": {
+          "spaceId": "s_01",
+          "pointM": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "zoneId": "z_01",
+          "capturedAt": 10000,
+          "frameId": "fr_01"
+        }
+      },
+      "acquiredAt": 10000,
+      "source": {
+        "kind": "direct_observation",
+        "witnessId": "wi_01",
+        "informantId": null,
+        "parentKnowledgeId": null,
+        "deliveryEventId": null
+      },
+      "auditSourceEventIds": [
+        "ev_03",
+        "ev_04"
+      ],
+      "confidence": 0.95,
+      "state": "active",
+      "expiresAt": null,
+      "hops": 0
+    },
+    {
+      "id": "kn_02",
+      "holderId": "e_04",
+      "claim": {
+        "predicate": "committed_theft",
+        "subject": {
+          "handle": "ps_03",
+          "description": "认识的旅人林舟，红色外衣",
+          "appearanceToken": "ap_01",
+          "recognizedEntityId": "e_01",
+          "recognitionConfidence": 0.95,
+          "recognitionEvidenceEventIds": [
+            "ev_01"
+          ]
+        },
+        "targetEntityId": "e_02",
+        "itemId": "it_01",
+        "zoneId": "z_01",
+        "happenedAt": 10000,
+        "lastKnownPosition": {
+          "spaceId": "s_01",
+          "pointM": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          },
+          "zoneId": "z_01",
+          "capturedAt": 10000,
+          "frameId": "fr_01"
+        }
+      },
+      "acquiredAt": 20000,
+      "source": {
+        "kind": "report",
+        "witnessId": null,
+        "informantId": "e_03",
+        "parentKnowledgeId": "kn_01",
+        "deliveryEventId": "ev_05"
+      },
+      "auditSourceEventIds": [
+        "ev_03",
+        "ev_04",
+        "ev_05"
+      ],
+      "confidence": 0.8,
+      "state": "active",
+      "expiresAt": null,
+      "hops": 1
+    },
+    {
+      "id": "kn_03",
+      "holderId": "e_05",
+      "claim": {
+        "predicate": "provided_aid",
+        "subject": {
+          "handle": "ps_02",
+          "description": "认识的旅人林舟，红色外衣",
+          "appearanceToken": "ap_01",
+          "recognizedEntityId": "e_01",
+          "recognitionConfidence": 0.95,
+          "recognitionEvidenceEventIds": [
+            "ev_02"
+          ]
+        },
+        "targetEntityId": "e_05",
+        "itemId": null,
+        "zoneId": "z_01",
+        "happenedAt": 30000,
+        "lastKnownPosition": {
+          "spaceId": "s_01",
+          "pointM": {
+            "x": 10,
+            "y": 0,
+            "z": 0
+          },
+          "zoneId": "z_01",
+          "capturedAt": 30000,
+          "frameId": "fr_03"
+        }
+      },
+      "acquiredAt": 30000,
+      "source": {
+        "kind": "direct_observation",
+        "witnessId": "wi_02",
+        "informantId": null,
+        "parentKnowledgeId": null,
+        "deliveryEventId": null
+      },
+      "auditSourceEventIds": [
+        "ev_07",
+        "ev_08"
+      ],
+      "confidence": 1,
+      "state": "active",
+      "expiresAt": null,
+      "hops": 0
+    }
+  ],
+  "crimes": [
+    {
+      "id": "cr_01",
+      "kind": "theft",
+      "authorityFactionId": "fa_01",
+      "victimId": "e_02",
+      "suspect": {
+        "handle": "ps_03",
+        "description": "认识的旅人林舟，红色外衣",
+        "appearanceToken": "ap_01",
+        "recognizedEntityId": "e_01",
+        "recognitionConfidence": 0.95,
+        "recognitionEvidenceEventIds": [
+          "ev_01"
+        ]
+      },
+      "evidenceKnowledgeIds": [
+        "kn_02"
+      ],
+      "severity": 1,
+      "evidenceConfidence": 0.8,
+      "state": "wanted",
+      "assessedAt": 21000,
+      "sourceEventIds": [
+        "ev_05"
+      ]
+    }
+  ],
+  "bounties": [
+    {
+      "id": "bo_01",
+      "issuer": {
+        "kind": "faction",
+        "id": "fa_01"
+      },
+      "target": {
+        "handle": "ps_03",
+        "description": "认识的旅人林舟，红色外衣",
+        "appearanceToken": "ap_01",
+        "recognizedEntityId": "e_01",
+        "recognitionConfidence": 0.95,
+        "recognitionEvidenceEventIds": [
+          "ev_01"
+        ]
+      },
+      "crimeId": "cr_01",
+      "motiveKnowledgeIds": [
+        "kn_02"
+      ],
+      "amountMinor": 100,
+      "escrowReservationId": "es_01",
+      "action": "locate_and_report",
+      "state": "open",
+      "postedAt": 22000,
+      "expiresAt": 180000,
+      "assigneeId": null,
+      "completionReceiptId": null
+    }
+  ],
+  "reactions": [
+    {
+      "id": "re_01",
+      "npcId": "e_03",
+      "kind": "report",
+      "triggerKnowledgeIds": [
+        "kn_01"
+      ],
+      "causeEventIds": [
+        "ev_04"
+      ],
+      "target": {
+        "handle": "ps_01",
+        "description": "认识的旅人林舟，红色外衣",
+        "appearanceToken": "ap_01",
+        "recognizedEntityId": "e_01",
+        "recognitionConfidence": 0.95,
+        "recognitionEvidenceEventIds": [
+          "ev_01"
+        ]
+      },
+      "state": "succeeded",
+      "reasonCode": "REPORT_WITNESSED_THEFT",
+      "ruleVersion": "rules-mvp-draft-1",
+      "createdAt": 10000,
+      "notBefore": 11000,
+      "expiresAt": 40000,
+      "queueItemId": "qi_01",
+      "goalId": "go_01"
+    },
+    {
+      "id": "re_02",
+      "npcId": "e_05",
+      "kind": "offer_aid",
+      "triggerKnowledgeIds": [
+        "kn_03"
+      ],
+      "causeEventIds": [
+        "ev_07",
+        "ev_08"
+      ],
+      "target": {
+        "handle": "ps_02",
+        "description": "认识的旅人林舟，红色外衣",
+        "appearanceToken": "ap_01",
+        "recognizedEntityId": "e_01",
+        "recognitionConfidence": 0.95,
+        "recognitionEvidenceEventIds": [
+          "ev_02"
+        ]
+      },
+      "state": "queued",
+      "reasonCode": "RECIPROCATE_KNOWN_HELP",
+      "ruleVersion": "rules-mvp-draft-1",
+      "createdAt": 30000,
+      "notBefore": 70000,
+      "expiresAt": 120000,
+      "queueItemId": "qi_02",
+      "goalId": null
+    }
+  ],
+  "queue": [
+    {
+      "id": "qi_01",
+      "reactionId": "re_01",
+      "dueAt": 11000,
+      "expiresAt": 40000,
+      "priority": 10,
+      "state": "completed",
+      "attempt": 1,
+      "idempotencyKey": "queue_re_01_report",
+      "preconditions": {
+        "npcMustBeAlive": true,
+        "activeKnowledgeIds": [
+          "kn_01"
+        ],
+        "bountyId": null
+      }
+    },
+    {
+      "id": "qi_02",
+      "reactionId": "re_02",
+      "dueAt": 70000,
+      "expiresAt": 120000,
+      "priority": 5,
+      "state": "pending",
+      "attempt": 0,
+      "idempotencyKey": "queue_re_02_offer_aid",
+      "preconditions": {
+        "npcMustBeAlive": true,
+        "activeKnowledgeIds": [
+          "kn_03"
+        ],
+        "bountyId": null
+      }
+    }
+  ],
+  "goals": [
+    {
+      "schemaVersion": "0.1.0-draft",
+      "worldId": "w_01",
+      "id": "go_01",
+      "idempotencyKey": "goal_go_01",
+      "reactionId": "re_01",
+      "npcId": "e_03",
+      "issuedAt": 11000,
+      "expiresAt": 40000,
+      "expectedWorldRevision": 11,
+      "intent": {
+        "kind": "deliver_report",
+        "recipientNpcId": "e_04",
+        "knowledgeIds": [
+          "kn_01"
+        ]
+      }
+    }
+  ],
+  "receipts": [
+    {
+      "id": "rc_01",
+      "goalId": "go_01",
+      "npcId": "e_03",
+      "observedAt": 20000,
+      "engineRevision": 20,
+      "status": "succeeded",
+      "terminal": true,
+      "outcomeEventIds": [
+        "ev_05"
+      ],
+      "reason": null
+    }
+  ],
+  "expectedChecks": [
+    {
+      "id": "X01",
+      "assertion": "Only e_03 owns direct theft knowledge. e_04 receives kn_02 after report delivery at 20000; other actors do not automatically learn it."
+    },
+    {
+      "id": "X02",
+      "assertion": "The reported claim preserves theft time 10000 and has confidence 0.8 <= direct confidence 0.95."
+    },
+    {
+      "id": "X03",
+      "assertion": "At simulation time 40000, qi_02 is pending and no offer_aid goal or completion exists."
+    },
+    {
+      "id": "X04",
+      "assertion": "The public causal projection must omit privateTraits, raw cause IDs, and unlearned identity information."
+    },
+    {
+      "id": "X05",
+      "assertion": "Retransmitting input_ev_05 returns the same event ID without creating another recipient knowledge or another report effect."
+    },
+    {
+      "id": "X06",
+      "assertion": "es_01 is a fixture assumption of 100 minor units reserved from fa_01; funds integration is not implemented or verified here."
+    },
+    {
+      "id": "X07",
+      "assertion": "This is a state fixture plus source-event subset. It is not a complete replay log and is not test pass evidence."
+    }
+  ]
+}

@@ -6,6 +6,7 @@ import { biomeCatalog } from '../world/biomes/catalog.js'
 import { validFog } from '../map/fog.js'
 import { validStamina } from '../entities/createStamina.js'
 import { validWorldTime } from '../world/createDayNightCycle.js'
+import { validFirstLoop } from '../worldLedger/firstLoop.js'
 
 const SCHEMA_VERSION = 2
 const PREFIX = 'game002:world:512:v10:'
@@ -43,6 +44,7 @@ export function validateDocument(document, seed) {
   if (progress.exploredFog!==undefined && !validFog(progress.exploredFog)) throw new Error('探索迷雾无效。')
   if (progress.stamina!==undefined && !validStamina(progress.stamina)) throw new Error('体力无效。')
   if (progress.worldTime!==undefined && !validWorldTime(progress.worldTime)) throw new Error('时间无效。')
+  if (progress.ledger!==undefined && !validFirstLoop(progress.ledger,world)) throw new Error('江湖账本存档无效，已保留原始数据。')
   return document
 }
 
