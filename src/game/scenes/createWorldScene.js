@@ -231,7 +231,7 @@ export function createWorldScene(engine, canvas, { onLoading, onReady } = {}) {
     const speed = debug.infiniteSprint && sprintAllowed ? STAMINA.runSpeed : stamina.speed(sprintAllowed)
     const multiplier = sprintAllowed && speed === STAMINA.runSpeed ? debug.sprintMultiplier : 1
     const motion = locomotion.update(dt, position, world, {
-      direction, speed: speed * multiplier,
+      direction, speed: speed * multiplier, dashDirection: input.consumeDash(),
       jumpPressed: input.consumeJump(), jumpHeld: input.jumpHeld(),
     })
     const moving = motion.moving
@@ -241,6 +241,7 @@ export function createWorldScene(engine, canvas, { onLoading, onReady } = {}) {
       player.root.rotation.y += turn * (1 - Math.exp(-dt * (motion.grounded ? 18 : 9)))
     }
     player.update(dt, moving, position.y, running, motion)
+    world.updateNpcs(dt,position.x,position.z)
     thirdPerson.follow(player.root, world.terrain, dt)
     navigationTimer += dt
     if (navigationTimer >= 0.1) {

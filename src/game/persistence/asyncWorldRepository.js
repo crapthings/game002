@@ -5,7 +5,7 @@ import { createProgress } from '../world/progress.js'
 let connection
 function database() {
   if (!connection) connection = new Promise((resolve, reject) => {
-    const request = indexedDB.open('game002-worlds-512-v7', 1)
+    const request = indexedDB.open('game002-worlds-512-v9', 1)
     request.onupgradeneeded = () => {
       request.result.createObjectStore('worlds')
       request.result.createObjectStore('progress')
@@ -36,7 +36,7 @@ export const asyncWorldRepository = {
     })
     if (!document) {
       // 旧档只在首次导入时读取，原 localStorage 数据作为备份保留。
-      const raw = localStorage.getItem('game002:world:512:v7:' + encodeURIComponent(seed))
+      const raw = localStorage.getItem('game002:world:512:v9:' + encodeURIComponent(seed))
       document = raw === null ? { schemaVersion: 2, revision: 0, world: generateWorld(seed), progress: createProgress() } : JSON.parse(raw)
       validateDocument(document, seed)
       await new Promise((resolve, reject) => {
@@ -47,7 +47,7 @@ export const asyncWorldRepository = {
         tx.onabort = () => reject(tx.error || new Error('导入存档失败，请重新进入。'))
       })
     } else validateDocument(document, seed)
-    localStorage.setItem('game002:active-seed:512:v7', seed)
+    localStorage.setItem('game002:active-seed:512:v9', seed)
     return document
   },
   async save(document, progress) {

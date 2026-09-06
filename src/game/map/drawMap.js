@@ -143,6 +143,10 @@ export function drawMap(ctx, width, height, { center, span, position, heading, f
   if (!radar) {
     ctx.font = '12px system-ui'
     ctx.textAlign = 'center'
+    for(const p of plan.city?.landmarks || []) {
+      if(!revealMap && !isExplored(fog,p.x,p.z))continue
+      const [x,y]=screen(p.x,p.z);ctx.fillStyle='#f0dfaa';ctx.fillText(p.name,x,y-14)
+    }
     for (const town of plan.settlements || []) {
       const x = (town.bounds.minX + town.bounds.maxX) / 2, z = (town.bounds.minZ + town.bounds.maxZ) / 2
       if (!revealMap && !isExplored(fog, x, z)) continue

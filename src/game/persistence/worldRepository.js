@@ -8,8 +8,8 @@ import { validStamina } from '../entities/createStamina.js'
 import { validWorldTime } from '../world/createDayNightCycle.js'
 
 const SCHEMA_VERSION = 2
-const PREFIX = 'game002:world:512:v7:'
-const ACTIVE_KEY = 'game002:active-seed:512:v7'
+const PREFIX = 'game002:world:512:v9:'
+const ACTIVE_KEY = 'game002:active-seed:512:v9'
 const point = value => Array.isArray(value) && value.length === 2 && value.every(Number.isFinite)
 const bounds = b => b && ['minX','maxX','minZ','maxZ'].every(key => Number.isFinite(b[key])) && b.minX < b.maxX && b.minZ < b.maxZ && b.minX >= WORLD_BOUNDS.minX && b.maxX <= WORLD_BOUNDS.maxX && b.minZ >= WORLD_BOUNDS.minZ && b.maxZ <= WORLD_BOUNDS.maxZ
 
@@ -35,7 +35,7 @@ export function validateDocument(document, seed) {
   if (t?.version !== 1 || t.anchors?.length !== 4 || t.waves?.length !== 3 || !t.anchors.every(a=>['x','z','height','moisture'].every(k=>Number.isFinite(a[k]))) || !t.waves.every(w=>['wavelength','amplitude','angle','phase'].every(k=>Number.isFinite(w[k])) && w.wavelength>0)) throw new Error('地形数据无效。')
   if(h.districts?.length!==16 || h.details?.length!==256 || !h.districts.every((d,i)=>d.id===`district-cell-${Math.floor(i/4)}-${i%4}`&&bounds(d.bounds)&&h.macros.some(m=>m.id===d.macroId)) || !h.details.every((d,i)=>d.id===`detail-${Math.floor(i/16)}-${i%16}`&&bounds(d.bounds)&&point(d.center)&&h.cells.some(c=>c.id===d.parentId))) throw new Error('四层规划无效。')
   const city=world.city
-  if(city?.version!==1 || !Number.isFinite(city.elevation) || city.extent!==160 || city.gardenMask?.length!==256 || !city.gardenMask.every(v=>typeof v==='boolean') || !Array.isArray(city.placements) || !Array.isArray(city.parcels) || city.bridges?.length!==5 || !bounds(city.water) || !Number.isFinite(city.water.level) || !city.bridges.every(b=>['x','z','width','length'].every(k=>Number.isFinite(b[k]))&&b.width>0&&b.length>0) || !city.placements.every(p=>typeof p.assetId==='string'&&Array.isArray(p.position)&&p.position.length===3&&p.position.every(Number.isFinite)&&Number.isFinite(p.rotation)&&p.scale===1)) throw new Error('城内规划无效。')
+  if(city?.version!==3 || !Number.isFinite(city.elevation) || city.extent!==160 || city.gardenMask?.length!==256 || !city.gardenMask.every(v=>typeof v==='boolean') || !Array.isArray(city.placements) || !Array.isArray(city.parcels) || city.bridges?.length!==5 || !bounds(city.water) || !Number.isFinite(city.water.level) || !city.bridges.every(b=>['x','z','width','length'].every(k=>Number.isFinite(b[k]))&&b.width>0&&b.length>0) || !city.placements.every(p=>typeof p.assetId==='string'&&Array.isArray(p.position)&&p.position.length===3&&p.position.every(Number.isFinite)&&Number.isFinite(p.rotation)&&p.scale===1)) throw new Error('城内规划无效。')
   if(!world.roads.every(r=>point(r.from)&&point(r.to)&&Number.isFinite(r.width)&&r.width>0)) throw new Error('街巷数据无效。')
   if (JSON.stringify(world.fortifications) !== JSON.stringify(createFortifications(t))) throw new Error('城防规划数据无效。')
   if (!progress || !Array.isArray(progress.discoveredRegionIds) || !progress.discoveredRegionIds.every(id=>ids.has(id)) || !progress.annotations || typeof progress.annotations !== 'object' || Array.isArray(progress.annotations) || !Object.entries(progress.annotations).every(([id,text])=>ids.has(id) && typeof text==='string' && text.length<=160) || (progress.lastRegionId!==null && !ids.has(progress.lastRegionId))) throw new Error('探索进度无效。')

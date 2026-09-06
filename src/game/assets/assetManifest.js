@@ -52,7 +52,7 @@ export const assetTabs = [
   { id: 'wuxia', label: '武侠建筑', assets: wuxiaCatalog },
   { id: 'fortifications', label: '城墙城门', assets: fortificationCatalog },
   { id: 'nature', label: '自然生态', assets: nature },
-  { id: 'characters', label: '侠客', assets: characters },
+  { id: 'characters', label: '角色与百姓', assets: characters },
 ]
 
 export const assetCatalog = assetTabs.flatMap((tab) => tab.assets.map((asset) => ({ ...asset, type: tab.id })))

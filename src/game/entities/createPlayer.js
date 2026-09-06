@@ -181,7 +181,7 @@ export function createPlayer(scene) {
       if (moving && !airborne) gait += dt * (running ? 18 : 12)
       root.position.y = height
       rig.position.y = Math.sin(gait * 2) * 0.018 * stride - landing
-      rig.rotation.x = airborne ? 0.04 : (running ? 0.12 : 0.035) * stride + landing * 0.7
+      rig.rotation.x = motion.dashing ? 0.32 : airborne ? 0.04 : (running ? 0.12 : 0.035) * stride + landing * 0.7
       // 翻滚围绕腰部旋转，根节点与镜头保持直立；落地即恢复站姿。
       tumble.rotation.x = flip === null ? 0 : Math.PI * 2 * (flip * flip * (3 - 2 * flip))
       for (let index = 0; index < 2; index++) {

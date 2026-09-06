@@ -33,6 +33,7 @@ export default function WorldPlanView({plan,selected,onSelect,focus,layers,baseM
     })}
     <g pointerEvents="none">
       {plan.city && <g>
+        {plan.city.plaza && <rect x={plan.city.plaza.minX} y={-plan.city.plaza.maxZ} width={plan.city.plaza.maxX-plan.city.plaza.minX} height={plan.city.plaza.maxZ-plan.city.plaza.minZ} fill="#c7c5a8"/>}
         {plan.city.parcels.filter(p=>p.use==='garden').map(p=><rect key={p.id} x={p.bounds.minX+3} y={-p.bounds.maxZ+3} width={26} height={26} fill="#719767"/>)}
         <rect x={plan.city.water.minX} y={-plan.city.water.maxZ} width={plan.city.water.maxX-plan.city.water.minX} height={plan.city.water.maxZ-plan.city.water.minZ} fill="#68bcb6"/>
         {plan.city.placements.filter(p=>p.building).map(p=><rect key={p.id} transform={`translate(${p.position[0]} ${-p.position[2]}) rotate(${p.rotation*180/Math.PI})`} x={-p.footprint.width/2} y={-p.footprint.depth/2} width={p.footprint.width} height={p.footprint.depth} fill="#ded0a4" stroke="#606d58" strokeWidth={line*.5}/>)}
@@ -51,6 +52,7 @@ export default function WorldPlanView({plan,selected,onSelect,focus,layers,baseM
       </g>)}
       {layers.roads && [...plan.roads,...plan.settlements.flatMap(town=>town.roads)].map(road=><polyline key={road.id} points={(road.points || [road.from,road.to]).map(([x,z])=>`${x},${-z}`).join(' ')} fill="none" stroke="#e8d9b6" strokeWidth={road.width} strokeLinejoin="round" strokeLinecap="round" opacity="0.8"/>)}
       {layers.labels && plan.regions.map(region=><text key={region.id} x={region.center[0]} y={-region.bounds.maxZ+line*18} textAnchor="middle" fill="#fff6dc" fontSize={line*12} stroke="#192a23" strokeWidth={line*0.8} paintOrder="stroke">{region.name}{region.citySize ? ` · ${{small:'小',medium:'中',large:'大'}[region.citySize]}城` : ''}</text>)}
+      {layers.labels && plan.city?.landmarks?.map(p=><text key={p.name} x={p.x} y={-p.z-12} textAnchor="middle" fill="#fff0ad" fontSize={line*14} stroke="#283c34" strokeWidth={line} paintOrder="stroke">{p.name}</text>)}
       {selected && (()=>{const b=plan.regions.find(region=>region.id===selected)?.bounds;return b && <rect x={b.minX} y={-b.maxZ} width={b.maxX-b.minX} height={b.maxZ-b.minZ} fill="none" stroke="#b9ffe0" strokeWidth={line*3}/>})()}
       <rect x={plan.bounds.minX} y={-plan.bounds.maxZ} width={plan.size} height={plan.size} fill="none" stroke="#d5dfd7" strokeWidth={line*2}/>
       <circle cx={plan.spawn[0]} cy={-plan.spawn[1]} r={line*5} fill="#fff1b5" stroke="#152620" strokeWidth={line*2}/>

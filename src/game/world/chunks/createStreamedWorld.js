@@ -1,3 +1,7 @@
+import { createNpcCrowd } from '../../npcs/createNpcCrowd.js'
+import { RawTexture } from '@babylonjs/core/Materials/Textures/rawTexture'
+import { Texture } from '@babylonjs/core/Materials/Textures/texture'
+import { GROUND_TEXTURE_SIZE } from './groundTexture.js'
 import { inCanal, onBridge } from '../city/createCityPlan.js'
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder'
 import { wuxiaDefinitions } from '../../assets/wuxia/catalog.js'
@@ -90,10 +94,17 @@ export function createStreamedWorld(scene, plan, initialViewDistance = 64) {
     const vertices = new VertexData()
     vertices.positions = data.positions
     vertices.indices = data.indices
-    vertices.colors = data.colors
+    vertices.uvs = []
+    for(let i=0;i<data.positions.length;i+=3)vertices.uvs.push((data.positions[i]-chunk.x*CHUNK_SIZE)/CHUNK_SIZE,(data.positions[i+2]-chunk.z*CHUNK_SIZE)/CHUNK_SIZE)
     vertices.normals = data.normals
     vertices.applyToMesh(mesh)
-    mesh.material = material
+    const groundMaterial=material.clone(`ground-material:${chunk.key}`)
+    const texture=RawTexture.CreateRGBATexture(data.groundPixels,GROUND_TEXTURE_SIZE,GROUND_TEXTURE_SIZE,scene,true,false,Texture.TRILINEAR_SAMPLINGMODE)
+    texture.wrapU=Texture.CLAMP_ADDRESSMODE;texture.wrapV=Texture.CLAMP_ADDRESSMODE
+    texture.anisotropicFilteringLevel=4
+    groundMaterial.diffuseTexture=texture
+    mesh.material = groundMaterial
+    mesh.onDisposeObservable.add(()=>{groundMaterial.dispose();texture.dispose()})
     mesh.receiveShadows = true
     mesh.metadata = { ground: true, chunkKey: chunk.key }
     yield
@@ -212,8 +223,10 @@ export function createStreamedWorld(scene, plan, initialViewDistance = 64) {
     }
     if (retired.length && performance.now() - started < budgetMs) retired.shift().dispose()
   }
-  return {
+  let crowd
+  const api = {
     terrain,
+    updateNpcs(dt,x,z) { crowd.update(dt,x,z,viewDistance) },
     update,
     setViewDistance(value) { viewDistance = value },
     getViewDistance: () => viewDistance,
@@ -253,6 +266,7 @@ export function createStreamedWorld(scene, plan, initialViewDistance = 64) {
       return true
     },
     dispose() {
+      crowd?.dispose()
       disposed = true
       worker.terminate()
       assembling?.iterator.return()
@@ -268,4 +282,6 @@ export function createStreamedWorld(scene, plan, initialViewDistance = 64) {
       bankMaterial.dispose()
     },
   }
+  crowd=createNpcCrowd(scene,plan,api)
+  return api
 }

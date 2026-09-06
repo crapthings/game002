@@ -12,7 +12,7 @@ export default function PlayerStatusHud() {
       <div role="progressbar" aria-label="体力" aria-valuemin={0} aria-valuemax={max} aria-valuenow={current} className="h-1.5 overflow-hidden rounded-full bg-stone-700/70">
         <div className={`h-full rounded-full transition-[width] duration-100 motion-reduce:transition-none ${low ? 'bg-amber-400' : 'bg-emerald-300'}`} style={{ width: `${current / max * 100}%` }} />
       </div>
-      <p className="mt-2 text-[10px] text-stone-500">Shift 奔跑 · 空格两段跳</p>
+      <p className="mt-2 text-[10px] text-stone-500">Shift 奔跑 · 空格两段跳 · 双击方向冲刺</p>
     </aside>
   )
 }

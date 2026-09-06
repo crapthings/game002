@@ -1,3 +1,4 @@
+import { bridgeWalkHeight } from '../city/bridgeProfile.js'
 import { cityGround, cityContains, cityGarden, inCanal } from '../city/createCityPlan.js'
 import { fortificationGround, fortificationClearance } from '../fortifications/createFortifications.js'
 import { createRandom } from '../generation/random.js'
@@ -67,6 +68,8 @@ export function createTerrain(seed, settlements = [], plan = null) {
     return townHeight * (1 - (1 - smooth(t)) * road.fade)
   }
   function surfaceHeight(x, z) {
+    const bridge=plan?.city?.bridges.find(b=>Math.abs(x-b.x)<=b.width/2 && Math.abs(z-b.z)<=b.length/2)
+    if(bridge)return plan.city.elevation+bridgeWalkHeight(z-bridge.z)
     const step = CHUNK_SIZE / CHUNK_SEGMENTS
     const x0 = Math.floor(x / step) * step, z0 = Math.floor(z / step) * step
     const tx = (x - x0) / step, tz = (z - z0) / step

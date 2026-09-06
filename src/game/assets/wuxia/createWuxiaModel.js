@@ -103,7 +103,24 @@ export function createWuxiaModel(scene, assetId, material) {
   function table(x,z) {box(1.4,.15,1,x,1,z);for(const dx of [-.5,.5])for(const dz of [-.3,.3])box(.1,.85,.1,x+dx,.5,z+dz);cyl(.16,.24,x,1.19,z,'#b8d2b4');cyl(.07,.1,x+.4,1.12,z,C.wall)}
   function jar(x,z,color=C.tile) {cyl(.35,.8,x,.45,z,color,.24);cyl(.26,.1,x,.9,z,C.gold)}
   const w=a.width,d=a.depth,front=-d/2-.65
-  if(a.kind==='court') {
+  if(a.kind.startsWith('market-')) {
+    box(w+.5,.18,d+.5,0,.09,0,C.stone)
+    for(const x of [-w/2,w/2])for(const z of [-d/2,d/2])cyl(.09,2.7,x,1.35,z)
+    for(const side of [-1,1]) {
+      const canopy=box(w+1,.12,d/2+.7,0,2.85,side*d/4,a.accent);canopy.rotation.x=side*.12
+      box(w+1,.35,.08,0,2.6,side*(d/2+.5),a.accent)
+    }
+    box(w-.6,.18,1.2,0,1.05,-d/2+.5)
+    for(const x of [-w/2+.5,w/2-.5])box(.14,1,.14,x,.5,-d/2+.5)
+    for(let i=0;i<5;i++) {
+      const x=-2.4+i*1.2
+      if(a.kind==='market-produce') {
+        cyl(.42,.25,x,1.26,-d/2+.5,'#d2b781')
+        for(let j=0;j<3;j++){const fruit=MeshBuilder.CreateSphere('market-fruit',{diameter:.3,segments:3},scene);fruit.position.set(x+(j-1)*.22,1.5,-d/2+.5);fruit.material=material(i%2?'#d7a35d':'#91b86f');parts.push(fruit)}
+      } else if(a.kind==='market-food') {cyl(.4,.4,x,1.36,-d/2+.5,i%2?'#d9c297':'#81988e');cyl(.43,.08,x,1.6,-d/2+.5,C.gold)}
+      else {box(.7,.5,.65,x,1.39,-d/2+.5,['#bad0ad','#d9b8b1','#c0bbd3'][i%3]);jar(x,1)}
+    }
+  } else if(a.kind==='court') {
     hall(w,4,0,d/2-2)
     hall(3.5,d-4,-w/2+1.75,-2);hall(3.5,d-4,w/2-1.75,-2)
     for(let i=0;i<5;i++)box(2,.08,1.25,0,.05,-d/2+i*1.6,C.stone)
@@ -157,6 +174,15 @@ export function createWuxiaModel(scene, assetId, material) {
     cyl(.16,.65,x,.68,z,C.stone)
     box(.55,.65,.55,x,1.25,z,C.stone);box(.30,.36,.02,x,1.27,z-.285,'#f4ddb0')
     roof(1.1,1.1,x,1.65,z);cyl(.09,.23,x,2.05,z,C.gold)
+  }
+  if(a.kind==='government') {
+    roof(w*.7,d*.65,0,8.1,0)
+    for(const side of [-1,1]) {box(.45,2.8,.45,side*2.5,1.8,front);box(1,.4,1,side*2.5,.2,front,C.stone)}
+    const drum=cyl(.6,.55,-w/3,1.55,front-.4,'#c6a36b');drum.rotation.x=Math.PI/2
+    for(const dx of [-.45,.45])box(.12,1.3,.15,-w/3+dx,.65,front-.4)
+    box(2,1.5,.16,w/3,1.6,front,C.wood);box(1.7,1.2,.04,w/3,1.6,front-.1,C.wall)
+    for(const dx of [-.75,.75])box(.12,1.2,.12,w/3+dx,.6,front)
+    for(let i=0;i<4;i++)box(1.3,.04,.025,w/3,1.95-i*.23,front-.14,C.dark)
   }
   if(a.kind==='riverside') {box(w,.25,2,0,.3,front-1);for(const side of [-1,1])plant(side*w/3,front-1.5)}
   if(a.kind==='workyard') {for(let i=0;i<3;i++){cyl(.55,.12,-w/3+i*1.2,.65,front-1,'#d8be7d');box(.1,.6,.1,-w/3+i*1.2,.3,front-1)}for(let i=0;i<4;i++)beam([w/3,.3+i*.15,front-.4],[w/3+1,.3+i*.15,front-.4],.08,C.wood)}
