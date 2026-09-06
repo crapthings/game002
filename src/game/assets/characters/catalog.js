@@ -1,5 +1,4 @@
 import { HUMAN_SCALE } from '../../world/worldMetrics.js'
-import { zombieCatalog } from '../zombies/catalog.js'
 
 export const PLAYER_ASSET_ID = 'character.player'
 
@@ -12,6 +11,4 @@ export const characterCatalog = [
     category: 'character',
     size: { width: 1.08, height: HUMAN_SCALE.referenceHeight, depth: 1.08 },
   },
-  { assetId: 'character.survivor', name: '幸存者 · 原版保留', category: 'character', size: { width: 0.95, height: HUMAN_SCALE.referenceHeight, depth: 0.85 } },
-  ...zombieCatalog,
 ]

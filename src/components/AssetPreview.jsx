@@ -13,7 +13,6 @@ import { createAssetRegistry } from '../game/assets/createAssetRegistry.js'
 import { HUMAN_SCALE } from '../game/world/worldMetrics.js'
 import { characterCatalog, PLAYER_ASSET_ID } from '../game/assets/characters/catalog.js'
 import { createCharacterModel } from '../game/assets/characters/createCharacterModel.js'
-import { createRoadPreview } from '../game/assets/roads/createRoadPreview.js'
 
 function createHumanReference(scene) {
   return createCharacterModel(scene, PLAYER_ASSET_ID)
@@ -116,9 +115,7 @@ export default function AssetPreview({ asset }) {
     runtime.registry = null
     motionRef.current = 'idle'
     setMotion('idle')
-    if (asset.category === 'road') {
-      runtime.instance = createRoadPreview(runtime.scene, asset)
-    } else if (characterCatalog.some((item) => item.assetId === asset.assetId)) {
+    if (characterCatalog.some((item) => item.assetId === asset.assetId)) {
       runtime.character = createCharacterModel(runtime.scene, asset.assetId)
     } else {
       runtime.registry = createAssetRegistry(runtime.scene)

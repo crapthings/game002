@@ -4,7 +4,6 @@ import GameCanvas from '../components/GameCanvas.jsx'
 import GameOverlay from '../ui/GameOverlay.jsx'
 import { useGameStore } from '../stores/useGameStore.js'
 import { useWorldStore } from '../stores/useWorldStore.js'
-import { useFlashlightStore } from '../stores/useFlashlightStore.js'
 
 export default function GamePage({ seed }) {
   const navigate = useNavigate()
@@ -24,10 +23,7 @@ export default function GamePage({ seed }) {
     const onKeyDown = (event) => {
       if (event.repeat || event.ctrlKey || event.metaKey || event.altKey || /INPUT|TEXTAREA|SELECT/.test(event.target?.tagName) || event.target?.isContentEditable) return
       const state = useGameStore.getState()
-      if (event.code === 'KeyF' && state.phase === 'playing') {
-        event.preventDefault()
-        useFlashlightStore.getState().toggle()
-      } else if (event.code === 'F2' && ['playing', 'paused', 'debug'].includes(state.phase)) {
+      if (event.code === 'F2' && ['playing', 'paused', 'debug'].includes(state.phase)) {
         event.preventDefault()
         if (state.phase === 'debug') state.closeDebug()
         else state.openDebug()
@@ -35,14 +31,9 @@ export default function GamePage({ seed }) {
         event.preventDefault()
         if (state.phase === 'map') state.closeMap()
         else state.openMap()
-      } else if (event.code === 'KeyB' && (state.phase === 'playing' || state.phase === 'inventory')) {
-        event.preventDefault()
-        if (state.phase === 'inventory') state.closeInventory()
-        else state.openInventory()
       } else if (event.code === 'Escape') {
         event.preventDefault()
-        if (state.phase === 'inventory') state.closeInventory()
-        else if (state.phase === 'map') state.closeMap()
+        if (state.phase === 'map') state.closeMap()
         else if (state.phase === 'playing') state.pauseGame()
         else if (state.phase === 'paused') state.resumeGame()
       }

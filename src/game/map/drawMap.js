@@ -1,10 +1,9 @@
 import { roadPoints } from '../world/roads/roadGeometry.js'
 import { FOG_CELL_SIZE, FOG_GROUP_SIZE, REVEAL_RADIUS, isExplored } from './fog.js'
 import { traceVisibility } from './visibility.js'
-import { getSpawnPlan } from '../spawning/createSpawnPlan.js'
 
 // 只读取规划与探索数据，不触发区块生成或素材加载。北方为世界 +Z。
-export function drawMap(ctx, width, height, { center, span, position, heading, fog, plan, radar, revealMap = false, showSpawns = false, vision = { radius: REVEAL_RADIUS, beamRange: 0 } }) {
+export function drawMap(ctx, width, height, { center, span, position, heading, fog, plan, radar, revealMap = false, vision = { radius: REVEAL_RADIUS, beamRange: 0 } }) {
   ctx.clearRect(0, 0, width, height)
   ctx.fillStyle = '#080e0e'
   ctx.fillRect(0, 0, width, height)
@@ -87,6 +86,18 @@ export function drawMap(ctx, width, height, { center, span, position, heading, f
     }
   }
   for (const road of plan.roads || []) drawRoad(road, '#8d8d75')
+  for (const b of plan.fortifications?.colliders || []) {
+    ctx.save()
+    ctx.translate(...screen(b.x, b.z)); ctx.rotate(b.rotation)
+    ctx.fillStyle = '#b5aa86'
+    ctx.fillRect(-b.halfWidth * scale, -b.halfDepth * scale, b.halfWidth * 2 * scale, b.halfDepth * 2 * scale)
+    ctx.restore()
+  }
+  if (!radar) for (const gate of plan.fortifications?.gates || []) {
+    const [x,y] = screen(gate.x, gate.z)
+    ctx.fillStyle = '#efd7a0'; ctx.font = '12px system-ui'; ctx.textAlign = 'center'
+    ctx.fillText(gate.name, x, y - 16)
+  }
   // 已探索但不在当前观察范围内的区域压暗；刷新后仍保留探索记忆。
   const [px, py] = screen(position.x, position.z)
   ctx.save()
@@ -126,14 +137,6 @@ export function drawMap(ctx, width, height, { center, span, position, heading, f
       const [sx, sy] = screen(x, z)
       ctx.fillStyle = '#eee1b6'
       ctx.fillText(town.name, sx, sy - 13)
-    }
-  }
-  if (showSpawns) {
-    ctx.fillStyle='#e99882'
-    for (const point of getSpawnPlan(plan).points) {
-      if (point.x<xMin || point.x>xMax || point.z<zMin || point.z>zMax) continue
-      const [x,y]=screen(point.x,point.z)
-      ctx.beginPath();ctx.arc(x,y,2,0,Math.PI*2);ctx.fill()
     }
   }
   if (px >= 0 && py >= 0 && px <= width && py <= height) {

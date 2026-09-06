@@ -1,4 +1,4 @@
-import { box, cylinder, sphere, defineProp as defineNature } from '../../props/primitives.js'
+import { box, cylinder, sphere, defineNature } from '../primitives.js'
 
 export default defineNature({
   assetId: 'nature.mushroom-cluster', name: '蘑菇簇',

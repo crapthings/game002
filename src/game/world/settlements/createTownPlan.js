@@ -1,36 +1,3 @@
-import { buildingCatalog, BUILDING_CATALOG_VERSION } from '../../assets/buildings/catalog.js'
-import { createRandom } from '../generation/random.js'
-import { STREET_SCALE } from '../worldMetrics.js'
-
-export const TOWN_PLAN_VERSION = 1
-
-// 初版街区：十个地块各使用一种模型；后续城镇生成器可按 category 选取与重复实例化。
-export function createTownPlan(seed) {
-  const random = createRandom(seed, 'starter-town', TOWN_PLAN_VERSION)
-  const models = buildingCatalog.filter(model=>!model.style)
-  for (let index = models.length - 1; index > 0; index -= 1) {
-    const other = Math.floor(random() * (index + 1))
-    const previous = models[index]
-    models[index] = models[other]
-    models[other] = previous
-  }
-  const placements = models.map((model, index) => {
-    const north = index >= 5
-    return {
-      id: `town.outpost/lot/${index}`, assetId: model.assetId,
-      position: [(index % 5 - 2) * 23, 0, north ? 19 : -19],
-      rotation: north ? Math.PI : 0, scale: 1,
-      footprint: model.footprint, entrance: model.entrance,
-    }
-  })
-  return {
-    id: 'town.outpost', name: '灰桥镇', revision: TOWN_PLAN_VERSION, catalogVersion: BUILDING_CATALOG_VERSION,
-    bounds: { minX: -68, maxX: 68, minZ: -33, maxZ: 33 }, elevation: 0,
-    roads: [{ id: 'main-street', from: [-66, 0], to: [66, 0], width: STREET_SCALE.cityMainRoadWidth }],
-    placements,
-  }
-}
-
 export function townSurface(towns, x, z, terrain = false) {
   for (const town of towns) {
     const b = town.bounds

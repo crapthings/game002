@@ -13,7 +13,7 @@ export function createThirdPersonCamera(scene, canvas, isPlaying) {
     drag = null
   }
   const down = event => {
-    if (!isPlaying() || event.button !== 2) return
+    if (!isPlaying() || event.button !== 0) return
     event.preventDefault()
     drag = event.pointerId
     canvas.setPointerCapture(drag)

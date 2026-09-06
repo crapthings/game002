@@ -14,12 +14,15 @@ export function createLocomotion() {
       vx = vz = vy = buffer = jumpAge = 0
       grounded = true; jumps = 0; coyote = JUMP.coyoteTime; flipAge = null
     },
+    beginFall() {
+      vx = vz = vy = buffer = jumpAge = 0
+      grounded = false; jumps = 1; coyote = 0; flipAge = null
+    },
     clearInput() { buffer = 0 },
     update(dt, position, world, { direction, speed, jumpPressed, jumpHeld }) {
       if (jumpPressed) buffer = JUMP.bufferTime
       const startX = position.x, startZ = position.z
       let landed = false, landingImpact = 0
-      let remainingDistance = direction.distance ?? Infinity
       const count = Math.max(1, Math.ceil(dt / JUMP.step)), h = dt / count
       for (let step = 0; step < count; step++) {
         if (grounded) coyote = JUMP.coyoteTime
@@ -34,7 +37,7 @@ export function createLocomotion() {
         buffer = Math.max(0, buffer - h)
         const movingInput = Math.hypot(direction.x, direction.z) > 0.01
         const acceleration = grounded ? (movingInput ? JUMP.groundAcceleration : JUMP.groundBrake) : JUMP.airAcceleration
-        const targetSpeed = Math.min(speed, remainingDistance / Math.max(h, 0.0001))
+        const targetSpeed = speed
         // 松开方向键时保留空中惯性；有输入时可小幅修正落点。
         if (grounded || movingInput) {
           const tx = direction.x * targetSpeed, tz = direction.z * targetSpeed
@@ -45,13 +48,10 @@ export function createLocomotion() {
           vx *= Math.exp(-0.8 * h); vz *= Math.exp(-0.8 * h)
         }
         let dx = vx * h, dz = vz * h
-        const travel = Math.hypot(dx, dz)
-        if (travel > remainingDistance) { dx *= remainingDistance / travel; dz *= remainingDistance / travel }
         // 延续原世界的实体阻挡：空中也不能穿过建筑或进入未加载区域。
         const moveSteps = Math.max(1, Math.ceil(Math.hypot(dx, dz) / 0.15))
         for (let n = 0; n < moveSteps; n++) {
           const sx = dx / moveSteps, sz = dz / moveSteps
-          const oldX = position.x, oldZ = position.z
           const canMove = (x, z) => world.canMove(x, z) && world.terrain.surfaceHeight(x, z) <= position.y + (grounded ? 0.35 : 0.05)
           if (canMove(position.x + sx, position.z + sz)) {
             position.x += sx; position.z += sz
@@ -61,7 +61,6 @@ export function createLocomotion() {
             if (canMove(position.x, position.z + sz)) position.z += sz
             else vz = 0
           }
-          remainingDistance = Math.max(0, remainingDistance - Math.hypot(position.x - oldX, position.z - oldZ))
           const floor = world.terrain.surfaceHeight(position.x, position.z)
           if (grounded && position.y - floor <= JUMP.groundSnap) position.y = floor
           else if (grounded) { grounded = false; jumps = 0 }

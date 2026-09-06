@@ -3,7 +3,6 @@ import { createThirdPersonCamera } from '../cameras/createThirdPersonCamera.js'
 import { useGraphicsStore } from '../../stores/useGraphicsStore.js'
 import { HemisphericLight } from '@babylonjs/core/Lights/hemisphericLight'
 import { DirectionalLight } from '@babylonjs/core/Lights/directionalLight'
-import { SpotLight } from '@babylonjs/core/Lights/spotLight'
 import { Vector3 } from '@babylonjs/core/Maths/math.vector'
 import { Color3, Color4 } from '@babylonjs/core/Maths/math.color'
 import { createStreamedWorld } from '../world/chunks/createStreamedWorld.js'
@@ -11,6 +10,8 @@ import { createCharacterModel } from '../assets/characters/createCharacterModel.
 import { PLAYER_ASSET_ID } from '../assets/characters/catalog.js'
 import { createLocomotion } from '../entities/createLocomotion.js'
 import { createStamina, STAMINA } from '../entities/createStamina.js'
+import { useTeleportStore } from '../../stores/useTeleportStore.js'
+import { teleportLandingCandidates, TELEPORT_DROP_HEIGHT } from '../entities/teleportLanding.js'
 import { useDebugStore } from '../../stores/useDebugStore.js'
 import { usePlayerStatusStore } from '../../stores/usePlayerStatusStore.js'
 import { createMovementInput } from '../core/createMovementInput.js'
@@ -20,12 +21,7 @@ import { useNavigationStore } from '../../stores/useNavigationStore.js'
 import { insideRegion, insideWorld } from '../world/worldConfig.js'
 import { createDayNightCycle } from '../world/createDayNightCycle.js'
 import { useWorldTimeStore } from '../../stores/useWorldTimeStore.js'
-import { SURVIVAL } from '../entities/survival.js'
-import { createFlashlight, FLASHLIGHT } from '../entities/createFlashlight.js'
-import { useFlashlightStore } from '../../stores/useFlashlightStore.js'
 import { createVisibility } from '../map/visibility.js'
-import { createSpawnManager } from '../spawning/createSpawnManager.js'
-import { useSpawnStatsStore } from '../../stores/useSpawnStatsStore.js'
 
 export function createWorldScene(engine, canvas, { onLoading, onReady } = {}) {
   const scene = new Scene(engine)
@@ -42,30 +38,15 @@ export function createWorldScene(engine, canvas, { onLoading, onReady } = {}) {
   const sun = new DirectionalLight('sun', new Vector3(-0.5, -1, 0.4), scene)
   sun.diffuse = new Color3(1, 0.88, 0.7)
   sun.intensity = 0.9
-  const torch = new SpotLight('player-flashlight', Vector3.Zero(), new Vector3(0,-0.08,1), FLASHLIGHT.halfAngle * 2, 2, scene)
-  torch.diffuse = new Color3(1,0.94,0.76)
-  torch.range = FLASHLIGHT.range
-  torch.intensity = 0
-
   const player = createCharacterModel(scene, PLAYER_ASSET_ID)
   const locomotion = createLocomotion()
-  const input = createMovementInput(canvas, scene, () => useGameStore.getState().phase === 'playing')
+  const input = createMovementInput(scene, () => useGameStore.getState().phase === 'playing')
   let world = null, activePlan = null, lastSaved = null, lastSavedFog = null
-  let spawning = null
   let stamina = createStamina(), lastSavedStamina = null
   let dayNight = createDayNightCycle(), lastSavedWorldTime = null
-  let flashlight = createFlashlight(), lastSavedFlashlight = null
-  const visibility = () => createVisibility(dayNight.lighting().daylight, flashlight.snapshot().enabled)
+  const visibility = () => createVisibility(dayNight.lighting().daylight)
+  let teleportJob = null
   let initialChunkCount = 1, ready = false
-  let foodDecay = 0, waterDecay = 0
-  function flushSurvival() {
-    if (!foodDecay && !waterDecay) return
-    const owner = activePlan, food = foodDecay, water = waterDecay
-    foodDecay = 0; waterDecay = 0
-    useWorldStore.getState().dispatch({ type: 'survival-tick', food, water }).then(saved => {
-      if (!saved && activePlan === owner) { foodDecay += food; waterDecay += water }
-    })
-  }
   let saveTimer = 0, exploreTimer = 0, navigationTimer = 0, lightingTimer = 0
   function applyLighting() {
     const state = dayNight.lighting()
@@ -84,21 +65,17 @@ export function createWorldScene(engine, canvas, { onLoading, onReady } = {}) {
   }
   function syncWorld(document) {
     if (!document || document.world === activePlan) return
-    spawning?.dispose()
     world?.dispose()
+    useTeleportStore.getState().finish()
+    teleportJob = null
     world = createStreamedWorld(scene, document.world, useGraphicsStore.getState().viewDistance)
-    spawning = createSpawnManager(scene,document.world,world)
     ready = false
     activePlan = document.world
-    foodDecay = 0; waterDecay = 0
     input.clear()
     locomotion.reset()
     thirdPerson.clear()
     stamina = createStamina(document.progress.stamina)
     dayNight = createDayNightCycle(document.progress.worldTime)
-    flashlight = createFlashlight(document.progress.flashlight)
-    useFlashlightStore.getState().publish(flashlight.hud())
-    lastSavedFlashlight = JSON.stringify(flashlight.snapshot())
     lastSavedStamina = JSON.stringify(stamina.snapshot())
     lastSavedWorldTime = dayNight.snapshot()
     usePlayerStatusStore.getState().publish(stamina.hud())
@@ -122,23 +99,19 @@ export function createWorldScene(engine, canvas, { onLoading, onReady } = {}) {
     lightingTimer = 0
   }
   async function checkpoint() {
-    if (!ready || !world || useWorldStore.getState().document?.world !== activePlan) return
-    flashlight.update(0, useFlashlightStore.getState().enabled)
-    flushSurvival()
+    if (useTeleportStore.getState().request || !ready || !world || useWorldStore.getState().document?.world !== activePlan) return
     const owner = activePlan
     const position = [player.root.position.x, player.root.position.z]
     const fog = useNavigationStore.getState().fog
     const staminaState = stamina.snapshot()
     const staminaKey = JSON.stringify(staminaState)
     const worldTime = dayNight.snapshot()
-    const flashlightState = flashlight.snapshot(), flashlightKey = JSON.stringify(flashlightState)
-    if (lastSaved && Math.hypot(position[0] - lastSaved[0], position[1] - lastSaved[1]) < 0.05 && fog === lastSavedFog && staminaKey === lastSavedStamina && flashlightKey === lastSavedFlashlight && Math.abs(worldTime - lastSavedWorldTime) < 0.0001) return
-    if (await useWorldStore.getState().dispatch({ type: 'checkpoint', position, fog, stamina: staminaState, worldTime, flashlight: flashlightState }) && activePlan === owner) {
+    if (lastSaved && Math.hypot(position[0] - lastSaved[0], position[1] - lastSaved[1]) < 0.05 && fog === lastSavedFog && staminaKey === lastSavedStamina && Math.abs(worldTime - lastSavedWorldTime) < 0.0001) return
+    if (await useWorldStore.getState().dispatch({ type: 'checkpoint', position, fog, stamina: staminaState, worldTime }) && activePlan === owner) {
       lastSaved = position
       lastSavedFog = fog
       lastSavedStamina = staminaKey
       lastSavedWorldTime = worldTime
-      lastSavedFlashlight = flashlightKey
     }
   }
   syncWorld(useWorldStore.getState().document)
@@ -165,6 +138,60 @@ export function createWorldScene(engine, canvas, { onLoading, onReady } = {}) {
   scene.onBeforeRenderObservable.add(() => {
     if (!world) return
     const position = player.root.position
+    const teleport = useTeleportStore.getState()
+    const request = teleport.request
+    if (request && ready) {
+      if (useGameStore.getState().phase !== 'map' || !useDebugStore.getState().teleportMode || request.seed !== activePlan.seed) {
+        teleport.finish('已取消瞬移。')
+        teleportJob = null
+      } else {
+        if (teleportJob?.id !== request.id) {
+          teleportJob = { id: request.id, started: performance.now(), candidates: null }
+          input.clear()
+          locomotion.clearInput()
+        }
+        if (performance.now() - teleportJob.started > 45000) {
+          teleport.finish('附近区域准备超时，请换个位置重试。')
+          teleportJob = null
+          return
+        }
+        // 一次只计算一个 Worker 区块，主线程安装预算 2ms，不加载整张地图。
+        world.update(request.x, request.z, 2)
+        const stats = world.getStats()
+        if (stats.queued > 0 || stats.templatesReady !== stats.templatesTotal) {
+          teleport.publish(Math.round(stats.ready / Math.max(1, stats.required) * 90), `正在准备落点附近区域 ${stats.ready}/${stats.required}…`)
+          return
+        }
+        teleport.publish(95, '正在寻找避开模型的安全落点…')
+        teleportJob.candidates ??= teleportLandingCandidates(request.x, request.z)
+        const started = performance.now()
+        let attempts = 0
+        while (attempts++ < 16 && performance.now() - started < 2) {
+          const candidate = teleportJob.candidates.next()
+          if (candidate.done) {
+            teleport.finish('附近没有足够平坦的空地，请换个位置。')
+            teleportJob = null
+            return
+          }
+          const { x, z } = candidate.value
+          if (!world.isClearLanding(x, z) || !world.canMove(x, z, 1.1)) continue
+          const floor = world.terrain.surfaceHeight(x, z)
+          position.set(x, floor + TELEPORT_DROP_HEIGHT, z)
+          locomotion.beginFall()
+          input.clear()
+          thirdPerson.clear()
+          player.update(0, false, position.y, false, { grounded: false, groundHeight: floor, heightAboveGround: TELEPORT_DROP_HEIGHT })
+          thirdPerson.follow(player.root, world.terrain)
+          useNavigationStore.getState().update({ x, y: position.y, z }, player.root.rotation.y, visibility())
+          teleport.finish()
+          teleportJob = null
+          useGameStore.getState().closeMap()
+          checkpoint()
+          return
+        }
+        return
+      }
+    } else teleportJob = null
     world.update(position.x, position.z)
     if (!ready) {
       const stats = world.getStats()
@@ -184,9 +211,6 @@ export function createWorldScene(engine, canvas, { onLoading, onReady } = {}) {
           useNavigationStore.getState().update({ x: position.x, y: position.y, z: position.z }, player.root.rotation.y)
           return
         }
-        const spawnState=spawning.update(0,position,player.root.rotation.y,visibility(),useWorldStore.getState().document.progress,{initial:true,paused:useDebugStore.getState().pauseSpawning})
-        useSpawnStatsStore.getState().publish(spawnState)
-        if (!spawnState.ready) { onLoading?.({progress:96,label:`正在准备附近感染者 ${spawnState.active}/32`});return }
         ready = true
         onLoading?.({ progress: 100, label: '世界准备完成' })
         onReady?.()
@@ -195,18 +219,15 @@ export function createWorldScene(engine, canvas, { onLoading, onReady } = {}) {
     if (useGameStore.getState().phase !== 'playing') return
     const dt = Math.min(engine.getDeltaTime() / 1000, 0.05)
     dayNight.update(dt)
-    flashlight.update(dt, useFlashlightStore.getState().enabled)
     lightingTimer += dt
     if (lightingTimer >= 0.1) {
       lightingTimer = 0
       applyLighting()
     }
-    const direction = input.direction(position)
+    const direction = input.direction()
     const wantsSprint = input.wantsSprint()
-    const needs = useWorldStore.getState().document?.progress.survival
-    const depleted = needs && (needs.food <= 0 || needs.water <= 0)
     const debug = useDebugStore.getState()
-    const sprintAllowed = wantsSprint && (debug.infiniteSprint || !depleted)
+    const sprintAllowed = wantsSprint
     const speed = debug.infiniteSprint && sprintAllowed ? STAMINA.runSpeed : stamina.speed(sprintAllowed)
     const multiplier = sprintAllowed && speed === STAMINA.runSpeed ? debug.sprintMultiplier : 1
     const motion = locomotion.update(dt, position, world, {
@@ -215,25 +236,17 @@ export function createWorldScene(engine, canvas, { onLoading, onReady } = {}) {
     })
     const moving = motion.moving
     const running = debug.infiniteSprint ? moving && sprintAllowed : stamina.update(dt, moving, sprintAllowed)
-    foodDecay += SURVIVAL.foodPerSecond * dt * (running ? 1.5 : 1)
-    waterDecay += SURVIVAL.waterPerSecond * dt * (running ? 2 : 1)
     if (moving) {
       const turn = Math.atan2(Math.sin(motion.heading - player.root.rotation.y), Math.cos(motion.heading - player.root.rotation.y))
       player.root.rotation.y += turn * (1 - Math.exp(-dt * (motion.grounded ? 18 : 9)))
     }
     player.update(dt, moving, position.y, running, motion)
-    torch.position.set(position.x,position.y+1.35,position.z)
-    torch.direction.set(Math.sin(player.root.rotation.y),-0.08,Math.cos(player.root.rotation.y))
-    torch.intensity = flashlight.snapshot().enabled ? 5 : 0
-    spawning.update(dt,position,player.root.rotation.y,visibility(),useWorldStore.getState().document.progress,{paused:debug.pauseSpawning})
     thirdPerson.follow(player.root, world.terrain, dt)
     navigationTimer += dt
     if (navigationTimer >= 0.1) {
       navigationTimer = 0
       usePlayerStatusStore.getState().publish(debug.infiniteSprint ? { ...stamina.hud(), mode: running ? 'running' : moving ? 'walking' : 'idle' } : stamina.hud())
       useNavigationStore.getState().update({ x: position.x, y: position.y, z: position.z }, player.root.rotation.y, visibility())
-      useFlashlightStore.getState().publish(flashlight.hud())
-      useSpawnStatsStore.getState().publish(spawning.getStats())
     }
     saveTimer += dt
     exploreTimer += dt
@@ -255,6 +268,7 @@ export function createWorldScene(engine, canvas, { onLoading, onReady } = {}) {
   })
   scene.onDisposeObservable.add(() => {
     checkpoint()
+    useTeleportStore.getState().finish()
     unsubscribeWorld()
     unsubscribePhase()
     window.removeEventListener('pagehide', checkpoint)
@@ -263,8 +277,6 @@ export function createWorldScene(engine, canvas, { onLoading, onReady } = {}) {
     input.dispose()
     delete canvas.dataset.runtime
     player.dispose()
-    spawning?.dispose()
-    useSpawnStatsStore.getState().publish({active:0,visible:0,planned:0,deferred:0})
     world?.dispose()
   })
   return scene

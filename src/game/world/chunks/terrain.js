@@ -1,3 +1,4 @@
+import { fortificationGround, fortificationClearance } from '../fortifications/createFortifications.js'
 import { createRandom } from '../generation/random.js'
 import { townSurface } from '../settlements/createTownPlan.js'
 import { compileRoadNetwork, sampleRoad } from '../roads/roadGeometry.js'
@@ -59,7 +60,7 @@ export function createTerrain(seed, settlements = [], plan = null) {
     const surface = townSurface(settlements, x, z, true)
     const townHeight = surface ? base * (1 - surface.weight) + surface.town.elevation * surface.weight : base
     // 新地形道路随地面起伏；旧世界仍保留原来的零海拔路基。
-    if (topography) return townHeight
+    if (topography) return fortificationGround(plan?.fortifications, x, z, townHeight)
     const road = nearbyRoad(x, z)
     const t = Math.max(0, Math.min(1, (road.distance - road.width / 2 - 1) / 8))
     return townHeight * (1 - (1 - smooth(t)) * road.fade)
@@ -127,6 +128,7 @@ export function generateChunk(terrain, cx, cz) {
     const random = createRandom(terrain.seed, terrain.plan?.terrainVersion || TERRAIN_VERSION, 'chunk-props', cx, cz, index)
     const x = Math.round(cx * CHUNK_SIZE + (index % 6 + 0.3 + random() * 0.4) * CHUNK_SIZE / 6)
     const z = Math.round(cz * CHUNK_SIZE + (Math.floor(index / 6) + 0.3 + random() * 0.4) * CHUNK_SIZE / 6)
+    if (fortificationClearance(terrain.plan?.fortifications, x, z)) continue
     const profile = terrain.ecology(x, z)
     if (random() > profile.density) continue
     const road = terrain.nearbyRoad(x, z)

@@ -1,3 +1,4 @@
+import { blocksFortification } from '../fortifications/createFortifications.js'
 import { Mesh } from '@babylonjs/core/Meshes/mesh'
 import { VertexData } from '@babylonjs/core/Meshes/mesh.vertexData'
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode'
@@ -9,7 +10,6 @@ import { biomeCatalog } from '../biomes/catalog.js'
 import { HUMAN_SCALE } from '../worldMetrics.js'
 import { insideWorld } from '../worldConfig.js'
 import { townSurface } from '../settlements/createTownPlan.js'
-import { createStreetSection } from '../settlements/createStreetSection.js'
 import { createTerrain, chunkAt, chunkKey, requiredChunks, CHUNK_SIZE } from './terrain.js'
 
 export function createStreamedWorld(scene, plan, initialViewDistance = 64) {
@@ -31,6 +31,7 @@ export function createStreamedWorld(scene, plan, initialViewDistance = 64) {
     ...towns.flatMap((town) => [...town.placements, ...(town.decorations || [])].map((item) => item.assetId)),
     ...plan.regions.flatMap((region) => region.placements.map((item) => item.assetId)),
   ])].filter((id) => !id.startsWith('landmark.'))
+  warmup.push(...new Set((plan.fortifications?.placements || []).map(p => p.assetId)))
   const templateCount = warmup.length
   worker.onmessage = ({ data: message }) => {
     if (disposed) return
@@ -67,6 +68,12 @@ export function createStreamedWorld(scene, plan, initialViewDistance = 64) {
       overrides.get(key).push({ ...placement, regionId: town.regionId, decoration: true })
     }
   }
+  for (const placement of plan.fortifications?.placements || []) {
+    const chunk = chunkAt(placement.position[0], placement.position[2])
+    const key = chunkKey(chunk.x, chunk.z)
+    if (!overrides.has(key)) overrides.set(key, [])
+    overrides.get(key).push(placement)
+  }
   function* build(chunk, data, root) {
     const mesh = new Mesh(`ground:${chunk.key}`, scene)
     mesh.parent = root
@@ -80,9 +87,7 @@ export function createStreamedWorld(scene, plan, initialViewDistance = 64) {
     mesh.receiveShadows = true
     mesh.metadata = { ground: true, chunkKey: chunk.key }
     yield
-    createStreetSection(scene, root, chunk, data, plan.seed)
-    yield
-    const colliders = []
+    const colliders = [], landingObstacles = []
     for (const placement of data.placements) {
       if (!placement.planned && !placement.building && !placement.decoration && plan.regions.some((region) => region.placements.length > 0 && Math.hypot(placement.position[0] - region.center[0], placement.position[2] - region.center[1]) < region.radius)) continue
       const x = placement.position[0], z = placement.position[2]
@@ -90,7 +95,16 @@ export function createStreamedWorld(scene, plan, initialViewDistance = 64) {
       const spawn = plan.spawn || [0, 0]
       if (Math.hypot(x - spawn[0], z - spawn[1]) < 3 || placement.assetId.startsWith('landmark.')) continue
       if (!placement.building && !placement.decoration && townSurface(towns, x, z)?.weight > 0.5) continue
-      assets.create(placement, root, placement.regionId)
+      const instance = assets.create(placement, root, placement.regionId)
+      instance.computeWorldMatrix(true)
+      const box = instance.getBoundingInfo().boundingBox
+      // 额外保留视觉包围盒，瞬移避开树冠与无移动碰撞的高灌木。
+      if (box.maximumWorld.y - placement.position[1] > 0.35) landingObstacles.push({
+        minX: box.minimumWorld.x, maxX: box.maximumWorld.x,
+        minZ: box.minimumWorld.z, maxZ: box.maximumWorld.z,
+        top: box.maximumWorld.y,
+      })
+      if (placement.fortification) { yield; continue }
       const definition = environmentCatalog[placement.assetId]
       const footprint = placement.footprint || definition?.footprint
       if (footprint) {
@@ -110,7 +124,7 @@ export function createStreamedWorld(scene, plan, initialViewDistance = 64) {
       bounds.maxZ = Math.max(bounds.maxZ, obstacle.z + reach)
       return bounds
     }, { minX: Infinity, maxX: -Infinity, minZ: Infinity, maxZ: -Infinity })
-    loaded.set(chunk.key, { root, colliders, bounds })
+    loaded.set(chunk.key, { root, colliders, bounds, landingObstacles })
   }
   function update(x, z, budgetMs = 3) {
     if (failure) throw failure
@@ -171,8 +185,21 @@ export function createStreamedWorld(scene, plan, initialViewDistance = 64) {
     getStats: () => ({ loaded: loaded.size, queued: required.filter((chunk) => !loaded.has(chunk.key)).length, required: required.length, ready: required.filter((chunk) => loaded.has(chunk.key)).length, templatesReady: templateCount - warmup.length, templatesTotal: templateCount, pending: Boolean(pending), assembling: Boolean(assembling), center }),
     // 所有导航与移动共用这层检查，不依赖美术模型的三角面。
     isLoaded(x,z) { const at=chunkAt(x,z); return loaded.has(chunkKey(at.x,at.z)) },
+    isClearLanding(x, z) {
+      if (!insideWorld(plan.bounds, x, z, 3)) return false
+      const at = chunkAt(x, z)
+      // 邻块也必须完成，防止忽略从相邻区块伸来的树冠。
+      for (const chunk of requiredChunks(at, 1)) {
+        if (insideWorld(plan.bounds, (chunk.x + 0.5) * CHUNK_SIZE, (chunk.z + 0.5) * CHUNK_SIZE) && !loaded.has(chunk.key)) return false
+      }
+      const floor = terrain.surfaceHeight(x, z), clearance = 1.1
+      for (const entry of loaded.values()) {
+        if (entry.landingObstacles.some(b => b.top > floor + 0.35 && x + clearance >= b.minX && x - clearance <= b.maxX && z + clearance >= b.minZ && z - clearance <= b.maxZ)) return false
+      }
+      return [[1.5,0],[-1.5,0],[0,1.5],[0,-1.5]].every(([dx,dz]) => Math.abs(terrain.surfaceHeight(x + dx,z + dz) - floor) < 0.45)
+    },
     canMove(x, z, radius = HUMAN_SCALE.collisionRadius) {
-      if (!insideWorld(plan.bounds, x, z, 1)) return false
+      if (!insideWorld(plan.bounds, x, z, 1) || blocksFortification(plan.fortifications, x, z, radius)) return false
       const at = chunkAt(x, z)
       if (!loaded.has(chunkKey(at.x, at.z))) return false
       for (const entry of loaded.values()) {

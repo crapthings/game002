@@ -7,8 +7,8 @@ const GamePage = lazy(() => import('./pages/GamePage.jsx'))
 const AssetGalleryPage = lazy(() => import('./pages/AssetGalleryPage.jsx'))
 const WorldPlanPage = lazy(() => import('./pages/WorldPlanPage.jsx'))
 
-function LoadingScreen({ title = '进入失落之地', label = '正在载入游戏模块' }) {
-  return <main className="flex h-dvh min-h-96 items-center justify-center bg-slate-950 p-6"><div className="w-full max-w-sm"><p className="text-xs font-semibold tracking-[0.25em] text-emerald-300">GAME001</p><h1 className="mt-3 text-2xl font-semibold text-stone-100">{title}</h1><div className="mt-7 h-1.5 overflow-hidden rounded-full bg-stone-800" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={12}><div className="h-full w-[12%] rounded-full bg-emerald-300" /></div><div className="mt-3 flex justify-between text-xs text-stone-500"><span>{label}</span><span className="font-mono">12%</span></div></div></main>
+function LoadingScreen({ title = '进入江湖', label = '正在载入游戏模块' }) {
+  return <main className="flex h-dvh min-h-96 items-center justify-center bg-slate-950 p-6"><div className="w-full max-w-sm"><p className="text-xs font-semibold tracking-[0.25em] text-emerald-300">GAME002</p><h1 className="mt-3 text-2xl font-semibold text-stone-100">{title}</h1><div className="mt-7 h-1.5 overflow-hidden rounded-full bg-stone-800" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={12}><div className="h-full w-[12%] rounded-full bg-emerald-300" /></div><div className="mt-3 flex justify-between text-xs text-stone-500"><span>{label}</span><span className="font-mono">12%</span></div></div></main>
 }
 
 function GameRoute() {

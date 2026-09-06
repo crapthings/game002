@@ -46,7 +46,7 @@ export default function GameCanvas({ onLoading, onReady, onError }) {
 
   return (
     <>
-      <canvas ref={canvasRef} className="block h-full w-full outline-none" aria-label="45 度俯视游戏场景，使用 WASD 或点击地面移动" />
+      <canvas ref={canvasRef} className="block h-full w-full outline-none" aria-label="第三人称武侠场景，WASD 移动，空格两段跳，左键转动视角" />
       {error && <p role="alert" className="absolute inset-x-6 top-1/2 rounded-xl bg-red-950 p-4 text-red-100">{error}</p>}
     </>
   )

@@ -1,12 +1,10 @@
+import { fortificationDefinitions } from './fortifications/catalog.js'
+import { createFortificationModel } from './fortifications/createFortificationModel.js'
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder'
 import { Mesh } from '@babylonjs/core/Meshes/mesh'
 import '@babylonjs/core/Meshes/instancedMesh'
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial'
 import { Color3 } from '@babylonjs/core/Maths/math.color'
-import { getBuildingDefinition } from './buildings/catalog.js'
-import { createBuildingModel } from './buildings/createBuildingModel.js'
-import { getVillageBuildingDefinition } from './village/catalog.js'
-import { createVillageBuildingModel } from './village/createVillageBuildingModel.js'
 import { environmentCatalog } from './environment/catalog.js'
 import { createEnvironmentModel } from './environment/createEnvironmentModel.js'
 
@@ -26,12 +24,8 @@ export function createAssetRegistry(scene) {
   function template(assetId) {
     if (templates.has(assetId)) return templates.get(assetId)
     let mesh
-    const building = getBuildingDefinition(assetId)
-    const village = getVillageBuildingDefinition(assetId)
-    if (village) {
-      mesh = createVillageBuildingModel(scene, village, material)
-    } else if (building) {
-      mesh = createBuildingModel(scene, building, material)
+    if (fortificationDefinitions[assetId]) {
+      mesh = createFortificationModel(scene, assetId, material)
     } else if (environmentCatalog[assetId]) {
       mesh = createEnvironmentModel(scene, assetId, environmentCatalog[assetId], material)
     } else if (assetId === 'nature.tree') {
@@ -49,12 +43,7 @@ export function createAssetRegistry(scene) {
       mesh.bakeCurrentTransformIntoVertices()
       mesh.material = material('#b5b2a0')
     } else {
-      // 地标当前均为规划代理，颜色区分逻辑资产，未知资产也有可见占位。
-      const colors = { 'landmark.camp': '#e5bd73', 'landmark.ruins': '#a0b8b7', 'landmark.lookout': '#df9268' }
-      mesh = MeshBuilder.CreateCylinder(assetId, { height: 4, diameterBottom: 3, diameterTop: 1.8, tessellation: 6 }, scene)
-      mesh.position.y = 2
-      mesh.bakeCurrentTransformIntoVertices()
-      mesh.material = material(colors[assetId] || '#e37dd2')
+      throw new Error(`未知自然资产：${assetId}`)
     }
     mesh.name = `template:${assetId}`
     mesh.isVisible = false
