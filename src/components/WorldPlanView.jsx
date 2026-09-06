@@ -32,10 +32,19 @@ export default function WorldPlanView({plan,selected,onSelect,focus,layers,baseM
       </g>
     })}
     <g pointerEvents="none">
+      {plan.city && <g>
+        {plan.city.parcels.filter(p=>p.use==='garden').map(p=><rect key={p.id} x={p.bounds.minX+3} y={-p.bounds.maxZ+3} width={26} height={26} fill="#719767"/>)}
+        <rect x={plan.city.water.minX} y={-plan.city.water.maxZ} width={plan.city.water.maxX-plan.city.water.minX} height={plan.city.water.maxZ-plan.city.water.minZ} fill="#68bcb6"/>
+        {plan.city.placements.filter(p=>p.building).map(p=><rect key={p.id} transform={`translate(${p.position[0]} ${-p.position[2]}) rotate(${p.rotation*180/Math.PI})`} x={-p.footprint.width/2} y={-p.footprint.depth/2} width={p.footprint.width} height={p.footprint.depth} fill="#ded0a4" stroke="#606d58" strokeWidth={line*.5}/>)}
+        {plan.city.bridges.map(b=><rect key={b.id} x={b.x-b.width/2} y={-b.z-b.length/2} width={b.width} height={b.length} fill="#eee0b5"/>)}
+      </g>}
+      {layers.districts && plan.hierarchy?.districts.map(d=><g key={d.id}><rect x={d.bounds.minX} y={-d.bounds.maxZ} width={128} height={128} fill="none" stroke="#b7ddc8" strokeWidth={line*1.8}/><text x={d.bounds.minX+8} y={-d.bounds.maxZ+14} fontSize={line*12} fill="#eff4d1">{({residential:'民居坊',market:'商市坊',academy:'文教坊',garden:'园林坊'})[d.landUse]}</text></g>)}
+      {layers.parcels && plan.hierarchy?.details.map(d=><rect key={d.id} x={d.bounds.minX} y={-d.bounds.maxZ} width={32} height={32} fill="none" stroke="#e6d7ac" strokeOpacity=".5" strokeWidth={line*.5}/>)}
+
       {(plan.fortifications?.colliders || []).map((b,index)=><rect key={`fort-${index}`} transform={`translate(${b.x} ${-b.z}) rotate(${b.rotation*180/Math.PI})`} x={-b.halfWidth} y={-b.halfDepth} width={b.halfWidth*2} height={b.halfDepth*2} fill="#bcaf8c" stroke="#39433e" strokeWidth={line}/>)}
       {layers.labels && plan.fortifications?.gates.map(gate=><text key={gate.id} x={gate.x} y={-gate.z-18} textAnchor="middle" fill="#ffe6ae" fontSize={line*15} stroke="#192a23" strokeWidth={line} paintOrder="stroke">{gate.name}</text>)}
       {layers.details && plan.hierarchy?.cells.map(cell => <rect key={cell.id} x={cell.bounds.minX} y={-cell.bounds.maxZ} width={cell.bounds.maxX-cell.bounds.minX} height={cell.bounds.maxZ-cell.bounds.minZ} fill="none" stroke="#d0ded0" strokeOpacity="0.35" strokeWidth={line*0.6} strokeDasharray={`${line*3} ${line*3}`}/>)}
-      {layers.macros && plan.hierarchy?.macros.map(macro => <g key={macro.id}><rect x={macro.bounds.minX} y={-macro.bounds.maxZ} width={macro.bounds.maxX-macro.bounds.minX} height={macro.bounds.maxZ-macro.bounds.minZ} fill="none" stroke="#f6d294" strokeWidth={line*2.5}/><text x={macro.bounds.minX+15} y={-macro.bounds.maxZ+24} fill="#f6d294" fontSize={line*12}>{({forest:'林地带',lowland:'湿地低地',rural:'农业带',upland:'荒野高地'})[macro.theme]}</text></g>)}
+      {layers.macros && plan.hierarchy?.macros.map(macro => <g key={macro.id}><rect x={macro.bounds.minX} y={-macro.bounds.maxZ} width={macro.bounds.maxX-macro.bounds.minX} height={macro.bounds.maxZ-macro.bounds.minZ} fill="none" stroke="#f6d294" strokeWidth={line*2.5}/><text x={macro.bounds.minX+15} y={-macro.bounds.maxZ+24} fill="#f6d294" fontSize={line*12}>{({residential:'民居城区',market:'商市城区',academy:'文教城区',garden:'园林城区'})[plan.city?.sectors.find(s=>s.id===macro.id)?.role] || ({forest:'林地带',lowland:'湿地低地',rural:'农业带',upland:'荒野高地'})[macro.theme]}</text></g>)}
       {layers.settlements && plan.settlements.map(town=><g key={town.id}>
         <rect x={town.bounds.minX} y={-town.bounds.maxZ} width={town.bounds.maxX-town.bounds.minX} height={town.bounds.maxZ-town.bounds.minZ} fill="#182827" fillOpacity="0.28" stroke="#eddec4" strokeWidth={line} strokeDasharray={`${line*5} ${line*3}`}/>
         {(town.blocks || []).map(block=><rect key={block.id} x={block.bounds.minX} y={-block.bounds.maxZ} width={block.bounds.maxX-block.bounds.minX} height={block.bounds.maxZ-block.bounds.minZ} fill={districtColors[block.kind]} fillOpacity="0.8" stroke="#243831" strokeWidth={line*0.6}/>)}

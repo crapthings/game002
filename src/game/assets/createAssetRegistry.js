@@ -1,3 +1,7 @@
+import { cityAssetDefinitions } from './city/catalog.js'
+import { createBridgeModel } from './city/createBridgeModel.js'
+import { wuxiaDefinitions } from './wuxia/catalog.js'
+import { createWuxiaModel } from './wuxia/createWuxiaModel.js'
 import { fortificationDefinitions } from './fortifications/catalog.js'
 import { createFortificationModel } from './fortifications/createFortificationModel.js'
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder'
@@ -24,7 +28,11 @@ export function createAssetRegistry(scene) {
   function template(assetId) {
     if (templates.has(assetId)) return templates.get(assetId)
     let mesh
-    if (fortificationDefinitions[assetId]) {
+    if (cityAssetDefinitions[assetId]) {
+      mesh = createBridgeModel(scene,assetId,material)
+    } else if (wuxiaDefinitions[assetId]) {
+      mesh = createWuxiaModel(scene, assetId, material)
+    } else if (fortificationDefinitions[assetId]) {
       mesh = createFortificationModel(scene, assetId, material)
     } else if (environmentCatalog[assetId]) {
       mesh = createEnvironmentModel(scene, assetId, environmentCatalog[assetId], material)

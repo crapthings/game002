@@ -1,3 +1,6 @@
+import { inCanal, onBridge } from '../city/createCityPlan.js'
+import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder'
+import { wuxiaDefinitions } from '../../assets/wuxia/catalog.js'
 import { blocksFortification } from '../fortifications/createFortifications.js'
 import { Mesh } from '@babylonjs/core/Meshes/mesh'
 import { VertexData } from '@babylonjs/core/Meshes/mesh.vertexData'
@@ -20,6 +23,12 @@ export function createStreamedWorld(scene, plan, initialViewDistance = 64) {
   const material = new StandardMaterial('terrain-material', scene)
   material.diffuseColor = Color3.White()
   material.specularColor = Color3.Black()
+  const waterMaterial=new StandardMaterial('city-water',scene)
+  waterMaterial.diffuseColor=Color3.FromHexString('#59b5ae')
+  waterMaterial.specularColor=Color3.FromHexString('#bce6d9')
+  const bankMaterial=new StandardMaterial('city-quay',scene)
+  bankMaterial.diffuseColor=Color3.FromHexString('#a7b4a1')
+  bankMaterial.specularColor=Color3.Black()
   const worker = new Worker(new URL('./chunk.worker.js', import.meta.url), { type: 'module' })
   let center = null, queue = [], wanted = new Map(), required = [], pending = null, prepared = null, assembling = null
   let disposed = false, failure = null
@@ -32,6 +41,7 @@ export function createStreamedWorld(scene, plan, initialViewDistance = 64) {
     ...plan.regions.flatMap((region) => region.placements.map((item) => item.assetId)),
   ])].filter((id) => !id.startsWith('landmark.'))
   warmup.push(...new Set((plan.fortifications?.placements || []).map(p => p.assetId)))
+  warmup.push(...new Set((plan.city?.placements || []).map(p => p.assetId)))
   const templateCount = warmup.length
   worker.onmessage = ({ data: message }) => {
     if (disposed) return
@@ -68,7 +78,7 @@ export function createStreamedWorld(scene, plan, initialViewDistance = 64) {
       overrides.get(key).push({ ...placement, regionId: town.regionId, decoration: true })
     }
   }
-  for (const placement of plan.fortifications?.placements || []) {
+  for (const placement of [...(plan.fortifications?.placements || []),...(plan.city?.placements || [])]) {
     const chunk = chunkAt(placement.position[0], placement.position[2])
     const key = chunkKey(chunk.x, chunk.z)
     if (!overrides.has(key)) overrides.set(key, [])
@@ -87,6 +97,28 @@ export function createStreamedWorld(scene, plan, initialViewDistance = 64) {
     mesh.receiveShadows = true
     mesh.metadata = { ground: true, chunkKey: chunk.key }
     yield
+    const river=plan.city?.water
+    if(river) {
+      const minX=Math.max(chunk.x*CHUNK_SIZE,river.minX),maxX=Math.min((chunk.x+1)*CHUNK_SIZE,river.maxX)
+      const minZ=Math.max(chunk.z*CHUNK_SIZE,river.minZ),maxZ=Math.min((chunk.z+1)*CHUNK_SIZE,river.maxZ)
+      if(maxX>minX&&maxZ>minZ) {
+        const water=MeshBuilder.CreateGround('canal-water',{width:maxX-minX,height:maxZ-minZ},scene)
+        water.position.set((minX+maxX)/2,river.level,(minZ+maxZ)/2);water.parent=root;water.material=waterMaterial;water.isPickable=false
+      }
+      const banks=[]
+      if(maxX>minX)for(const z of [river.minZ,river.maxZ])if(z>=chunk.z*CHUNK_SIZE&&z<(chunk.z+1)*CHUNK_SIZE) {
+        // 桥头预留缺口，堤岸不会挡住通路。
+        for(let x=minX;x<maxX;x+=1)if(!onBridge(plan.city,x+.5,z,.0)) {
+          const bank=MeshBuilder.CreateBox('canal-bank',{width:1,height:2,depth:.35},scene)
+          bank.position.set(x+.5,plan.city.elevation-1,z);bank.parent=root;bank.material=bankMaterial;bank.isPickable=false;banks.push(bank)
+        }
+      }
+      if(banks.length) {
+        for(const bank of banks) {bank.parent=null;bank.computeWorldMatrix(true)}
+        const merged=Mesh.MergeMeshes(banks,true,true);merged.parent=root;merged.isPickable=false
+      }
+    }
+    yield
     const colliders = [], landingObstacles = []
     for (const placement of data.placements) {
       if (!placement.planned && !placement.building && !placement.decoration && plan.regions.some((region) => region.placements.length > 0 && Math.hypot(placement.position[0] - region.center[0], placement.position[2] - region.center[1]) < region.radius)) continue
@@ -104,10 +136,13 @@ export function createStreamedWorld(scene, plan, initialViewDistance = 64) {
         minZ: box.minimumWorld.z, maxZ: box.maximumWorld.z,
         top: box.maximumWorld.y,
       })
-      if (placement.fortification) { yield; continue }
-      const definition = environmentCatalog[placement.assetId]
+      if (placement.fortification || placement.infrastructure) { yield; continue }
+      const definition = environmentCatalog[placement.assetId] || wuxiaDefinitions[placement.assetId]
       const footprint = placement.footprint || definition?.footprint
-      if (footprint) {
+      if (definition?.kind==='court') {
+        const c=Math.cos(placement.rotation),s=Math.sin(placement.rotation)
+        for(const [ox,oz,w,d] of [[0,definition.depth/2-2,definition.width,4],[-definition.width/2+1.75,-2,3.5,definition.depth-4],[definition.width/2-1.75,-2,3.5,definition.depth-4]])colliders.push({x:x+c*ox+s*oz,z:z-s*ox+c*oz,rotation:placement.rotation,halfWidth:w/2,halfDepth:d/2})
+      } else if (footprint) {
         colliders.push({ x, z, rotation: placement.rotation, halfWidth: footprint.width * placement.scale / 2, halfDepth: footprint.depth * placement.scale / 2 })
       } else {
         const radius = definition?.radius ?? (placement.assetId === 'nature.tree' ? 0.45 : 0.9)
@@ -200,6 +235,8 @@ export function createStreamedWorld(scene, plan, initialViewDistance = 64) {
     },
     canMove(x, z, radius = HUMAN_SCALE.collisionRadius) {
       if (!insideWorld(plan.bounds, x, z, 1) || blocksFortification(plan.fortifications, x, z, radius)) return false
+      if (plan.city?.bridges.some(b=>Math.abs(z-b.z)<b.length/2 && Math.abs(Math.abs(x-b.x)-b.width/2-.12)<radius+.12)) return false
+      if (inCanal(plan.city,x,z,radius) && !onBridge(plan.city,x,z,radius)) return false
       const at = chunkAt(x, z)
       if (!loaded.has(chunkKey(at.x, at.z))) return false
       for (const entry of loaded.values()) {
@@ -227,6 +264,8 @@ export function createStreamedWorld(scene, plan, initialViewDistance = 64) {
       loaded.clear()
       assets.dispose()
       material.dispose()
+      waterMaterial.dispose()
+      bankMaterial.dispose()
     },
   }
 }

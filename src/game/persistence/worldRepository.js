@@ -8,8 +8,8 @@ import { validStamina } from '../entities/createStamina.js'
 import { validWorldTime } from '../world/createDayNightCycle.js'
 
 const SCHEMA_VERSION = 2
-const PREFIX = 'game002:world:512:v6:'
-const ACTIVE_KEY = 'game002:active-seed:512:v6'
+const PREFIX = 'game002:world:512:v7:'
+const ACTIVE_KEY = 'game002:active-seed:512:v7'
 const point = value => Array.isArray(value) && value.length === 2 && value.every(Number.isFinite)
 const bounds = b => b && ['minX','maxX','minZ','maxZ'].every(key => Number.isFinite(b[key])) && b.minX < b.maxX && b.minZ < b.maxZ && b.minX >= WORLD_BOUNDS.minX && b.maxX <= WORLD_BOUNDS.maxX && b.minZ >= WORLD_BOUNDS.minZ && b.maxZ <= WORLD_BOUNDS.maxZ
 
@@ -17,7 +17,7 @@ export function validateDocument(document, seed) {
   if (document?.schemaVersion !== SCHEMA_VERSION || !Number.isInteger(document.revision) || document.revision < 0) throw new Error('存档版本无效，已保留原始数据。')
   const world = document.world, progress = document.progress
   if (world?.seed !== seed || world.generatorVersion !== GENERATOR_VERSION || world.planVersion !== 2 || world.unitSize !== 1 || world.size !== WORLD_SIZE || !bounds(world.bounds) || !Object.entries(WORLD_BOUNDS).every(([key,value]) => world.bounds[key] === value) || !point(world.spawn) || !insideWorld(world.bounds,...world.spawn,1)) throw new Error('512 米世界规格无效。')
-  if (!Array.isArray(world.settlements) || world.settlements.length || !Array.isArray(world.roads) || world.roads.length || world.spawnPlan) throw new Error('当前世界仅支持自然资产规划。')
+  if (!Array.isArray(world.settlements) || world.settlements.length || !Array.isArray(world.roads) || world.spawnPlan) throw new Error('城市基础规划无效。')
   if (!Array.isArray(world.regions) || world.regions.length !== 9) throw new Error('世界区域无效。')
   const ids = new Set()
   for (const region of world.regions) {
@@ -31,8 +31,12 @@ export function validateDocument(document, seed) {
   }
   if (!world.regions.every(region => region.connections.every(id => ids.has(id)))) throw new Error('区域连接无效。')
   const h=world.hierarchy, t=world.topography
-  if (h?.version !== 1 || h.macros?.length !== 4 || h.cells?.length !== 64 || !point(h.warpPhase) || !h.macros.every(m=>bounds(m.bounds)) || !h.cells.every((cell,index)=>cell.id===`cell-${Math.floor(index/8)}-${index%8}` && bounds(cell.bounds) && point(cell.center) && ids.has(cell.parentId) && biomeCatalog[cell.biome])) throw new Error('生态层级无效。')
+  if (h?.version !== 2 || h.macros?.length !== 4 || h.cells?.length !== 64 || !point(h.warpPhase) || !h.macros.every(m=>bounds(m.bounds)) || !h.cells.every((cell,index)=>cell.id===`cell-${Math.floor(index/8)}-${index%8}` && bounds(cell.bounds) && point(cell.center) && ids.has(cell.parentId) && biomeCatalog[cell.biome])) throw new Error('生态层级无效。')
   if (t?.version !== 1 || t.anchors?.length !== 4 || t.waves?.length !== 3 || !t.anchors.every(a=>['x','z','height','moisture'].every(k=>Number.isFinite(a[k]))) || !t.waves.every(w=>['wavelength','amplitude','angle','phase'].every(k=>Number.isFinite(w[k])) && w.wavelength>0)) throw new Error('地形数据无效。')
+  if(h.districts?.length!==16 || h.details?.length!==256 || !h.districts.every((d,i)=>d.id===`district-cell-${Math.floor(i/4)}-${i%4}`&&bounds(d.bounds)&&h.macros.some(m=>m.id===d.macroId)) || !h.details.every((d,i)=>d.id===`detail-${Math.floor(i/16)}-${i%16}`&&bounds(d.bounds)&&point(d.center)&&h.cells.some(c=>c.id===d.parentId))) throw new Error('四层规划无效。')
+  const city=world.city
+  if(city?.version!==1 || !Number.isFinite(city.elevation) || city.extent!==160 || city.gardenMask?.length!==256 || !city.gardenMask.every(v=>typeof v==='boolean') || !Array.isArray(city.placements) || !Array.isArray(city.parcels) || city.bridges?.length!==5 || !bounds(city.water) || !Number.isFinite(city.water.level) || !city.bridges.every(b=>['x','z','width','length'].every(k=>Number.isFinite(b[k]))&&b.width>0&&b.length>0) || !city.placements.every(p=>typeof p.assetId==='string'&&Array.isArray(p.position)&&p.position.length===3&&p.position.every(Number.isFinite)&&Number.isFinite(p.rotation)&&p.scale===1)) throw new Error('城内规划无效。')
+  if(!world.roads.every(r=>point(r.from)&&point(r.to)&&Number.isFinite(r.width)&&r.width>0)) throw new Error('街巷数据无效。')
   if (JSON.stringify(world.fortifications) !== JSON.stringify(createFortifications(t))) throw new Error('城防规划数据无效。')
   if (!progress || !Array.isArray(progress.discoveredRegionIds) || !progress.discoveredRegionIds.every(id=>ids.has(id)) || !progress.annotations || typeof progress.annotations !== 'object' || Array.isArray(progress.annotations) || !Object.entries(progress.annotations).every(([id,text])=>ids.has(id) && typeof text==='string' && text.length<=160) || (progress.lastRegionId!==null && !ids.has(progress.lastRegionId))) throw new Error('探索进度无效。')
   if (progress.playerPosition!=null && (!point(progress.playerPosition) || !insideWorld(world.bounds,...progress.playerPosition,1))) throw new Error('角色位置无效。')

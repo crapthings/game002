@@ -1,3 +1,4 @@
+import { cityGround, cityContains, cityGarden, inCanal } from '../city/createCityPlan.js'
 import { fortificationGround, fortificationClearance } from '../fortifications/createFortifications.js'
 import { createRandom } from '../generation/random.js'
 import { townSurface } from '../settlements/createTownPlan.js'
@@ -60,7 +61,7 @@ export function createTerrain(seed, settlements = [], plan = null) {
     const surface = townSurface(settlements, x, z, true)
     const townHeight = surface ? base * (1 - surface.weight) + surface.town.elevation * surface.weight : base
     // 新地形道路随地面起伏；旧世界仍保留原来的零海拔路基。
-    if (topography) return fortificationGround(plan?.fortifications, x, z, townHeight)
+    if (topography) return cityGround(plan?.city,x,z,fortificationGround(plan?.fortifications, x, z, townHeight))
     const road = nearbyRoad(x, z)
     const t = Math.max(0, Math.min(1, (road.distance - road.width / 2 - 1) / 8))
     return townHeight * (1 - (1 - smooth(t)) * road.fade)
@@ -113,8 +114,13 @@ export function generateChunk(terrain, cx, cz) {
       const sidewalk=town?.town.kind==='city' && town.town.frontageVersion && edgeDistance>0 && edgeDistance<2
       const paving=frontageColors[surface] || (sidewalk ? [0.44,0.43,0.38] : null)
       const roadWeight = Math.max(0, Math.min(1, road.width / 2 + 0.6 - road.distance)) * road.fade
+      const city=terrain.plan?.city
+      if(cityContains(city,wx,wz)) {
+        const palette=cityGarden(city,wx,wz)?[.42,.54,.33]:[.55,.57,.43]
+        for(let i=0;i<3;i++)natural[i]=palette[i]+variation
+      }
       const groundColor = natural.map((color, index) => color * (1 - weight) + (paving ? paving[index]+variation : urban[index]) * weight)
-      colors.push(...groundColor.map((color) => color * (1 - roadWeight) + (0.20 + variation) * roadWeight), 1)
+      colors.push(...groundColor.map((color) => color * (1 - roadWeight) + ((terrain.plan?.city ? 0.59 : 0.20) + variation) * roadWeight), 1)
     }
   }
   const stride = CHUNK_SEGMENTS + 1
@@ -129,6 +135,7 @@ export function generateChunk(terrain, cx, cz) {
     const x = Math.round(cx * CHUNK_SIZE + (index % 6 + 0.3 + random() * 0.4) * CHUNK_SIZE / 6)
     const z = Math.round(cz * CHUNK_SIZE + (Math.floor(index / 6) + 0.3 + random() * 0.4) * CHUNK_SIZE / 6)
     if (fortificationClearance(terrain.plan?.fortifications, x, z)) continue
+    if (inCanal(terrain.plan?.city,x,z,5) || !cityGarden(terrain.plan?.city,x,z)) continue
     const profile = terrain.ecology(x, z)
     if (random() > profile.density) continue
     const road = terrain.nearbyRoad(x, z)

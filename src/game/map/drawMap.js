@@ -51,6 +51,18 @@ export function drawMap(ctx, width, height, { center, span, position, heading, f
     ctx.fill()
   }
   ctx.globalAlpha = 1
+  if(plan.city) {
+    const b=plan.city.water,[x,y]=screen(b.minX,b.maxZ)
+    ctx.fillStyle='#62b8b1';ctx.fillRect(x,y,(b.maxX-b.minX)*scale,(b.maxZ-b.minZ)*scale)
+    for(const p of plan.city.placements.filter(p=>p.building)) {
+      ctx.save();ctx.translate(...screen(p.position[0],p.position[2]));ctx.rotate(p.rotation)
+      ctx.fillStyle='#e2cf9f';ctx.fillRect(-p.footprint.width*scale/2,-p.footprint.depth*scale/2,p.footprint.width*scale,p.footprint.depth*scale);ctx.restore()
+    }
+    for(const b of plan.city.bridges) {
+      const [x,y]=screen(b.x-b.width/2,b.z+b.length/2)
+      ctx.fillStyle='#ded9b4';ctx.fillRect(x,y,b.width*scale,b.length*scale)
+    }
+  }
   const drawRoad = (road, color) => {
     const points = roadPoints(road)
     ctx.strokeStyle = color; ctx.lineWidth = Math.max(1, road.width * scale)

@@ -24,9 +24,9 @@ export function createDayNightCycle(savedTime = START_TIME) {
       const daylight = smooth((sunHeight + 0.12) / 0.45)
       const sunset = Math.max(0, 1 - Math.abs(sunHeight) / 0.28) * (time >= 12 ? 1 : 0.65)
       const nightSky = [0.025, 0.045, 0.075]
-      const daySky = [0.22, 0.35, 0.39]
+      const daySky = [0.58, 0.73, 0.77]
       const sky = mix(mix(nightSky, daySky, daylight), [0.38, 0.20, 0.13], sunset * 0.55)
-      const fog = mix(mix([0.035, 0.06, 0.075], [0.105, 0.14, 0.13], daylight), [0.25, 0.13, 0.09], sunset * 0.35)
+      const fog = mix(mix([0.035, 0.06, 0.075], daySky, daylight), [0.25, 0.13, 0.09], sunset * 0.35)
       const angle = (time - 6) / 24 * Math.PI * 2
       return {
         time,

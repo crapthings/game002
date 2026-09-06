@@ -41,7 +41,19 @@ export function createHierarchy(seed, regions) {
     region.macroIds = macros.filter(macro => macro.bounds.minX < region.bounds.maxX && macro.bounds.maxX > region.bounds.minX && macro.bounds.minZ < region.bounds.maxZ && macro.bounds.maxZ > region.bounds.minZ).map(macro => macro.id)
     region.cellIds = cells.filter(cell => cell.parentId === region.id).map(cell => cell.id)
   }
-  return { version: 1, macros, cells, warpPhase: [random() * Math.PI * 2, random() * Math.PI * 2] }
+  const districts=[],details=[]
+  for(let row=0;row<4;row++)for(let column=0;column<4;column++) {
+    const macro=macros[Math.floor(row/2)*2+Math.floor(column/2)]
+    districts.push({id:`district-cell-${row}-${column}`,macroId:macro.id,parentId:macro.id,row,column,
+      bounds:{minX:origin+column*128,maxX:origin+(column+1)*128,minZ:origin+row*128,maxZ:origin+(row+1)*128}})
+  }
+  for(let row=0;row<8;row++)for(let column=0;column<8;column++)cells[row*8+column].districtId=districts[Math.floor(row/2)*4+Math.floor(column/2)].id
+  for(let row=0;row<16;row++)for(let column=0;column<16;column++) {
+    const cell=cells[Math.floor(row/2)*8+Math.floor(column/2)]
+    details.push({id:`detail-${row}-${column}`,parentId:cell.id,districtId:cell.districtId,center:[origin+(column+.5)*32,origin+(row+.5)*32],
+      bounds:{minX:origin+column*32,maxX:origin+(column+1)*32,minZ:origin+row*32,maxZ:origin+(row+1)*32}})
+  }
+  return { version: 2, macros, districts, cells, details, warpPhase: [random() * Math.PI * 2, random() * Math.PI * 2] }
 }
 
 export function ecologyWeights(hierarchy, x, z) {

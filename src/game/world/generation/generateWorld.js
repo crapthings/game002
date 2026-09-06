@@ -1,10 +1,11 @@
+import { createCityPlan } from '../city/createCityPlan.js'
 import { createFortifications } from '../fortifications/createFortifications.js'
 import { createHierarchy, ecologyWeights } from './createHierarchy.js'
 import { createTopography } from './topography.js'
 import { WORLD_BOUNDS, WORLD_SIZE, WORLD_UNIT } from '../worldConfig.js'
 import { biomeCatalog } from '../biomes/catalog.js'
 
-export const GENERATOR_VERSION = 6
+export const GENERATOR_VERSION = 7
 export const PLAN_VERSION = 2
 const colorHex = (color) => '#' + color.map((value) => Math.round(value * 255).toString(16).padStart(2, '0')).join('')
 
@@ -26,7 +27,7 @@ export function generateWorld(seed) {
     const bounds = { minX: xs[column], maxX: xs[column + 1], minZ: zs[row], maxZ: zs[row + 1] }
     const center = [(bounds.minX + bounds.maxX) / 2, (bounds.minZ + bounds.maxZ) / 2]
     const kind = 'wilderness', biome = central ? 'meadow' : 'woodland'
-    const name = central ? '中心预留地' : `城郊 ${row + 1}-${column + 1}`
+    const name = central ? '江湖城内' : `城郊 ${row + 1}-${column + 1}`
     regions.push({
       id: `district-${row}-${column}`, revision: 1, kind, name, biome, center, bounds,
       radius: Math.min(bounds.maxX - bounds.minX, bounds.maxZ - bounds.minZ) / 2,
@@ -51,11 +52,13 @@ export function generateWorld(seed) {
       region.tags = [region.kind, region.biome]
     }
     region.ecology = []
-    region.description = region.reserved ? '世界中心预留，供后续武侠城镇规划。' : `${region.name}，保留原比例自然生态。`
+    region.description = region.reserved ? '四层规划城内街坊、民宅与碧溪水系。' : `${region.name}，保留原比例自然生态。`
   }
-  const settlements = [], roads = []
+  const fortifications=createFortifications(topography)
+  const city=createCityPlan(seed,hierarchy,fortifications)
+  const settlements = [], roads = city.roads
   for (const cell of hierarchy.cells) cell.settlementIds = []
-  const world = { seed, hierarchy, topography, fortifications: createFortifications(topography), generatorVersion: GENERATOR_VERSION, planVersion: PLAN_VERSION, unitSize: WORLD_UNIT, size: WORLD_SIZE, bounds: { ...WORLD_BOUNDS }, terrainVersion: 2, environmentVersion: 1, roadPlanVersion: 3, regions, settlements, roads, spawn: [0, 0] }
+  const world = { seed, hierarchy, topography, fortifications, city, generatorVersion: GENERATOR_VERSION, planVersion: PLAN_VERSION, unitSize: WORLD_UNIT, size: WORLD_SIZE, bounds: { ...WORLD_BOUNDS }, terrainVersion: 2, environmentVersion: 1, roadPlanVersion: 3, regions, settlements, roads, spawn: [0, 0] }
   return world
 }
 

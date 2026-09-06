@@ -1,3 +1,5 @@
+import { cityAssetCatalog } from './city/catalog.js'
+import { wuxiaCatalog } from './wuxia/catalog.js'
 import { fortificationCatalog } from './fortifications/catalog.js'
 import { environmentCatalog } from './environment/catalog.js'
 import { characterCatalog } from './characters/catalog.js'
@@ -46,6 +48,8 @@ const nature = [
 ]
 
 export const assetTabs = [
+  { id: 'city', label: '道路水桥', assets: cityAssetCatalog },
+  { id: 'wuxia', label: '武侠建筑', assets: wuxiaCatalog },
   { id: 'fortifications', label: '城墙城门', assets: fortificationCatalog },
   { id: 'nature', label: '自然生态', assets: nature },
   { id: 'characters', label: '侠客', assets: characters },
