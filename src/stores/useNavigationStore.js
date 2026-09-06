@@ -7,10 +7,12 @@ export const useNavigationStore = create((set) => ({
   heading: 0,
   fog: {},
   bounds: null,
-  reset: (position, fog, bounds) => set({ position, heading: 0, fog: fog || {}, bounds }),
-  update: (position, heading) => set((state) => {
-    const fog = revealFog(state.fog, position.x, position.z, state.bounds)
-    if (fog === state.fog && heading === state.heading && position.x === state.position.x && position.y === state.position.y && position.z === state.position.z) return state
-    return { position, heading, fog }
+  vision: { radius: 24, beamRange: 0 },
+  reset: (position, fog, bounds, vision = { radius: 24, beamRange: 0 }) => set({ position, heading: 0, fog: fog || {}, bounds, vision }),
+  update: (position, heading, vision) => set((state) => {
+    vision = vision || state.vision
+    const fog = revealFog(state.fog, position.x, position.z, state.bounds, vision, heading)
+    if (vision === state.vision && fog === state.fog && heading === state.heading && position.x === state.position.x && position.y === state.position.y && position.z === state.position.z) return state
+    return { position, heading, fog, vision }
   }),
 }))

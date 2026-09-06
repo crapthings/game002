@@ -1,4 +1,5 @@
 import { createRandom } from './random.js'
+import { createSpawnPlan } from '../../spawning/createSpawnPlan.js'
 import { createHierarchy, ecologyWeights } from './createHierarchy.js'
 import { createTopography } from './topography.js'
 import { selectSettlementSite } from '../settlements/selectSettlementSite.js'
@@ -116,7 +117,9 @@ export function generateWorld(seed) {
   }
   const startRegion = regions.find((region) => insideRegion(region, 0, 0))
   const spawnTown = settlements.find((town) => town.regionId === startRegion.id)
-  return { seed, hierarchy, topography, generatorVersion: GENERATOR_VERSION, planVersion: PLAN_VERSION, unitSize: WORLD_UNIT, size: WORLD_SIZE, bounds: { ...WORLD_BOUNDS }, terrainVersion: 2, environmentVersion: 1, roadPlanVersion: 3, regions, settlements, roads, spawn: [spawnTown.gate[0] + 20, spawnTown.gate[1]] }
+  const world = { seed, hierarchy, topography, generatorVersion: GENERATOR_VERSION, planVersion: PLAN_VERSION, unitSize: WORLD_UNIT, size: WORLD_SIZE, bounds: { ...WORLD_BOUNDS }, terrainVersion: 2, environmentVersion: 1, roadPlanVersion: 3, regions, settlements, roads, spawn: [spawnTown.gate[0] + 20, spawnTown.gate[1]] }
+  world.spawnPlan = createSpawnPlan(world)
+  return world
 }
 
 export function appendNewRegions() {

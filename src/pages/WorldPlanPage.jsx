@@ -13,7 +13,7 @@ export default function WorldPlanPage() {
   const [plan,setPlan]=useState(null),[busy,setBusy]=useState(false),[error,setError]=useState('')
   const [selected,setSelected]=useState(null),[focus,setFocus]=useState(null)
   const [source,setSource]=useState('当前算法')
-  const [layers,setLayers]=useState({macros:false,regions:false,details:false,settlements:true,roads:true,labels:true})
+  const [layers,setLayers]=useState({macros:false,regions:false,details:false,settlements:true,roads:true,labels:true,spawns:false})
   const [baseMap,setBaseMap]=useState('ecology')
   const visibleBase = !plan?.topography && !['ecology','regions'].includes(baseMap) ? 'ecology' : baseMap
   const worker=useRef(null)
@@ -66,7 +66,7 @@ export default function WorldPlanPage() {
     </header>
     <div className="flex shrink-0 flex-wrap items-center gap-4 border-b border-white/10 px-4 py-2 text-xs">
       <select aria-label="底图图层" className="rounded border border-white/15 bg-[#172321] px-2 py-1.5 text-xs" value={visibleBase} onChange={event=>setBaseMap(event.target.value)}>{Object.entries(terrainLayers).map(([key,value])=><option key={key} value={key} disabled={!plan?.topography && !['ecology','regions'].includes(key)}>{value.label}</option>)}</select>
-      {Object.entries({macros:'2×2 大板块',regions:'4×4 区域',details:'8×8 细分',settlements:'聚落 / 街区',roads:'道路中心线',labels:'区域名称'}).map(([key,label])=><label key={key} className="flex items-center gap-1.5"><input type="checkbox" checked={layers[key]} onChange={event=>setLayers(value=>({...value,[key]:event.target.checked}))}/>{label}</label>)}
+      {Object.entries({macros:'2×2 大板块',regions:'4×4 区域',details:'8×8 细分',settlements:'聚落 / 街区',roads:'道路中心线',labels:'区域名称',spawns:'感染者出生点'}).map(([key,label])=><label key={key} className="flex items-center gap-1.5"><input type="checkbox" checked={layers[key]} onChange={event=>setLayers(value=>({...value,[key]:event.target.checked}))}/>{label}</label>)}
       <button className={control} onClick={()=>setFocus(null)}>全世界</button>
       <button className={control} disabled={!region} onClick={()=>setFocus(region.bounds)}>聚焦所选区域</button>
       {current && <button className={control} onClick={()=>{stopWorker();setBusy(false);setError('');setPlan(current);setSource('本次游戏快照');setSelected(null);setFocus(null)}}>查看本次游戏快照</button>}

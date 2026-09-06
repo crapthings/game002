@@ -1,8 +1,10 @@
 import { roadPoints } from '../world/roads/roadGeometry.js'
 import { FOG_CELL_SIZE, FOG_GROUP_SIZE, REVEAL_RADIUS, isExplored } from './fog.js'
+import { traceVisibility } from './visibility.js'
+import { getSpawnPlan } from '../spawning/createSpawnPlan.js'
 
 // 只读取规划与探索数据，不触发区块生成或素材加载。北方为世界 +Z。
-export function drawMap(ctx, width, height, { center, span, position, heading, fog, plan, radar, revealMap = false }) {
+export function drawMap(ctx, width, height, { center, span, position, heading, fog, plan, radar, revealMap = false, showSpawns = false, vision = { radius: REVEAL_RADIUS, beamRange: 0 } }) {
   ctx.clearRect(0, 0, width, height)
   ctx.fillStyle = '#080e0e'
   ctx.fillRect(0, 0, width, height)
@@ -90,8 +92,7 @@ export function drawMap(ctx, width, height, { center, span, position, heading, f
   ctx.save()
   ctx.beginPath()
   ctx.rect(0, 0, width, height)
-  ctx.moveTo(px + REVEAL_RADIUS * scale, py)
-  ctx.arc(px, py, REVEAL_RADIUS * scale, 0, Math.PI * 2, true)
+  traceVisibility(ctx, px, py, scale, heading, vision)
   ctx.clip('evenodd')
   ctx.fillStyle = revealMap ? 'rgba(0, 0, 0, 0)' : 'rgba(0, 0, 0, 0.4)'
   ctx.fillRect(0, 0, width, height)
@@ -127,10 +128,18 @@ export function drawMap(ctx, width, height, { center, span, position, heading, f
       ctx.fillText(town.name, sx, sy - 13)
     }
   }
+  if (showSpawns) {
+    ctx.fillStyle='#e99882'
+    for (const point of getSpawnPlan(plan).points) {
+      if (point.x<xMin || point.x>xMax || point.z<zMin || point.z>zMax) continue
+      const [x,y]=screen(point.x,point.z)
+      ctx.beginPath();ctx.arc(x,y,2,0,Math.PI*2);ctx.fill()
+    }
+  }
   if (px >= 0 && py >= 0 && px <= width && py <= height) {
     ctx.strokeStyle = 'rgba(150, 227, 187, 0.2)'
     ctx.lineWidth = 1
-    ctx.beginPath(); ctx.arc(px, py, REVEAL_RADIUS * scale, 0, Math.PI * 2); ctx.stroke()
+    ctx.beginPath(); traceVisibility(ctx, px, py, scale, heading, vision); ctx.stroke()
     ctx.translate(px, py)
     ctx.rotate(heading)
     ctx.shadowBlur = 10

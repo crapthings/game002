@@ -4,12 +4,19 @@ import { START_TIME, validWorldTime } from './createDayNightCycle.js'
 import { createInventory, updateInventory } from '../inventory/inventory.js'
 import { itemCatalog } from '../inventory/items.js'
 import { createSurvival } from '../entities/survival.js'
+import { validFlashlight } from '../entities/createFlashlight.js'
+import { getSpawnPlan } from '../spawning/createSpawnPlan.js'
 
 export function createProgress() {
   return { discoveredRegionIds: [], annotations: {}, flags: {}, lastRegionId: null, playerPosition: null, exploredFog: {}, worldTime: START_TIME, inventory: createInventory(), survival: createSurvival() }
 }
 
 export function applyProgress(world, progress, event) {
+  if (event.type === 'zombie-killed') {
+    if (!getSpawnPlan(world).points.some(point=>point.id===event.id)) throw new Error('感染者编号不存在。')
+    const killed=progress.killedZombieIds || []
+    return killed.includes(event.id) ? progress : { ...progress,killedZombieIds:[...killed,event.id] }
+  }
   if (event.type === 'survival-tick') {
     if (![event.food,event.water].every(value => Number.isFinite(value) && value >= 0)) throw new Error('生存状态变化无效。')
     const needs = progress.survival ?? createSurvival()
@@ -31,9 +38,10 @@ export function applyProgress(world, progress, event) {
     if (event.fog !== undefined && !validFog(event.fog)) throw new Error('探索迷雾记录无效。')
     if (event.stamina !== undefined && !validStamina(event.stamina)) throw new Error('体力记录无效。')
     if (event.worldTime !== undefined && !validWorldTime(event.worldTime)) throw new Error('世界时间无效。')
+    if (event.flashlight !== undefined && !validFlashlight(event.flashlight)) throw new Error('手电状态无效。')
     const exploredFog = { ...(progress.exploredFog || {}) }
     for (const [key, mask] of Object.entries(event.fog || {})) exploredFog[key] = (exploredFog[key] || 0) | mask
-    return { ...progress, playerPosition: [...event.position], exploredFog, ...(event.stamina !== undefined ? { stamina: { ...event.stamina } } : {}), ...(event.worldTime !== undefined ? { worldTime: event.worldTime } : {}) }
+    return { ...progress, playerPosition: [...event.position], exploredFog, ...(event.stamina !== undefined ? { stamina: { ...event.stamina } } : {}), ...(event.worldTime !== undefined ? { worldTime: event.worldTime } : {}), ...(event.flashlight !== undefined ? { flashlight: { ...event.flashlight } } : {}) }
   }
   if (!world.regions.some((region) => region.id === event.regionId)) throw new Error('区域不存在。')
   if (event.type === 'discover') {

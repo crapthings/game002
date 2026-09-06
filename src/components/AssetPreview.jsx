@@ -43,6 +43,8 @@ export default function AssetPreview({ asset }) {
   const runtimeRef = useRef(null)
   const [ready, setReady] = useState(false)
   const [error, setError] = useState(null)
+  const [motion, setMotion] = useState('idle')
+  const motionRef = useRef('idle')
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -78,7 +80,7 @@ export default function AssetPreview({ asset }) {
       runtimeRef.current = runtime
       engine.runRenderLoop(() => {
         const dt = Math.min(engine.getDeltaTime() / 1000, 0.05)
-        runtime.character?.update(dt, false, 0)
+        runtime.character?.update(dt, motionRef.current !== 'idle', 0, motionRef.current === 'run')
         runtime.reference?.update(dt, false, 0)
         scene.render()
       })
@@ -112,6 +114,8 @@ export default function AssetPreview({ asset }) {
     runtime.reference = null
     runtime.instance = null
     runtime.registry = null
+    motionRef.current = 'idle'
+    setMotion('idle')
     if (asset.category === 'road') {
       runtime.instance = createRoadPreview(runtime.scene, asset)
     } else if (characterCatalog.some((item) => item.assetId === asset.assetId)) {
@@ -137,5 +141,5 @@ export default function AssetPreview({ asset }) {
     runtime.camera.upperRadiusLimit = Math.max(12, largest * 4)
   }, [asset, ready])
 
-  return <div className="relative h-full min-h-0 overflow-hidden bg-[#0e1514]"><canvas ref={canvasRef} className="block h-full w-full outline-none" aria-label={`${asset.name} 三维预览`} />{error && <p role="alert" className="absolute inset-x-4 top-4 rounded-lg bg-red-950 p-3 text-sm text-red-100">{error}</p>}<p className="pointer-events-none absolute bottom-3 right-3 rounded-md bg-black/45 px-2 py-1.5 text-[9px] text-stone-400 backdrop-blur-sm sm:bottom-4 sm:right-4">玩家模型 1.80m · 网格 1m · 拖动旋转 · 滚轮缩放</p></div>
+  return <div className="relative h-full min-h-0 overflow-hidden bg-[#0e1514]"><canvas ref={canvasRef} className="block h-full w-full outline-none" aria-label={`${asset.name} 三维预览`} />{asset.category === 'character' && <div className="absolute left-3 top-3 flex gap-1 rounded-md bg-black/65 p-1">{[['idle','待机'],['walk','行走'],['run','奔跑']].map(([key,label]) => <button key={key} aria-pressed={motion === key} onClick={() => { motionRef.current = key; setMotion(key) }} className={`rounded px-3 py-1.5 text-xs ${motion === key ? 'bg-emerald-900 text-emerald-100' : 'text-stone-400 hover:bg-white/10'}`}>{label}</button>)}</div>}{asset.description && <p className="pointer-events-none absolute bottom-12 left-3 max-w-sm rounded bg-black/60 px-3 py-2 text-xs leading-5 text-stone-300">{asset.description}</p>}{error && <p role="alert" className="absolute inset-x-4 top-4 rounded-lg bg-red-950 p-3 text-sm text-red-100">{error}</p>}<p className="pointer-events-none absolute bottom-3 right-3 rounded-md bg-black/45 px-2 py-1.5 text-[9px] text-stone-400 backdrop-blur-sm sm:bottom-4 sm:right-4">玩家模型 1.80m · 网格 1m · 拖动旋转 · 滚轮缩放</p></div>
 }

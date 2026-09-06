@@ -9,6 +9,8 @@ import InventoryPanel from './InventoryPanel.jsx'
 import Quickbar from './Quickbar.jsx'
 import DebugMenu from './DebugMenu.jsx'
 import { useDebugStore } from '../stores/useDebugStore.js'
+import GraphicsSettings from './GraphicsSettings.jsx'
+import FlashlightHud from './FlashlightHud.jsx'
 
 const buttonClass = 'rounded-xl border border-white/15 bg-slate-800 px-5 py-3 text-sm font-medium transition hover:bg-slate-700 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-emerald-300'
 
@@ -18,7 +20,7 @@ export default function GameOverlay() {
   const resumeGame = useGameStore((state) => state.resumeGame)
   const returnToMenu = useGameStore((state) => state.returnToMenu)
   const error = useWorldStore((state) => state.error)
-  const debugActive = useDebugStore(state => state.revealMap || state.infiniteSprint || state.sprintMultiplier !== 1)
+  const debugActive = useDebugStore(state => state.revealMap || state.infiniteSprint || state.sprintMultiplier !== 1 || state.pauseSpawning || state.showSpawns)
   const errorMessage = error && <p role="alert" className="rounded-xl bg-red-950 p-3 text-sm text-red-100">{error}</p>
 
   if (phase === 'loading') return null
@@ -29,6 +31,7 @@ export default function GameOverlay() {
         <RadarHud />
         <PlayerStatusHud />
         <WorldTimeHud />
+        <FlashlightHud />
         {phase === 'playing' && <button type="button" onClick={() => useGameStore.getState().openDebug()} className={`absolute left-4 top-20 z-10 rounded border border-white/10 bg-black/65 px-2 py-1 text-[10px] hover:text-emerald-200 ${debugActive ? 'text-amber-300' : 'text-stone-400'}`}>{debugActive ? '调试已启用' : '开发'} · F2</button>}
         {phase === 'map' && <WorldMap />}
         {phase === 'inventory' && <InventoryPanel />}
@@ -45,6 +48,8 @@ export default function GameOverlay() {
         <p className="text-xs font-semibold tracking-widest text-emerald-300">GAME001</p>
         <h1 className="mt-3 text-3xl font-semibold">游戏已暂停</h1>
         <p className="mt-4 text-sm leading-6 text-slate-400">旅途暂歇。继续探索，或返回菜单切换世界。</p>
+        <p className="mt-3 text-xs leading-5 text-slate-400">WASD 移动 · Shift 奔跑 · 右键拖动视角 · 滚轮缩放 · 左键点击地面移动</p>
+        <GraphicsSettings />
         <div className="mt-6 flex flex-col gap-3">
           {errorMessage}
           <button type="button" className={buttonClass} onClick={resumeGame}>继续游戏</button>

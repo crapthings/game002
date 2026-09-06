@@ -63,7 +63,7 @@ const environmentAssets = Object.entries(environmentCatalog).map(([assetId, defi
   tags: definition.tags || [assetId.split('.')[0]], variant: definition.variant,
   size: environmentSize(definition),
 }))
-const characters = characterCatalog.map((item) => ({ ...item, zones: ['universal'], tags: ['player', 'survivor'] }))
+const characters = characterCatalog.map((item) => ({ ...item, zones: item.zones || ['universal'], tags: item.tags || ['player', 'survivor'] }))
 const buildings = [...buildingAssets(buildingCatalog, cityZones), ...buildingAssets(villageBuildingCatalog, villageZones)]
 const nature = [
   { assetId: 'nature.tree', name: names['nature.tree'], category: 'ecology', zones: environmentZones['nature.tree'], tags: ['nature'], size: { width: 3.2, height: 6.5, depth: 3.2 } },

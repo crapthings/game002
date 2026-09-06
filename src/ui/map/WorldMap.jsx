@@ -62,7 +62,7 @@ export default function WorldMap() {
           </div>
         </div>
         <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-stone-500/20 px-4 py-3 text-xs text-stone-400">
-          <span>{revealMap ? '开发调试：地图全显 · 真实探索记录不变' : '深黑：未探索 · 暗色：已探索 · 亮色：附近'}</span>
+          <span>{revealMap ? '开发调试：地图全显 · 真实探索记录不变' : `深黑：未探索 · 暗色：已探索 · 当前视域 ${Math.round(navigation.vision.radius)} m${navigation.vision.beamRange ? ' + 手电扇形' : ''}`}</span>
           <span className="font-mono tabular-nums">X {navigation.position.x.toFixed(1)} / Z {navigation.position.z.toFixed(1)}</span>
           <span>拖动平移 · 滚轮缩放 · 北 +Z · 世界已暂停</span>
         </footer>

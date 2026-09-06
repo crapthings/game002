@@ -4,6 +4,7 @@ import GameCanvas from '../components/GameCanvas.jsx'
 import GameOverlay from '../ui/GameOverlay.jsx'
 import { useGameStore } from '../stores/useGameStore.js'
 import { useWorldStore } from '../stores/useWorldStore.js'
+import { useFlashlightStore } from '../stores/useFlashlightStore.js'
 
 export default function GamePage({ seed }) {
   const navigate = useNavigate()
@@ -23,7 +24,10 @@ export default function GamePage({ seed }) {
     const onKeyDown = (event) => {
       if (event.repeat || event.ctrlKey || event.metaKey || event.altKey || /INPUT|TEXTAREA|SELECT/.test(event.target?.tagName) || event.target?.isContentEditable) return
       const state = useGameStore.getState()
-      if (event.code === 'F2' && ['playing', 'paused', 'debug'].includes(state.phase)) {
+      if (event.code === 'KeyF' && state.phase === 'playing') {
+        event.preventDefault()
+        useFlashlightStore.getState().toggle()
+      } else if (event.code === 'F2' && ['playing', 'paused', 'debug'].includes(state.phase)) {
         event.preventDefault()
         if (state.phase === 'debug') state.closeDebug()
         else state.openDebug()

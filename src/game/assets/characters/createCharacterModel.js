@@ -1,7 +1,9 @@
 import { createPlayer } from '../../entities/createPlayer.js'
 import { PLAYER_ASSET_ID } from './catalog.js'
+import { zombieDefinitions } from '../zombies/catalog.js'
+import { createZombieModel } from '../zombies/createZombieModel.js'
 
-const factories = { [PLAYER_ASSET_ID]: createPlayer }
+const factories = { [PLAYER_ASSET_ID]: createPlayer, ...Object.fromEntries(zombieDefinitions.map(definition => [`character.zombie.${definition.id}`, scene => createZombieModel(scene, definition)])) }
 
 // 保留角色的关节、动画与释放接口，不合并成静态建筑模板。
 export function createCharacterModel(scene, assetId) {

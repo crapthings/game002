@@ -5,6 +5,7 @@ import { useDebugStore } from '../../stores/useDebugStore.js'
 export default function MapCanvas({ center, span, navigation, plan, radar = false, onPointerDown, onPointerMove, onPointerUp, onWheel }) {
   const ref = useRef(null)
   const revealMap = useDebugStore(state => state.revealMap)
+  const showSpawns = useDebugStore(state => state.showSpawns)
   useEffect(() => {
     const canvas = ref.current
     const render = () => {
@@ -16,12 +17,12 @@ export default function MapCanvas({ center, span, navigation, plan, radar = fals
       const context = canvas.getContext('2d')
       if (!context) return
       context.setTransform(ratio, 0, 0, ratio, 0, 0)
-      drawMap(context, rect.width, rect.height, { center, span, ...navigation, plan, radar, revealMap })
+      drawMap(context, rect.width, rect.height, { center, span, ...navigation, plan, radar, revealMap, showSpawns })
     }
     render()
     const observer = new ResizeObserver(render)
     observer.observe(canvas)
     return () => observer.disconnect()
-  }, [center, span, navigation, plan, radar, revealMap])
+  }, [center, span, navigation, plan, radar, revealMap, showSpawns])
   return <canvas ref={ref} className="block h-full w-full touch-none" aria-label={radar ? '附近探索雷达，北方为世界正 Z 方向' : '探索地图，深色为未探索区域'} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} onWheel={onWheel} />
 }

@@ -6,6 +6,7 @@ import { useMemo } from 'react'
 import { sampleEcology } from '../game/world/biomes/sampleEcology.js'
 import { createTopographySampler } from '../game/world/generation/topography.js'
 import { terrainColor } from '../game/debug/terrainLayers.js'
+import { getSpawnPlan } from '../game/spawning/createSpawnPlan.js'
 
 export default function WorldPlanView({plan,selected,onSelect,focus,layers,baseMap='ecology'}) {
   const ecology = useMemo(() => {
@@ -32,6 +33,7 @@ export default function WorldPlanView({plan,selected,onSelect,focus,layers,baseM
       </g>
     })}
     <g pointerEvents="none">
+      {layers.spawns && getSpawnPlan(plan).points.map(point=><circle key={point.id} cx={point.x} cy={-point.z} r={line*2.2} fill="#ff9577"/>)}
       {layers.details && plan.hierarchy?.cells.map(cell => <rect key={cell.id} x={cell.bounds.minX} y={-cell.bounds.maxZ} width={256} height={256} fill="none" stroke="#d0ded0" strokeOpacity="0.35" strokeWidth={line*0.6} strokeDasharray={`${line*3} ${line*3}`}/>)}
       {layers.macros && plan.hierarchy?.macros.map(macro => <g key={macro.id}><rect x={macro.bounds.minX} y={-macro.bounds.maxZ} width={1024} height={1024} fill="none" stroke="#f6d294" strokeWidth={line*2.5}/><text x={macro.bounds.minX+15} y={-macro.bounds.maxZ+24} fill="#f6d294" fontSize={line*12}>{({forest:'林地带',lowland:'湿地低地',rural:'农业带',upland:'荒野高地'})[macro.theme]}</text></g>)}
       {layers.settlements && plan.settlements.map(town=><g key={town.id}>

@@ -10,9 +10,9 @@ import { HUMAN_SCALE } from '../worldMetrics.js'
 import { insideWorld } from '../worldConfig.js'
 import { townSurface } from '../settlements/createTownPlan.js'
 import { createStreetSection } from '../settlements/createStreetSection.js'
-import { createTerrain, chunkAt, chunkKey, requiredChunks, KEEP_RADIUS, CHUNK_SIZE } from './terrain.js'
+import { createTerrain, chunkAt, chunkKey, requiredChunks, CHUNK_SIZE } from './terrain.js'
 
-export function createStreamedWorld(scene, plan) {
+export function createStreamedWorld(scene, plan, initialViewDistance = 64) {
   const towns = plan.settlements || []
   const terrain = createTerrain(plan.seed, towns, plan)
   const assets = createAssetRegistry(scene)
@@ -22,8 +22,9 @@ export function createStreamedWorld(scene, plan) {
   material.specularColor = Color3.Black()
   const worker = new Worker(new URL('./chunk.worker.js', import.meta.url), { type: 'module' })
   let center = null, queue = [], wanted = new Map(), required = [], pending = null, prepared = null, assembling = null
-  let disposed = false, failure = null, previousPosition = null
-  let direction = { x: 0, z: 0 }
+  let disposed = false, failure = null
+  let viewDistance = initialViewDistance
+  let selectionKey = null
   const retired = []
   const warmup = [...new Set([
     ...Object.values(biomeCatalog).flatMap((biome) => biome.assets.map(([id]) => id)),
@@ -101,25 +102,28 @@ export function createStreamedWorld(scene, plan) {
       yield
     }
     root.setEnabled(true)
-    loaded.set(chunk.key, { root, colliders })
+    const bounds = colliders.reduce((bounds, obstacle) => {
+      const reach = obstacle.radius ?? Math.hypot(obstacle.halfWidth, obstacle.halfDepth)
+      bounds.minX = Math.min(bounds.minX, obstacle.x - reach)
+      bounds.maxX = Math.max(bounds.maxX, obstacle.x + reach)
+      bounds.minZ = Math.min(bounds.minZ, obstacle.z - reach)
+      bounds.maxZ = Math.max(bounds.maxZ, obstacle.z + reach)
+      return bounds
+    }, { minX: Infinity, maxX: -Infinity, minZ: Infinity, maxZ: -Infinity })
+    loaded.set(chunk.key, { root, colliders, bounds })
   }
   function update(x, z, budgetMs = 3) {
     if (failure) throw failure
     const started = performance.now()
     const next = chunkAt(x, z)
-    if (previousPosition) {
-      const dx = x - previousPosition.x, dz = z - previousPosition.z, length = Math.hypot(dx, dz)
-      if (length > 0.001) direction = { x: dx / length, z: dz / length }
-    }
-    previousPosition = { x, z }
     center = next
-    const ahead = chunkAt(x + direction.x * 24, z + direction.z * 24)
-    const inBounds = (chunk) => insideWorld(plan.bounds, (chunk.x + 0.5) * CHUNK_SIZE, (chunk.z + 0.5) * CHUNK_SIZE)
-    required = requiredChunks(center).filter(inBounds)
-    wanted = new Map(required.map((chunk) => [chunk.key, chunk]))
-    // 当前近邻优先，前方 24m 的预测窗口提前计算下一排区块。
-    for (const chunk of requiredChunks(ahead).filter(inBounds)) {
-      if (!wanted.has(chunk.key)) wanted.set(chunk.key, chunk)
+    const radius = Math.ceil((viewDistance + 10) / CHUNK_SIZE)
+    const nextSelectionKey = `${center.x},${center.z},${radius}`
+    if (selectionKey !== nextSelectionKey) {
+      selectionKey = nextSelectionKey
+      const inBounds = chunk => insideWorld(plan.bounds, (chunk.x + 0.5) * CHUNK_SIZE, (chunk.z + 0.5) * CHUNK_SIZE)
+      required = requiredChunks(center, radius).filter(inBounds)
+      wanted = new Map(required.map(chunk => [chunk.key, chunk]))
     }
     queue = [...wanted.values()].filter((chunk) => !loaded.has(chunk.key) && chunk.key !== pending?.key && chunk.key !== prepared?.key && chunk.key !== assembling?.key)
     if (prepared && !wanted.has(prepared.key)) prepared = null
@@ -129,8 +133,9 @@ export function createStreamedWorld(scene, plan) {
       assembling = null
     }
     for (const [key, entry] of loaded) {
+      entry.root.setEnabled(wanted.has(key))
       const [cx, cz] = key.split(',').map(Number)
-      if (Math.abs(cx - center.x) > KEEP_RADIUS || Math.abs(cz - center.z) > KEEP_RADIUS) {
+      if (Math.abs(cx - center.x) > radius + 1 || Math.abs(cz - center.z) > radius + 1) {
         entry.root.setEnabled(false)
         retired.push(entry.root)
         loaded.delete(key)
@@ -161,19 +166,24 @@ export function createStreamedWorld(scene, plan) {
   return {
     terrain,
     update,
+    setViewDistance(value) { viewDistance = value },
+    getViewDistance: () => viewDistance,
     getStats: () => ({ loaded: loaded.size, queued: required.filter((chunk) => !loaded.has(chunk.key)).length, required: required.length, ready: required.filter((chunk) => loaded.has(chunk.key)).length, templatesReady: templateCount - warmup.length, templatesTotal: templateCount, pending: Boolean(pending), assembling: Boolean(assembling), center }),
     // 所有导航与移动共用这层检查，不依赖美术模型的三角面。
-    canMove(x, z) {
+    isLoaded(x,z) { const at=chunkAt(x,z); return loaded.has(chunkKey(at.x,at.z)) },
+    canMove(x, z, radius = HUMAN_SCALE.collisionRadius) {
       if (!insideWorld(plan.bounds, x, z, 1)) return false
       const at = chunkAt(x, z)
       if (!loaded.has(chunkKey(at.x, at.z))) return false
       for (const entry of loaded.values()) {
+        const b = entry.bounds
+        if (x + radius < b.minX || x - radius > b.maxX || z + radius < b.minZ || z - radius > b.maxZ) continue
         if (entry.colliders.some((obstacle) => {
           const dx = x - obstacle.x, dz = z - obstacle.z
-          if (obstacle.radius !== undefined) return Math.hypot(dx, dz) < obstacle.radius + HUMAN_SCALE.collisionRadius
+          if (obstacle.radius !== undefined) return Math.hypot(dx, dz) < obstacle.radius + radius
           const cosine = Math.cos(obstacle.rotation), sine = Math.sin(obstacle.rotation)
           const localX = dx * cosine - dz * sine, localZ = dx * sine + dz * cosine
-          return Math.abs(localX) < obstacle.halfWidth + HUMAN_SCALE.collisionRadius && Math.abs(localZ) < obstacle.halfDepth + HUMAN_SCALE.collisionRadius
+          return Math.abs(localX) < obstacle.halfWidth + radius && Math.abs(localZ) < obstacle.halfDepth + radius
         })) return false
       }
       return true

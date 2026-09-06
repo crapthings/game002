@@ -31,7 +31,9 @@ export function createMovementInput(canvas, scene, isPlaying) {
       const horizontal = Number(keys.has('KeyD') || keys.has('ArrowRight')) - Number(keys.has('KeyA') || keys.has('ArrowLeft'))
       const vertical = Number(keys.has('KeyW') || keys.has('ArrowUp')) - Number(keys.has('KeyS') || keys.has('ArrowDown'))
       if (horizontal || vertical) {
-        const x = horizontal - vertical, z = horizontal + vertical
+        const alpha = scene.activeCamera.alpha
+        const x = -Math.sin(alpha) * horizontal - Math.cos(alpha) * vertical
+        const z = Math.cos(alpha) * horizontal - Math.sin(alpha) * vertical
         const length = Math.hypot(x, z)
         return { x: x / length, z: z / length }
       }
