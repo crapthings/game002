@@ -48,7 +48,7 @@ export default function GameOverlay() {
         <p className="text-xs font-semibold tracking-widest text-emerald-300">GAME001</p>
         <h1 className="mt-3 text-3xl font-semibold">游戏已暂停</h1>
         <p className="mt-4 text-sm leading-6 text-slate-400">旅途暂歇。继续探索，或返回菜单切换世界。</p>
-        <p className="mt-3 text-xs leading-5 text-slate-400">WASD 移动 · Shift 奔跑 · 右键拖动视角 · 滚轮缩放 · 左键点击地面移动</p>
+        <p className="mt-3 text-xs leading-5 text-slate-400">WASD 移动 · Shift 奔跑 · 空格跳跃 / 再按二段跳 · 右键拖动视角 · 滚轮缩放 · 左键点击地面移动</p>
         <GraphicsSettings />
         <div className="mt-6 flex flex-col gap-3">
           {errorMessage}

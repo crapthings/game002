@@ -20,9 +20,11 @@ export function createCityPlan(seed, region) {
     .sort((a,b)=>catalog.get(b).width*catalog.get(b).depth-catalog.get(a).width*catalog.get(a).depth)
   for(const modelId of facilityIds) {
     const model=catalog.get(modelId),major=['hospital','school','fire-station'].includes(modelId)
-    const candidates=blocks.filter(block=>block.kind!=='park' && !block.majorFacility && (major?block.parcels.length===0:block.parcels.length<2))
+    // 核心至少保留两个商业街区，避免公共设施占满城心。
+    const preserveCommerce = region.growth === 'center-out' && blocks.filter(block => block.growthRing === 0 && block.kind === 'commercial').length <= 2
+    const candidates=blocks.filter(block=>(!preserveCommerce || block.growthRing !== 0 || block.kind !== 'commercial') && block.kind!=='park' && !block.majorFacility && (major?block.parcels.length===0:block.parcels.length<2))
       .sort((a,b)=>{
-        const score=block=>(block.kind==='industrial'?10000:0)+block.parcels.length*5000-(block.bounds.maxX-block.bounds.minX)*(block.bounds.maxZ-block.bounds.minZ)
+        const score=block=>(block.centerDistance || 0)*100+(block.kind==='industrial'?10000:0)+block.parcels.length*5000-(block.bounds.maxX-block.bounds.minX)*(block.bounds.maxZ-block.bounds.minZ)
         return score(a)-score(b)||a.id.localeCompare(b.id)
       })
     let placed
@@ -53,14 +55,14 @@ export function createCityPlan(seed, region) {
     let occupied=placements.filter(item=>item.blockId===block.id).reduce((sum,item)=>sum+item.footprint.width*item.footprint.depth,0)
     const anchors=frontageCandidates(block,random,settings.spacing)
     if(!block.majorFacility) for(let index=0;index<anchors.length && placements.length<policy.maxBuildings;index+=1) {
-      if(random()<0.13)continue // 少量空地作为庭院与残缺街沿，随机流按街区隔离。
+      if(random()<1-0.87*(block.density ?? 1))continue // 少量空地作为庭院与残缺街沿，随机流按街区隔离。
       const offset=Math.floor(random()*settings.models.length)
       const angle=(random()-0.5)*2*(block.kind==='industrial'?1:policy.jitter)*Math.PI/180
       const setback=random()*(block.kind==='commercial'?0.6:1.6)
       for(let attempt=0;attempt<3;attempt+=1) {
         const model=catalog.get(settings.models[(offset+attempt)%settings.models.length])
         const coverage=model.footprint.width*model.footprint.depth
-        if(occupied+coverage>area*settings.coverage)continue
+        if(occupied+coverage>area*settings.coverage*(block.density ?? 1))continue
         const placed=placeUrbanBuilding({model,anchor:anchors[index],block,segments,placements,surfaces,id:`${block.id}/lot:${index}`,angle,setback,gap:settings.gap})
         if(placed){occupied+=coverage;break}
       }
@@ -79,6 +81,7 @@ export function createCityPlan(seed, region) {
   for(const block of blocks)block.districtId=`${id}/district:${block.kind}`
   const extent=profile.span/2+12
   return {id,regionId:region.id,kind:'city',citySize:region.citySize||'medium',name:region.name,revision:2,catalogVersion:1,streetPlanVersion:3,frontageVersion:1,urbanPlanVersion:2,elevation:0,
+    ...(region.growth ? { growth: region.growth, center: [cx, cz] } : {}),
     bounds:{minX:cx-extent,maxX:cx+extent,minZ:cz-extent,maxZ:cz+extent},gate:gates[0],gates,roads,districts,blocks,facilities,
     facilityQuotas:{...policy.facilities},placements,surfaces,decorations:clearDecorations}
 }

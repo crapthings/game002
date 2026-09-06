@@ -1,7 +1,8 @@
+import { WORLD_SIZE, WORLD_BOUNDS, insideWorld } from '../worldConfig.js'
 import { createTopographySampler } from '../generation/topography.js'
 import { roundRoadPath } from './roadGeometry.js'
 
-const STEP = 16, COUNT = 128, ORIGIN = -1016, CLEARANCE = 9
+const STEP = 16, COUNT = WORLD_SIZE / STEP, ORIGIN = WORLD_BOUNDS.minX + STEP / 2, CLEARANCE = 9
 const distance = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1])
 const pointAt = id => [ORIGIN + (id % COUNT) * STEP, ORIGIN + Math.floor(id / COUNT) * STEP]
 
@@ -45,7 +46,7 @@ export function createTerrainRouter(settlements, topography) {
     }
     return samples.get(key)
   }
-  const blocked = (p, except = -1) => Math.abs(p[0]) > 1020 || Math.abs(p[1]) > 1020 || settlements.some((town, index) => {
+  const blocked = (p, except = -1) => !insideWorld(WORLD_BOUNDS, p[0], p[1], CLEARANCE) || settlements.some((town, index) => {
     if (index === except) return false
     const b = town.bounds
     return p[0] > b.minX - CLEARANCE && p[0] < b.maxX + CLEARANCE && p[1] > b.minZ - CLEARANCE && p[1] < b.maxZ + CLEARANCE

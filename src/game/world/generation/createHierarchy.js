@@ -1,3 +1,4 @@
+import { WORLD_SIZE, WORLD_BOUNDS, insideRegion } from '../worldConfig.js'
 import { createRandom } from './random.js'
 
 const palettes = {
@@ -15,25 +16,29 @@ export function createHierarchy(seed, regions) {
     const j = Math.floor(random() * (i + 1))
     ;[themes[i], themes[j]] = [themes[j], themes[i]]
   }
+  const macroSize = WORLD_SIZE / 2, cellSize = WORLD_SIZE / 8
+  const origin = WORLD_BOUNDS.minX
   const macros = themes.map((theme, index) => {
     const x = index % 2, z = Math.floor(index / 2)
-    return { id: `macro-${z}-${x}`, theme, bounds: { minX: -1024 + x * 1024, maxX: x * 1024, minZ: -1024 + z * 1024, maxZ: z * 1024 } }
+    return { id: `macro-${z}-${x}`, theme, bounds: { minX: origin + x * macroSize, maxX: origin + (x + 1) * macroSize, minZ: origin + z * macroSize, maxZ: origin + (z + 1) * macroSize } }
   })
   const cells = []
   for (let z = 0; z < 8; z++) for (let x = 0; x < 8; x++) {
     const macro = macros[Math.floor(z / 4) * 2 + Math.floor(x / 4)]
-    const region = regions[Math.floor(z / 2) * 4 + Math.floor(x / 2)]
     const rng = createRandom(seed, 'detail-cell-v1', x, z)
     const pool = palettes[macro.theme]
+    const center = [origin + (x + 0.5) * cellSize + (rng() - 0.5) * cellSize * 0.4, origin + (z + 0.5) * cellSize + (rng() - 0.5) * cellSize * 0.4]
+    const region = regions.find(candidate => insideRegion(candidate, ...center))
     cells.push({ id: `cell-${z}-${x}`, parentId: region.id, macroId: macro.id,
       biome: pool[Math.floor(rng() * pool.length)],
-      center: [-896 + x * 256 + (rng() - 0.5) * 100, -896 + z * 256 + (rng() - 0.5) * 100],
-      bounds: { minX: -1024 + x * 256, maxX: -768 + x * 256, minZ: -1024 + z * 256, maxZ: -768 + z * 256 },
+      center,
+      bounds: { minX: origin + x * cellSize, maxX: origin + (x + 1) * cellSize, minZ: origin + z * cellSize, maxZ: origin + (z + 1) * cellSize },
     })
   }
   for (let i = 0; i < regions.length; i++) {
-    const region = regions[i], x = i % 4, z = Math.floor(i / 4)
-    region.parentId = macros[Math.floor(z / 2) * 2 + Math.floor(x / 2)].id
+    const region = regions[i]
+    region.parentId = macros.find(macro => insideRegion(macro, ...region.center)).id
+    region.macroIds = macros.filter(macro => macro.bounds.minX < region.bounds.maxX && macro.bounds.maxX > region.bounds.minX && macro.bounds.minZ < region.bounds.maxZ && macro.bounds.maxZ > region.bounds.minZ).map(macro => macro.id)
     region.cellIds = cells.filter(cell => cell.parentId === region.id).map(cell => cell.id)
   }
   return { version: 1, macros, cells, warpPhase: [random() * Math.PI * 2, random() * Math.PI * 2] }
@@ -41,16 +46,18 @@ export function createHierarchy(seed, regions) {
 
 export function ecologyWeights(hierarchy, x, z) {
   const [a, b] = hierarchy.warpPhase
-  const wx = x + Math.sin(z / 190 + a) * 65 + Math.sin(x / 83 + b) * 18
-  const wz = z + Math.sin(x / 210 + b) * 65 + Math.sin(z / 97 + a) * 18
+  const first = hierarchy.cells[0].bounds
+  const cellSize = first.maxX - first.minX
+  const wx = Math.max(first.minX, Math.min(first.minX + cellSize * 8, x + Math.sin(z / 190 + a) * 65 + Math.sin(x / 83 + b) * 18))
+  const wz = Math.max(first.minZ, Math.min(first.minZ + cellSize * 8, z + Math.sin(x / 210 + b) * 65 + Math.sin(z / 97 + a) * 18))
   const weights = new Map()
-  const column = Math.max(0, Math.min(7, Math.floor((wx + 1024) / 256)))
-  const row = Math.max(0, Math.min(7, Math.floor((wz + 1024) / 256)))
+  const column = Math.max(0, Math.min(7, Math.floor((wx - first.minX) / cellSize)))
+  const row = Math.max(0, Math.min(7, Math.floor((wz - first.minZ) / cellSize)))
   for (let iz = Math.max(0, row - 1); iz <= Math.min(7, row + 1); iz++) {
     for (let ix = Math.max(0, column - 1); ix <= Math.min(7, column + 1); ix++) {
       const cell = hierarchy.cells[iz * 8 + ix]
       const distance = Math.hypot(wx - cell.center[0], wz - cell.center[1])
-      const weight = Math.max(0, 1 - distance / 300) ** 3
+      const weight = Math.max(0, 1 - distance / (cellSize * 1.2)) ** 3
       weights.set(cell.biome, (weights.get(cell.biome) || 0) + weight)
     }
   }

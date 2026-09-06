@@ -9,6 +9,7 @@ import { Color3, Color4 } from '@babylonjs/core/Maths/math.color'
 import { createStreamedWorld } from '../world/chunks/createStreamedWorld.js'
 import { createCharacterModel } from '../assets/characters/createCharacterModel.js'
 import { PLAYER_ASSET_ID } from '../assets/characters/catalog.js'
+import { createLocomotion } from '../entities/createLocomotion.js'
 import { createStamina, STAMINA } from '../entities/createStamina.js'
 import { useDebugStore } from '../../stores/useDebugStore.js'
 import { usePlayerStatusStore } from '../../stores/usePlayerStatusStore.js'
@@ -47,6 +48,7 @@ export function createWorldScene(engine, canvas, { onLoading, onReady } = {}) {
   torch.intensity = 0
 
   const player = createCharacterModel(scene, PLAYER_ASSET_ID)
+  const locomotion = createLocomotion()
   const input = createMovementInput(canvas, scene, () => useGameStore.getState().phase === 'playing')
   let world = null, activePlan = null, lastSaved = null, lastSavedFog = null
   let spawning = null
@@ -90,6 +92,7 @@ export function createWorldScene(engine, canvas, { onLoading, onReady } = {}) {
     activePlan = document.world
     foodDecay = 0; waterDecay = 0
     input.clear()
+    locomotion.reset()
     thirdPerson.clear()
     stamina = createStamina(document.progress.stamina)
     dayNight = createDayNightCycle(document.progress.worldTime)
@@ -147,6 +150,7 @@ export function createWorldScene(engine, canvas, { onLoading, onReady } = {}) {
   const unsubscribePhase = useGameStore.subscribe((state, previous) => {
     if (state.phase !== previous.phase) {
       input.clear()
+      locomotion.clearInput()
       thirdPerson.clear()
       usePlayerStatusStore.getState().publish({ ...stamina.hud(), mode: stamina.snapshot().exhausted ? 'exhausted' : 'idle' })
       if (previous.phase === 'playing' || state.phase === 'playing') {
@@ -174,6 +178,7 @@ export function createWorldScene(engine, canvas, { onLoading, onReady } = {}) {
           const spawn = activePlan.spawn || [0, 0]
           if (Math.hypot(position.x - spawn[0], position.z - spawn[1]) < 0.01) throw new Error('出生点被占用，无法进入世界。')
           position.set(spawn[0], world.terrain.surfaceHeight(...spawn), spawn[1])
+          locomotion.reset()
           world.update(...spawn)
           thirdPerson.follow(player.root, world.terrain)
           useNavigationStore.getState().update({ x: position.x, y: position.y, z: position.z }, player.root.rotation.y)
@@ -204,31 +209,24 @@ export function createWorldScene(engine, canvas, { onLoading, onReady } = {}) {
     const sprintAllowed = wantsSprint && (debug.infiniteSprint || !depleted)
     const speed = debug.infiniteSprint && sprintAllowed ? STAMINA.runSpeed : stamina.speed(sprintAllowed)
     const multiplier = sprintAllowed && speed === STAMINA.runSpeed ? debug.sprintMultiplier : 1
-    const distance = Math.min(speed * multiplier * dt, direction.distance ?? Infinity)
-    const dx = direction.x * distance, dz = direction.z * distance
-    const oldX = position.x, oldZ = position.z
-    const steps = Math.max(1, Math.ceil(Math.hypot(dx, dz) / 0.2))
-    const stepX = dx / steps, stepZ = dz / steps
-    for (let step = 0; step < steps; step++) {
-      if (world.canMove(position.x + stepX, position.z + stepZ)) {
-        position.x += stepX
-        position.z += stepZ
-      } else {
-        if (world.canMove(position.x + stepX, position.z)) position.x += stepX
-        if (world.canMove(position.x, position.z + stepZ)) position.z += stepZ
-      }
-    }
-    const moving = Math.hypot(position.x - oldX, position.z - oldZ) > 0.001
+    const motion = locomotion.update(dt, position, world, {
+      direction, speed: speed * multiplier,
+      jumpPressed: input.consumeJump(), jumpHeld: input.jumpHeld(),
+    })
+    const moving = motion.moving
     const running = debug.infiniteSprint ? moving && sprintAllowed : stamina.update(dt, moving, sprintAllowed)
     foodDecay += SURVIVAL.foodPerSecond * dt * (running ? 1.5 : 1)
     waterDecay += SURVIVAL.waterPerSecond * dt * (running ? 2 : 1)
-    if (moving) player.root.rotation.y = Math.atan2(direction.x, direction.z)
-    player.update(dt, moving, world.terrain.surfaceHeight(position.x, position.z), running)
+    if (moving) {
+      const turn = Math.atan2(Math.sin(motion.heading - player.root.rotation.y), Math.cos(motion.heading - player.root.rotation.y))
+      player.root.rotation.y += turn * (1 - Math.exp(-dt * (motion.grounded ? 18 : 9)))
+    }
+    player.update(dt, moving, position.y, running, motion)
     torch.position.set(position.x,position.y+1.35,position.z)
     torch.direction.set(Math.sin(player.root.rotation.y),-0.08,Math.cos(player.root.rotation.y))
     torch.intensity = flashlight.snapshot().enabled ? 5 : 0
     spawning.update(dt,position,player.root.rotation.y,visibility(),useWorldStore.getState().document.progress,{paused:debug.pauseSpawning})
-    thirdPerson.follow(player.root, world.terrain)
+    thirdPerson.follow(player.root, world.terrain, dt)
     navigationTimer += dt
     if (navigationTimer >= 0.1) {
       navigationTimer = 0
@@ -243,7 +241,7 @@ export function createWorldScene(engine, canvas, { onLoading, onReady } = {}) {
       checkpoint()
       saveTimer = 0
       // 开发环境供浏览器验证读取；不显示为游戏面板，也不写入存档。
-      if (import.meta.env.DEV) canvas.dataset.runtime = JSON.stringify({ x: position.x, z: position.z, alpha: camera.alpha, beta: camera.beta, ...world.getStats() })
+      if (import.meta.env.DEV) canvas.dataset.runtime = JSON.stringify({ x: position.x, y: position.y, z: position.z, grounded: motion.grounded, jumpCount: motion.jumpCount, verticalSpeed: motion.verticalSpeed, alpha: camera.alpha, beta: camera.beta, ...world.getStats() })
     }
     if (exploreTimer >= 0.5) {
       exploreTimer = 0

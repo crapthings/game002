@@ -1,3 +1,4 @@
+import { insideWorld } from '../world/worldConfig.js'
 import { createRandom } from '../world/generation/random.js'
 import { zombieCatalog } from '../assets/zombies/catalog.js'
 import { compileRoadNetwork, sampleRoad } from '../world/roads/roadGeometry.js'
@@ -28,17 +29,19 @@ export function createSpawnPlan(world) {
   const roads = compileRoadNetwork(world.roads || [])
   const inTown = (x,z) => world.settlements.find(town=>x>town.bounds.minX-24 && x<town.bounds.maxX+24 && z>town.bounds.minZ-24 && z<town.bounds.maxZ+24)
   const special = { hospital:'medic',school:'wanderer','fire-station':'firefighter',police:'riot',warehouse:'worker',factory:'hazmat' }
-  for (let z=-16;z<16;z++) for (let x=-16;x<16;x++) {
+  for (let z=Math.floor(world.bounds.minZ/64);z<Math.ceil(world.bounds.maxZ/64);z++) for (let x=Math.floor(world.bounds.minX/64);x<Math.ceil(world.bounds.maxX/64);x++) {
     const random = createRandom(world.seed,'infection-v1',x,z)
     const cx=x*64+12+random()*40, cz=z*64+12+random()*40
     const town=inTown(cx,cz)
     const roadside=!town && sampleRoad(roads,cx,cz).distance<18
     const region=world.regions.find(r=>cx>=r.bounds.minX && cx<r.bounds.maxX && cz>=r.bounds.minZ && cz<r.bounds.maxZ)
+    if (!region) continue
     const chance=town?.kind==='city'?0.85:town?0.45:roadside?0.18:0.07
     if (random()>chance) continue
     const count=town?.kind==='city'?2+Math.floor(random()*2):1+Math.floor(random()*2)
     for (let index=0;index<count;index++) {
       const px=cx+(random()-0.5)*12,pz=cz+(random()-0.5)*12
+      if (!insideWorld(world.bounds,px,pz,1)) continue
       if (Math.hypot(px-world.spawn[0],pz-world.spawn[1])<40 || points.some(point=>Math.hypot(point.x-px,point.z-pz)<2.2) || buildings.some(b=>buildingBlocksSegment(b,[px,pz],[px,pz],1))) continue
       const zone=town?.kind==='city'?'city':town?'village':roadside?'roadside':region?.biome==='wetland'?'wetland':'forest'
       const pool=zombieCatalog.filter(item=>item.zones.includes(zone))

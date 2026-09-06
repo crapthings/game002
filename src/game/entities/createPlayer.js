@@ -1,13 +1,15 @@
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode'
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder'
+import { Mesh } from '@babylonjs/core/Meshes/mesh'
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial'
 import { Color3 } from '@babylonjs/core/Maths/math.color'
+import { Vector3 } from '@babylonjs/core/Maths/math.vector'
 import { HUMAN_SCALE } from '../world/worldMetrics.js'
 
-// 现代末日幸存者代理：面向 +Z、脚底原点；保持原有移动和碰撞接口。
+// 面向 +Z、脚底为根原点；空手侠客，身体翻滚与物理根节点分离。
 export function createPlayer(scene) {
   const root = new TransformNode('player', scene)
-  const rig = new TransformNode('survivor-rig', scene)
+  const rig = new TransformNode('xia-ke-rig', scene)
   rig.parent = root
   rig.scaling.setAll(HUMAN_SCALE.playerModelScale)
   const materials = []
@@ -18,130 +20,194 @@ export function createPlayer(scene) {
     materials.push(mat)
     return mat
   }
-  const jacket = material('survivor-faded-olive', '#737c60')
-  const seams = material('survivor-dark-seams', '#444c3d')
-  const trousers = material('survivor-charcoal-canvas', '#454b49')
-  const boots = material('survivor-worn-leather', '#303431')
-  const skin = material('survivor-skin', '#b89879')
-  const cap = material('survivor-rust-cap', '#985b43')
-  const packCloth = material('survivor-khaki-pack', '#96896a')
-  const straps = material('survivor-webbing', '#514c3b')
-  const steel = material('survivor-dull-steel', '#a2a89d')
-  const bandage = material('survivor-bandage', '#c1bba2')
-
-  function box(name, size, position, mat, parent = rig) {
-    const mesh = MeshBuilder.CreateBox(name, { width: size[0], height: size[1], depth: size[2] }, scene)
-    mesh.parent = parent
-    mesh.position.set(...position)
-    mesh.material = mat
-    mesh.isPickable = false
-    return mesh
-  }
-  function sphere(name, size, position, mat, parent = rig) {
-    const mesh = MeshBuilder.CreateSphere(name, { diameter: 1, segments: 3 }, scene)
-    mesh.parent = parent
-    mesh.position.set(...position)
-    mesh.scaling.set(...size)
-    mesh.material = mat
-    mesh.isPickable = false
-    return mesh
-  }
+  const cloth = material('ink-teal-linen', '#293e3e')
+  const folds = material('linen-folds', '#3f5653')
+  const cloak = material('charcoal-cloak', '#202626')
+  cloak.backFaceCulling = false
+  const cloakEdge = material('cloak-weathered-edge', '#3b4240')
+  cloakEdge.backFaceCulling = false
+  const hair = material('tied-black-hair', '#171b1b')
+  const straw = material('bamboo-straw', '#a68149')
+  const weave = material('straw-woven-ribs', '#c6a269')
+  const darkStraw = material('straw-dark-binding', '#705636')
+  const skin = material('xia-ke-skin', '#ba9475')
+  const linen = material('unbleached-linen', '#b1ab93')
+  const leather = material('dark-wrist-wraps', '#39332c')
   function joint(name, position, parent = rig) {
     const node = new TransformNode(name, scene)
-    node.parent = parent
-    node.position.set(...position)
+    node.parent = parent; node.position.set(...position)
     return node
   }
-
-  // 肩线、棒球帽和背包形成俯视时可辨识的前后轮廓。
-  box('jacket-torso', [0.63, 0.69, 0.39], [0, 1.22, 0], jacket)
-  box('jacket-hem', [0.66, 0.13, 0.42], [0, 0.94, 0], seams)
-  box('jacket-zipper', [0.035, 0.56, 0.025], [0, 1.26, 0.21], steel)
-  box('collar-left', [0.19, 0.13, 0.16], [-0.13, 1.59, 0.065], seams).rotation.z = -0.18
-  box('collar-right', [0.19, 0.13, 0.16], [0.13, 1.59, 0.065], seams).rotation.z = 0.18
-  box('chest-pocket', [0.19, 0.18, 0.045], [-0.19, 1.35, 0.23], seams)
-  box('repaired-jacket-patch', [0.15, 0.12, 0.03], [0.19, 1.08, 0.225], packCloth)
-  box('neck', [0.19, 0.16, 0.2], [0, 1.64, 0.025], skin)
-  sphere('head', [0.41, 0.44, 0.4], [0, 1.84, 0.035], skin)
-  box('face-mask', [0.31, 0.13, 0.085], [0, 1.77, 0.22], seams)
-  sphere('baseball-cap', [0.45, 0.24, 0.44], [0, 2.015, 0.02], cap)
-  box('cap-brim', [0.4, 0.045, 0.28], [0, 1.99, 0.29], cap)
-
-  const backpack = joint('backpack', [0, 1.23, -0.3])
-  box('backpack-body', [0.55, 0.64, 0.33], [0, 0, -0.05], packCloth, backpack)
-  box('backpack-top-flap', [0.59, 0.12, 0.36], [0, 0.28, -0.055], straps, backpack)
-  box('backpack-outer-pocket', [0.4, 0.27, 0.1], [0, -0.12, -0.26], seams, backpack)
-  box('pack-reflective-tab', [0.12, 0.055, 0.015], [0, -0.06, -0.32], bandage, backpack)
-  for (const side of [-1, 1]) {
-    box('shoulder-strap', [0.07, 0.64, 0.055], [side * 0.22, 1.25, 0.245], straps)
-    box('strap-over-shoulder', [0.075, 0.045, 0.47], [side * 0.22, 1.585, 0], straps)
-    box('pack-compression-strap', [0.045, 0.58, 0.025], [side * 0.19, -0.02, -0.23], straps, backpack)
+  const tumble = joint('air-somersault-pivot', [0, 1.05, 0])
+  const body = joint('xia-ke-body', [0, -1.05, 0], tumble)
+  function finish(mesh, position, mat, parent = body) {
+    mesh.parent = parent; mesh.position.set(...position); mesh.material = mat; mesh.isPickable = false
+    return mesh
   }
-  box('chest-buckle', [0.43, 0.055, 0.035], [0, 1.33, 0.28], straps)
-  box('buckle', [0.07, 0.06, 0.025], [0, 1.33, 0.307], steel)
-  box('utility-belt', [0.67, 0.09, 0.45], [0, 0.91, 0], straps)
-  box('belt-pouch', [0.18, 0.22, 0.15], [-0.32, 0.85, 0.18], packCloth)
-  box('canteen', [0.15, 0.27, 0.16], [0.34, 0.89, -0.14], steel)
-  box('canteen-cap', [0.07, 0.045, 0.07], [0.34, 1.045, -0.14], boots)
-  box('radio', [0.13, 0.19, 0.09], [0.29, 1.47, 0.25], boots)
-  box('radio-antenna', [0.018, 0.19, 0.018], [0.33, 1.65, 0.25], steel)
+  function box(name, size, position, mat, parent = body) {
+    return finish(MeshBuilder.CreateBox(name, { width: size[0], height: size[1], depth: size[2] }, scene), position, mat, parent)
+  }
+  function sphere(name, size, position, mat, parent = body) {
+    const mesh = finish(MeshBuilder.CreateSphere(name, { diameter: 1, segments: 5 }, scene), position, mat, parent)
+    mesh.scaling.set(...size)
+    return mesh
+  }
+  function cone(name, height, top, bottom, position, mat, parent = body, tessellation = 12) {
+    return finish(MeshBuilder.CreateCylinder(name, { height, diameterTop: top, diameterBottom: bottom, tessellation }, scene), position, mat, parent)
+  }
+  function line(name, points, radius, mat, parent = body) {
+    return finish(MeshBuilder.CreateTube(name, { path: points.map(p => new Vector3(...p)), radius, tessellation: 4 }, scene), [0, 0, 0], mat, parent)
+  }
+  function panel(name, rows, mat, parent) {
+    return finish(MeshBuilder.CreateRibbon(name, { pathArray: rows.map(row => row.map(p => new Vector3(...p))), sideOrientation: Mesh.DOUBLESIDE }, scene), [0, 0, 0], mat, parent)
+  }
 
-  const legs = [-1, 1].map((side) => {
-    const hip = joint(`hip:${side}`, [side * 0.18, 0.88, 0])
-    box(`trouser-thigh:${side}`, [0.27, 0.42, 0.3], [0, -0.2, 0], trousers, hip)
-    box(`cargo-pocket:${side}`, [0.07, 0.19, 0.21], [side * 0.16, -0.22, 0], seams, hip)
+  const torso = cone('cross-collar-robe', 0.65, 0.62, 0.5, [0, 1.23, 0], cloth)
+  torso.scaling.z = 0.66
+  box('inner-linen-collar', [0.22, 0.24, 0.045], [0, 1.49, 0.203], linen)
+  box('crossed-lapel-left', [0.075, 0.4, 0.055], [-0.045, 1.39, 0.232], folds).rotation.z = -0.48
+  box('crossed-lapel-right', [0.085, 0.32, 0.06], [0.075, 1.43, 0.24], cloth).rotation.z = 0.5
+  const belt = cone('wrapped-cloth-sash', 0.13, 0.57, 0.57, [0, 0.94, 0], leather)
+  belt.scaling.z = 0.74
+  box('sash-knot', [0.14, 0.1, 0.12], [-0.22, 0.94, 0.19], folds).rotation.z = -0.2
+  box('neck', [0.18, 0.16, 0.18], [0, 1.62, 0.02], skin)
+  sphere('face', [0.34, 0.4, 0.34], [0, 1.8, 0.025], skin)
+  sphere('hair-crown', [0.38, 0.32, 0.35], [0, 1.9, -0.035], hair)
+  box('nose', [0.055, 0.1, 0.08], [0, 1.8, 0.203], skin)
+  for (const side of [-1, 1]) {
+    box(`eyebrow:${side}`, [0.092, 0.018, 0.025], [side * 0.09, 1.864, 0.182], hair).rotation.z = side * 0.08
+    box(`eye:${side}`, [0.046, 0.016, 0.015], [side * 0.087, 1.827, 0.19], hair)
+    sphere(`ear:${side}`, [0.065, 0.12, 0.08], [side * 0.173, 1.8, 0], skin)
+    line(`loose-hair:${side}`, [[side * 0.16, 1.96, 0], [side * 0.19, 1.71, 0.02], [side * 0.16, 1.52, -0.035]], 0.022, hair)
+  }
+  const ponytail = joint('long-tied-hair', [0, 1.86, -0.17], body)
+  sphere('hair-knot', [0.22, 0.18, 0.2], [0, -0.02, -0.03], hair, ponytail)
+  cone('hair-tie', 0.055, 0.17, 0.17, [0, -0.14, -0.04], leather, ponytail)
+  for (let i = 0; i < 4; i++) {
+    line(`hair-lock:${i}`, [[(i - 1.5) * 0.045, -0.12, -0.04], [(i - 1.5) * 0.06, -0.4, -0.13], [(i - 1.5) * 0.045, -0.66, -0.1]], 0.032, hair, ponytail)
+  }
+
+  const hat = joint('wide-straw-hat', [0, 1.925, 0], body)
+  hat.rotation.x = -0.065
+  cone('woven-conical-hat', 0.205, 0.16, 1.22, [0, 0.103, 0], straw, hat, 32)
+  const hatDetails = []
+  for (let ring = 0; ring < 7; ring++) {
+    const radius = 0.6 - ring * 0.075
+    hatDetails.push(finish(MeshBuilder.CreateTorus(`hat-weave:${ring}`, { diameter: radius * 2, thickness: ring === 0 ? 0.025 : 0.012, tessellation: 32 }, scene), [0, (0.61 - radius) / 0.53 * 0.205 + 0.006, 0], ring % 2 ? weave : darkStraw, hat))
+  }
+  for (let i = 0; i < 24; i++) {
+    const a = i * Math.PI / 12
+    hatDetails.push(line(`hat-rib:${i}`, [[Math.cos(a) * 0.085, 0.21, Math.sin(a) * 0.085], [Math.cos(a) * 0.6, 0.012, Math.sin(a) * 0.6]], 0.008, weave, hat))
+  }
+  // 固定编织细节合并，避免每根竹篾单独提交绘制。
+  for (const mesh of hatDetails) mesh.computeWorldMatrix(true)
+  const woven = Mesh.MergeMeshes(hatDetails, true, true, undefined, false, true)
+  if (woven) {
+    woven.setParent(hat)
+    woven.isPickable = false
+    if (woven.material?.subMaterials) materials.push(woven.material)
+  }
+  for (const side of [-1, 1]) line(`hat-cord:${side}`, [[side * 0.27, 1.95, 0.03], [side * 0.18, 1.64, 0.12], [side * 0.025, 1.56, 0.16]], 0.009, darkStraw)
+
+  const cape = joint('split-travel-cloak', [0, 1.51, -0.23], body)
+  // 连续底层连接分片，摆动时仍保持完整披风轮廓。
+  panel('cloak-continuous-lining', [
+    [[-0.435, 0, 0.018], [0.435, 0, 0.018]],
+    [[-0.475, -0.48, -0.055], [0.475, -0.48, -0.055]],
+    [[-0.56, -1.1, -0.12], [0.56, -1.1, -0.12]],
+  ], cloak, cape)
+  const capePanels = []
+  for (let i = 0; i < 5; i++) {
+    const strip = joint(`cape-strip:${i}`, [0, 0, 0], cape)
+    const a = (i / 5 - 0.5), b = ((i + 1) / 5 - 0.5)
+    const hem = -1.19 + Math.abs(i - 2) * 0.045
+    panel(`cloak-fold:${i}`, [
+      [[a * 0.87, 0, 0], [b * 0.87, 0, 0]],
+      [[a * 0.95, -0.48, -0.075], [b * 0.95, -0.48, -0.09]],
+      [[a * 1.12, hem, -0.17], [b * 1.12, hem - 0.025, -0.14]],
+    ], i % 2 ? cloakEdge : cloak, strip)
+    capePanels.push(strip)
+  }
+  for (const side of [-1, 1]) {
+    sphere(`cloak-shoulder:${side}`, [0.38, 0.17, 0.48], [side * 0.29, 1.53, -0.035], cloak)
+  }
+  const skirts = [-1, 1].map(side => {
+    const hem = joint(`split-robe:${side}`, [side * 0.13, 0.94, 0.05], body)
+    panel(`robe-skirt:${side}`, [
+      [[-0.14, 0, 0.15], [0.14, 0, 0.15]],
+      [[-0.21, -0.55, 0.12], [0.21, -0.52, 0.12]],
+    ], cloth, hem)
+    return hem
+  })
+  const sash = joint('loose-sash-end', [-0.23, 0.91, 0.24], body)
+  box('sash-tail', [0.095, 0.42, 0.025], [0, -0.2, 0], folds, sash)
+  const legs = [-1, 1].map(side => {
+    const hip = joint(`hip:${side}`, [side * 0.16, 0.88, 0], body)
+    cone(`loose-trousers:${side}`, 0.42, 0.27, 0.23, [0, -0.2, 0], cloak, hip)
     const knee = joint(`knee:${side}`, [0, -0.4, 0], hip)
-    box(`trouser-shin:${side}`, [0.23, 0.29, 0.25], [0, -0.13, 0], trousers, knee)
-    box(`kneepad:${side}`, [0.21, 0.18, 0.08], [0, -0.02, 0.15], seams, knee)
-    box(`boot:${side}`, [0.27, 0.19, 0.4], [0, -0.37, 0.075], boots, knee)
-    box(`boot-sole:${side}`, [0.28, 0.045, 0.41], [0, -0.455, 0.075], seams, knee)
+    cone(`wrapped-shin:${side}`, 0.29, 0.2, 0.16, [0, -0.145, 0], leather, knee)
+    for (let wrap = 0; wrap < 3; wrap++) cone(`shin-binding:${side}:${wrap}`, 0.026, 0.205 - wrap * 0.012, 0.205 - wrap * 0.012, [0, -0.055 - wrap * 0.085, 0], linen, knee)
+    box(`cloth-shoe:${side}`, [0.22, 0.16, 0.34], [0, -0.39, 0.06], cloak, knee)
+    box(`cloth-sole:${side}`, [0.23, 0.035, 0.35], [0, -0.462, 0.06], leather, knee)
     return { hip, knee }
   })
-  const arms = [-1, 1].map((side) => {
-    const shoulder = joint(`shoulder:${side}`, [side * 0.41, 1.49, 0])
-    shoulder.rotation.z = side * 0.07
-    box(`jacket-sleeve:${side}`, [0.23, 0.36, 0.27], [0, -0.14, 0], jacket, shoulder)
-    box(`rolled-cuff:${side}`, [0.24, 0.08, 0.28], [0, -0.3, 0], seams, shoulder)
-    const elbow = joint(`elbow:${side}`, [0, -0.32, 0], shoulder)
-    elbow.rotation.x = -0.2
-    box(`forearm:${side}`, [0.17, 0.22, 0.19], [0, -0.1, 0], skin, elbow)
-    if (side === -1) box('forearm-bandage', [0.19, 0.12, 0.21], [0, -0.075, 0], bandage, elbow)
-    box(`work-glove:${side}`, [0.19, 0.17, 0.22], [0, -0.27, 0.025], boots, elbow)
-    return shoulder
+  const arms = [-1, 1].map(side => {
+    const shoulder = joint(`shoulder:${side}`, [side * 0.36, 1.47, 0], body)
+    cone(`wide-sleeve:${side}`, 0.36, 0.26, 0.3, [0, -0.15, 0], cloth, shoulder)
+    cone(`linen-cuff:${side}`, 0.095, 0.305, 0.275, [0, -0.29, 0], linen, shoulder)
+    const elbow = joint(`elbow:${side}`, [0, -0.33, 0], shoulder)
+    cone(`wrist-guard:${side}`, 0.23, 0.19, 0.16, [0, -0.105, 0], leather, elbow)
+    for (let wrap = 0; wrap < 3; wrap++) cone(`wrist-binding:${side}:${wrap}`, 0.025, 0.193 - wrap * 0.008, 0.193 - wrap * 0.008, [0, -0.025 - wrap * 0.07, 0], cloakEdge, elbow)
+    sphere(`empty-hand:${side}`, [0.16, 0.19, 0.16], [0, -0.28, 0.018], skin, elbow)
+    return { shoulder, elbow, side }
   })
-
-  const shadow = MeshBuilder.CreateDisc('player-contact-shadow', { radius: 0.48, tessellation: 24 }, scene)
+  const shadow = MeshBuilder.CreateDisc('player-contact-shadow', { radius: 0.43, tessellation: 24 }, scene)
   shadow.rotation.x = Math.PI / 2
   shadow.material = material('contact-shadow', '#0c1514')
-  shadow.material.alpha = 0.35
+  shadow.material.alpha = 0.3
   shadow.material.backFaceCulling = false
   shadow.isPickable = false
-  let time = 0, gait = 0, stride = 0
+  let time = 0, gait = 0, stride = 0, landing = 0
   return {
     root,
-    update(dt, moving, height, running = false) {
+    update(dt, moving, height, running = false, motion = {}) {
       time += dt
-      stride += ((moving ? 1 : 0) - stride) * Math.min(1, dt * 14)
-      if (moving) gait += dt * (running ? 18 : 12)
+      const airborne = motion.grounded === false
+      const flip = airborne && motion.flipProgress !== null && motion.flipProgress !== undefined ? motion.flipProgress : null
+      const tuck = flip === null ? 0 : Math.sin(Math.PI * flip) ** 2
+      if (motion.landed) landing = Math.min(0.15, motion.landingImpact * 0.012)
+      landing *= Math.exp(-dt * 15)
+      stride += ((moving && !airborne ? 1 : 0) - stride) * (1 - Math.exp(-dt * 14))
+      if (moving && !airborne) gait += dt * (running ? 18 : 12)
       root.position.y = height
-      rig.position.y = Math.sin(gait * 2) * 0.018 * stride
-      rig.rotation.x = (running ? 0.16 : 0.045) * stride
-      backpack.rotation.x = Math.sin(gait + 0.4) * 0.035 * stride
-      for (let index = 0; index < 2; index += 1) {
+      rig.position.y = Math.sin(gait * 2) * 0.018 * stride - landing
+      rig.rotation.x = airborne ? 0.04 : (running ? 0.12 : 0.035) * stride + landing * 0.7
+      // 翻滚围绕腰部旋转，根节点与镜头保持直立；落地即恢复站姿。
+      tumble.rotation.x = flip === null ? 0 : Math.PI * 2 * (flip * flip * (3 - 2 * flip))
+      for (let index = 0; index < 2; index++) {
         const swing = Math.sin(gait + index * Math.PI)
-        legs[index].hip.rotation.x = swing * (running ? 0.65 : 0.42) * stride
-        legs[index].knee.rotation.x = Math.max(0, -swing) * 0.38 * stride
-        arms[index].rotation.x = -swing * (running ? 0.55 : 0.32) * stride - 0.06
+        legs[index].hip.rotation.x = airborne ? -0.3 - tuck * 0.95 + index * 0.18 : swing * (running ? 0.65 : 0.42) * stride - landing
+        legs[index].knee.rotation.x = airborne ? 0.45 + tuck * 1.05 : Math.max(0, -swing) * 0.45 * stride + landing * 2
+        arms[index].shoulder.rotation.x = airborne ? -0.6 - tuck * 0.7 : -swing * (running ? 0.55 : 0.32) * stride - 0.08
+        arms[index].shoulder.rotation.z = arms[index].side * (airborne ? 0.25 * (1 - tuck) : 0.09)
+        arms[index].elbow.rotation.x = -0.25 - tuck * 0.95 - (running ? 0.35 * stride : 0)
+        skirts[index].rotation.x = -Math.max(0, swing) * 0.16 * stride - (airborne ? 0.28 : 0)
       }
-      // 静止时仅轻微呼吸，不改变根节点坐标或存档位置。
-      const breathing = Math.sin(time * 2) * 0.002 * (1 - stride)
-      rig.scaling.y = HUMAN_SCALE.playerModelScale * (1 + breathing)
-      shadow.position.set(root.position.x, height + 0.035, root.position.z)
+      cape.rotation.x = 0.04 + stride * (running ? 0.28 : 0.12) + (airborne ? 0.32 : 0) + tuck * 0.25
+      for (let index = 0; index < capePanels.length; index++) {
+        capePanels[index].rotation.x = Math.sin(time * 5 + index * 0.8) * (0.022 + stride * 0.045 + (airborne ? 0.055 : 0))
+      }
+      ponytail.rotation.x = 0.06 + stride * 0.2 + Math.sin(time * 4) * 0.025 + tuck * 0.25
+      sash.rotation.x = Math.sin(gait + 0.7) * 0.15 * stride + (airborne ? -0.35 : 0)
+      rig.scaling.y = HUMAN_SCALE.playerModelScale * (1 + Math.sin(time * 2) * 0.002 * (1 - stride))
+      const altitude = motion.heightAboveGround ?? 0
+      shadow.position.set(root.position.x, (motion.groundHeight ?? height) + 0.035, root.position.z)
+      shadow.scaling.setAll(1 + Math.min(altitude, 4) * 0.12)
+      shadow.material.alpha = 0.3 / (1 + altitude * 0.65)
     },
     dispose() {
-      root.dispose()
-      shadow.dispose()
-      materials.forEach((mat) => mat.dispose())
+      root.dispose(); shadow.dispose()
+      materials.forEach(mat => mat.dispose())
     },
   }
 }

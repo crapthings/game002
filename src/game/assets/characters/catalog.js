@@ -7,9 +7,11 @@ export const PLAYER_ASSET_ID = 'character.player'
 export const characterCatalog = [
   {
     assetId: PLAYER_ASSET_ID,
-    name: '幸存者 · 玩家',
+    name: '无名侠客 · 玩家',
+    description: '宽檐斗笠、束发、墨青交领布衣与深色披风。空手行走江湖，支持两段跳与空中翻滚。',
     category: 'character',
-    size: { width: 0.95, height: HUMAN_SCALE.referenceHeight, depth: 0.85 },
+    size: { width: 1.08, height: HUMAN_SCALE.referenceHeight, depth: 1.08 },
   },
+  { assetId: 'character.survivor', name: '幸存者 · 原版保留', category: 'character', size: { width: 0.95, height: HUMAN_SCALE.referenceHeight, depth: 0.85 } },
   ...zombieCatalog,
 ]

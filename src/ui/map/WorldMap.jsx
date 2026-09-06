@@ -38,7 +38,7 @@ export default function WorldMap() {
     <section ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="world-map-title" onKeyDown={onKeyDown} className="absolute inset-0 z-20 flex items-center justify-center bg-black/65 p-3 backdrop-blur-sm sm:p-8">
       <div className="flex h-full max-h-[860px] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-stone-500/30 bg-[#101716] shadow-2xl">
         <header className="flex items-center justify-between gap-3 border-b border-stone-500/20 px-4 py-3 sm:px-6">
-          <div><p className="text-[10px] tracking-[0.25em] text-emerald-300/70">SURVIVOR NAVIGATION</p><h1 id="world-map-title" className="mt-1 text-lg font-semibold text-stone-100">探索地图 · 2048 × 2048 m</h1></div>
+          <div><p className="text-[10px] tracking-[0.25em] text-emerald-300/70">SURVIVOR NAVIGATION</p><h1 id="world-map-title" className="mt-1 text-lg font-semibold text-stone-100">探索地图 · 512 × 512 m</h1></div>
           <button ref={closeRef} type="button" onClick={closeMap} className={buttonClass}>关闭 · M / Esc</button>
         </header>
         <div className="relative min-h-0 flex-1 cursor-grab active:cursor-grabbing">

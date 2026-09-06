@@ -19,7 +19,7 @@ export default function MenuPage() {
       <section className="my-auto w-full max-w-sm rounded-3xl border border-white/10 bg-slate-900/90 p-8 shadow-2xl" aria-label="开始菜单">
         <p className="text-xs font-semibold tracking-widest text-emerald-300">GAME001</p>
         <h1 className="mt-3 text-3xl font-semibold">余生 · 失落之地</h1>
-        <p className="mt-4 text-sm leading-6 text-slate-400">在 2048 × 2048 米的土地上，穿过荒废城市、村庄与变迁的生态，寻找下一处庇护。</p>
+        <p className="mt-4 text-sm leading-6 text-slate-400">在 512 × 512 米的土地上，从中央城镇出发，沿街巷向城郊与野外探索。</p>
         <form className="mt-6 flex flex-col gap-3" onSubmit={(event) => { event.preventDefault(); const nextSeed = seedInput.trim(); if (!nextSeed) return; beginLoading(); navigate('/game', { state: { started: true, seed: nextSeed } }) }}>
           <label htmlFor="world-seed" className="text-sm text-slate-300">世界种子</label>
           <div className="flex items-stretch gap-2">

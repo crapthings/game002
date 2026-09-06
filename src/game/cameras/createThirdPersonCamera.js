@@ -7,7 +7,7 @@ export function createThirdPersonCamera(scene, canvas, isPlaying) {
   camera.inputs.clear()
   camera.minZ = 0.08
   camera.fov = Math.PI / 3
-  let drag = null, distance = 6
+  let drag = null, distance = 6, followHeight = null
   function clear() {
     if (drag !== null && canvas.hasPointerCapture(drag)) canvas.releasePointerCapture(drag)
     drag = null
@@ -39,8 +39,10 @@ export function createThirdPersonCamera(scene, canvas, isPlaying) {
   window.addEventListener('blur', clear)
   return {
     camera, clear,
-    follow(player, terrain) {
-      const target = player.position.add(new Vector3(0, 1.35, 0))
+    follow(player, terrain, dt = 0) {
+      const desiredHeight = player.position.y + 1.35
+      followHeight = followHeight === null || dt === 0 ? desiredHeight : followHeight + (desiredHeight - followHeight) * (1 - Math.exp(-dt * 10))
+      const target = new Vector3(player.position.x, followHeight, player.position.z)
       camera.setTarget(target, false, false, true)
       const offset = new Vector3(Math.cos(camera.alpha) * Math.sin(camera.beta), Math.cos(camera.beta), Math.sin(camera.alpha) * Math.sin(camera.beta))
       // 从角色向镜头探测遮挡，避免第三人称镜头穿过房屋和山坡。

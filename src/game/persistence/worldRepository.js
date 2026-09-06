@@ -1,7 +1,7 @@
 import { roadPoints } from '../world/roads/roadGeometry.js'
 import { generateWorld, normalizeSeed, appendNewRegions } from '../world/generation/generateWorld.js'
 import { createProgress } from '../world/progress.js'
-import { WORLD_BOUNDS, WORLD_SIZE } from '../world/worldConfig.js'
+import { WORLD_BOUNDS, WORLD_SIZE, insideWorld } from '../world/worldConfig.js'
 import { biomeCatalog } from '../world/biomes/catalog.js'
 import { validFog } from '../map/fog.js'
 import { validStamina } from '../entities/createStamina.js'
@@ -13,14 +13,14 @@ import { getSpawnPlan } from '../spawning/createSpawnPlan.js'
 import { zombieCatalog } from '../assets/zombies/catalog.js'
 
 const SCHEMA_VERSION = 2
-const PREFIX = 'game001:world:v2:'
-const ACTIVE_KEY = 'game001:active-seed:v2'
+const PREFIX = 'game002:world:512:v4:'
+const ACTIVE_KEY = 'game002:active-seed:512:v4'
 const validPath = (road) => Array.isArray(roadPoints(road)) && roadPoints(road).length >= 2 && roadPoints(road).every((point) => Array.isArray(point) && point.length === 2 && point.every(Number.isFinite))
 
 export function validateDocument(document, seed) {
   if (document?.schemaVersion !== SCHEMA_VERSION) throw new Error('存档版本不兼容，已保留原始数据。')
   const world = document.world, progress = document.progress
-  if (world?.seed !== seed || world.generatorVersion !== 2 || world.planVersion !== 2 || !Array.isArray(world.regions) || world.regions.length === 0 || !Number.isInteger(document.revision)) throw new Error('世界存档无效，已保留原始数据。')
+  if (world?.seed !== seed || world.generatorVersion !== 4 || world.planVersion !== 2 || !Array.isArray(world.regions) || world.regions.length === 0 || !Number.isInteger(document.revision)) throw new Error('世界存档无效，已保留原始数据。')
   if (world.hierarchy) {
     const h = world.hierarchy
     if (h.version !== 1 || !Array.isArray(h.macros) || h.macros.length !== 4 || !Array.isArray(h.cells) || h.cells.length !== 64 || !Array.isArray(h.warpPhase) || h.warpPhase.length !== 2 || !h.warpPhase.every(Number.isFinite)) throw new Error('分层规划无效。')
@@ -34,11 +34,12 @@ export function validateDocument(document, seed) {
     const spawn=world.spawnPlan, ids=new Set(), assets=new Set(zombieCatalog.map(item=>item.assetId))
     if (spawn.version!==1 || !Array.isArray(spawn.points) || spawn.points.length>4096) throw new Error('感染者出生规划无效。')
     for (const point of spawn.points) {
-      if (!point || typeof point.id!=='string' || !/^infected-v1\/-?\d+\/-?\d+\/\d+$/.test(point.id) || ids.has(point.id) || !assets.has(point.assetId) || ![point.x,point.z,point.rotation].every(Number.isFinite) || Math.abs(point.x)>=1024 || Math.abs(point.z)>=1024 || !world.regions.some(region=>region.id===point.regionId)) throw new Error('感染者出生点无效。')
+      if (!point || typeof point.id!=='string' || !/^infected-v1\/-?\d+\/-?\d+\/\d+$/.test(point.id) || ids.has(point.id) || !assets.has(point.assetId) || ![point.x,point.z,point.rotation].every(Number.isFinite) || !insideWorld(WORLD_BOUNDS, point.x, point.z) || !world.regions.some(region=>region.id===point.regionId)) throw new Error('感染者出生点无效。')
       ids.add(point.id)
     }
   }
-  if (world.unitSize !== 1 || world.size !== WORLD_SIZE || world.terrainVersion !== 2 || world.environmentVersion !== 1 || !world.bounds || !Object.entries(WORLD_BOUNDS).every(([key, value]) => world.bounds[key] === value) || !Array.isArray(world.spawn) || world.spawn.length !== 2 || !world.spawn.every(Number.isFinite)) throw new Error('2048 米世界规格无效。')
+  if (world.unitSize !== 1 || world.size !== WORLD_SIZE || world.terrainVersion !== 2 || world.environmentVersion !== 1 || !world.bounds || !Object.entries(WORLD_BOUNDS).every(([key, value]) => world.bounds[key] === value) || !Array.isArray(world.spawn) || world.spawn.length !== 2 || !world.spawn.every(Number.isFinite)) throw new Error('512 米世界规格无效。')
+  if (!insideWorld(WORLD_BOUNDS, ...world.spawn, 1)) throw new Error('出生点超出世界边界。')
   if (!Array.isArray(world.roads) || !world.roads.every((road) => Array.isArray(road.from) && road.from.length === 2 && road.from.every(Number.isFinite) && Array.isArray(road.to) && road.to.length === 2 && road.to.every(Number.isFinite) && Number.isFinite(road.width) && road.width > 0 && validPath(road))) throw new Error('区域道路存档无效。')
   if (!world.roads.every(road => !road.routing || (road.routing.version === 1 && road.routing.gridSize === 16 && ['length', 'wetLength', 'maxSlope'].every(key => Number.isFinite(road.routing[key]) && road.routing[key] >= 0)))) throw new Error('区域道路寻路数据无效。')
   const ids = new Set()
@@ -97,7 +98,7 @@ export function validateDocument(document, seed) {
 export function createWorldRepository(storage) {
   const keyFor = (seed) => PREFIX + encodeURIComponent(normalizeSeed(seed))
   return {
-    getActiveSeed: () => storage.getItem(ACTIVE_KEY) || storage.getItem('game001:active-seed') || 'first-light',
+    getActiveSeed: () => storage.getItem(ACTIVE_KEY) || 'first-light',
     open(seed) {
       seed = normalizeSeed(seed)
       const raw = storage.getItem(keyFor(seed))

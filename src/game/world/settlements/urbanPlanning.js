@@ -16,16 +16,22 @@ export const districtProfiles = {
 export function createUrbanBlocks(seed, region, profile, townId) {
   const random = createRandom(seed,region.id,'districts-v2')
   const edge=Math.floor(random()*4), cuts=profile.cuts, n=cuts.length-1
-  const parkIndex=n>2?Math.floor(random()*n*n):-1
+  const outward = region.growth === 'center-out'
+  const outerIndices = Array.from({ length: n * n }, (_, index) => index).filter(index => Math.floor(index / n) === 0 || Math.floor(index / n) === n - 1 || index % n === 0 || index % n === n - 1)
+  const parkIndex = n > 2 ? (outward ? outerIndices[Math.floor(random() * outerIndices.length)] : Math.floor(random() * n * n)) : -1
   const blocks=[]
   for(let row=0;row<n;row+=1) for(let column=0;column<n;column+=1) {
     const bounds={minX:region.center[0]+cuts[column],maxX:region.center[0]+cuts[column+1],minZ:region.center[1]+cuts[row],maxZ:region.center[1]+cuts[row+1]}
     const industrial=[row===0,column===n-1,row===n-1,column===0][edge]
     const central=Math.abs((cuts[column]+cuts[column+1])/2)<profile.span*0.23 || Math.abs((cuts[row]+cuts[row+1])/2)<profile.span*0.23
-    const kind=row*n+column===parkIndex?'park':industrial?'industrial':central&&random()<0.65?'commercial':'residential'
-    blocks.push({id:`${townId}/block:${row}:${column}`,kind,bounds,parcels:[]})
+    const centerDistance = Math.hypot((cuts[column] + cuts[column + 1]) / 2, (cuts[row] + cuts[row + 1]) / 2)
+    const core = Math.max(Math.abs((cuts[column] + cuts[column + 1]) / 2), Math.abs((cuts[row] + cuts[row + 1]) / 2)) < profile.span / 4
+    const kind = outward
+      ? core ? 'commercial' : row * n + column === parkIndex ? 'park' : industrial ? 'industrial' : 'residential'
+      : row*n+column===parkIndex?'park':industrial?'industrial':central&&random()<0.65?'commercial':'residential'
+    blocks.push({id:`${townId}/block:${row}:${column}`,kind,bounds,parcels:[], ...(outward ? { centerDistance, growthRing: core ? 0 : 1, density: core ? 1 : 0.65 } : {})})
   }
-  return blocks
+  return outward ? blocks.sort((a, b) => a.centerDistance - b.centerDistance || a.id.localeCompare(b.id)) : blocks
 }
 
 // 候选点沿街区边缘分段，间距不固定；空缺路边由实际道路投影检查剔除。

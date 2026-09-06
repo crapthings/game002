@@ -13,7 +13,7 @@ export default function WorldPlanView({plan,selected,onSelect,focus,layers,baseM
     if (!plan.hierarchy) return []
     const cells = []
     const topography = plan.topography ? createTopographySampler(plan.topography) : null
-    for (let z = -1024; z < 1024; z += 32) for (let x = -1024; x < 1024; x += 32) {
+    for (let z = plan.bounds.minZ; z < plan.bounds.maxZ; z += 32) for (let x = plan.bounds.minX; x < plan.bounds.maxX; x += 32) {
       const sample = sampleEcology(plan, x + 16, z + 16)
       cells.push({ x, z, terrain: topography?.sample(x + 16, z + 16), color: `rgb(${sample.color.map(value => Math.round(value * 255)).join(',')})` })
     }
@@ -34,8 +34,8 @@ export default function WorldPlanView({plan,selected,onSelect,focus,layers,baseM
     })}
     <g pointerEvents="none">
       {layers.spawns && getSpawnPlan(plan).points.map(point=><circle key={point.id} cx={point.x} cy={-point.z} r={line*2.2} fill="#ff9577"/>)}
-      {layers.details && plan.hierarchy?.cells.map(cell => <rect key={cell.id} x={cell.bounds.minX} y={-cell.bounds.maxZ} width={256} height={256} fill="none" stroke="#d0ded0" strokeOpacity="0.35" strokeWidth={line*0.6} strokeDasharray={`${line*3} ${line*3}`}/>)}
-      {layers.macros && plan.hierarchy?.macros.map(macro => <g key={macro.id}><rect x={macro.bounds.minX} y={-macro.bounds.maxZ} width={1024} height={1024} fill="none" stroke="#f6d294" strokeWidth={line*2.5}/><text x={macro.bounds.minX+15} y={-macro.bounds.maxZ+24} fill="#f6d294" fontSize={line*12}>{({forest:'林地带',lowland:'湿地低地',rural:'农业带',upland:'荒野高地'})[macro.theme]}</text></g>)}
+      {layers.details && plan.hierarchy?.cells.map(cell => <rect key={cell.id} x={cell.bounds.minX} y={-cell.bounds.maxZ} width={cell.bounds.maxX-cell.bounds.minX} height={cell.bounds.maxZ-cell.bounds.minZ} fill="none" stroke="#d0ded0" strokeOpacity="0.35" strokeWidth={line*0.6} strokeDasharray={`${line*3} ${line*3}`}/>)}
+      {layers.macros && plan.hierarchy?.macros.map(macro => <g key={macro.id}><rect x={macro.bounds.minX} y={-macro.bounds.maxZ} width={macro.bounds.maxX-macro.bounds.minX} height={macro.bounds.maxZ-macro.bounds.minZ} fill="none" stroke="#f6d294" strokeWidth={line*2.5}/><text x={macro.bounds.minX+15} y={-macro.bounds.maxZ+24} fill="#f6d294" fontSize={line*12}>{({forest:'林地带',lowland:'湿地低地',rural:'农业带',upland:'荒野高地'})[macro.theme]}</text></g>)}
       {layers.settlements && plan.settlements.map(town=><g key={town.id}>
         <rect x={town.bounds.minX} y={-town.bounds.maxZ} width={town.bounds.maxX-town.bounds.minX} height={town.bounds.maxZ-town.bounds.minZ} fill="#182827" fillOpacity="0.28" stroke="#eddec4" strokeWidth={line} strokeDasharray={`${line*5} ${line*3}`}/>
         {(town.blocks || []).map(block=><rect key={block.id} x={block.bounds.minX} y={-block.bounds.maxZ} width={block.bounds.maxX-block.bounds.minX} height={block.bounds.maxZ-block.bounds.minZ} fill={districtColors[block.kind]} fillOpacity="0.8" stroke="#243831" strokeWidth={line*0.6}/>)}

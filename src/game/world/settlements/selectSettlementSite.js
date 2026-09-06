@@ -44,6 +44,12 @@ export function selectSettlementSite(seed, region, topography) {
   const random = createRandom(seed, region.id, 'settlement-site-v2')
   const { sample } = createTopographySampler(topography)
   const b = region.bounds, marginX = width / 2 + 16, marginZ = depth / 2 + 16
+  if (b.maxX - b.minX < marginX * 2 || b.maxZ - b.minZ < marginZ * 2) throw new Error(`${region.name} 的区域不足以容纳原比例聚落。`)
+  if (region.fixedCenter) {
+    const [x, z] = region.center
+    if (x - marginX < b.minX || x + marginX > b.maxX || z - marginZ < b.minZ || z + marginZ > b.maxZ) throw new Error('固定城心无法容纳原比例城市。')
+    return { version: 1, center: [x, z], ...evaluateSite(sample, x, z, width, depth, policy), candidateCount: 1, footprint: { width, depth }, policy }
+  }
   let best = null
   // 分层取样覆盖整个可选范围，大城按完整占地评分。
   for (let row = 0; row < 7; row++) for (let column = 0; column < 7; column++) {

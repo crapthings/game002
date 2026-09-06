@@ -5,11 +5,12 @@ const controls = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown'
 
 export function createMovementInput(canvas, scene, isPlaying) {
   const keys = new Set()
-  let destination = null
-  const clear = () => { keys.clear(); destination = null }
+  let destination = null, jumpQueued = false
+  const clear = () => { keys.clear(); destination = null; jumpQueued = false }
   const onDown = (event) => {
-    if (!isPlaying() || (!controls.has(event.code) && !sprintKeys.has(event.code)) || event.ctrlKey || event.metaKey || event.altKey || event.target?.isContentEditable || /INPUT|TEXTAREA|SELECT/.test(event.target?.tagName)) return
+    if (!isPlaying() || (!controls.has(event.code) && !sprintKeys.has(event.code) && event.code !== 'Space') || event.ctrlKey || event.metaKey || event.altKey || event.target?.isContentEditable || /INPUT|TEXTAREA|SELECT/.test(event.target?.tagName)) return
     event.preventDefault()
+    if (event.code === 'Space' && !event.repeat && !keys.has('Space')) jumpQueued = true
     keys.add(event.code)
     if (controls.has(event.code)) destination = null
   }
@@ -26,6 +27,8 @@ export function createMovementInput(canvas, scene, isPlaying) {
   canvas.addEventListener('pointerdown', onPointer)
   return {
     clear,
+    consumeJump() { const pressed = jumpQueued; jumpQueued = false; return pressed },
+    jumpHeld: () => keys.has('Space'),
     wantsSprint: () => keys.has('ShiftLeft') || keys.has('ShiftRight'),
     direction(position) {
       const horizontal = Number(keys.has('KeyD') || keys.has('ArrowRight')) - Number(keys.has('KeyA') || keys.has('ArrowLeft'))

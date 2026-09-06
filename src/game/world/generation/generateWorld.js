@@ -1,11 +1,10 @@
-import { createRandom } from './random.js'
 import { createSpawnPlan } from '../../spawning/createSpawnPlan.js'
 import { createHierarchy, ecologyWeights } from './createHierarchy.js'
 import { createTopography } from './topography.js'
 import { selectSettlementSite } from '../settlements/selectSettlementSite.js'
-import { WORLD_BOUNDS, WORLD_SIZE, WORLD_UNIT, insideRegion } from '../worldConfig.js'
+import { WORLD_BOUNDS, WORLD_SIZE, WORLD_UNIT } from '../worldConfig.js'
 import { biomeCatalog } from '../biomes/catalog.js'
-import { createRegionalRoadPlan } from '../roads/createRegionalRoadPlan.js'
+import { defineRoad } from '../roads/roadProfiles.js'
 import { compileRoadNetwork } from '../roads/roadGeometry.js'
 import { blocksRoad } from '../settlements/frontage.js'
 import { environmentCatalog } from '../../assets/environment/catalog.js'
@@ -13,63 +12,36 @@ import { createRegionalSettlement } from '../settlements/createRegionalSettlemen
 export { normalizeSeed, validateDefinitions } from './generateWorldV1.js'
 import { normalizeSeed } from './generateWorldV1.js'
 
-export const GENERATOR_VERSION = 2
+export const GENERATOR_VERSION = 4
 export const PLAN_VERSION = 2
-function shuffled(values, random) {
-  const result = [...values]
-  for (let index = result.length - 1; index > 0; index -= 1) {
-    const other = Math.floor(random() * (index + 1)), current = result[index]
-    result[index] = result[other]; result[other] = current
-  }
-  return result
-}
 const colorHex = (color) => '#' + color.map((value) => Math.round(value * 255).toString(16).padStart(2, '0')).join('')
 
 export function generateWorld(seed) {
   seed = normalizeSeed(seed)
-  const random = createRandom(seed, 'world-layout-v2')
-  const cuts = () => [-1024, -512, 0, 512, 1024]
-  const xs = cuts(), zs = cuts()
-  const roles = shuffled(['city', 'city', 'city', 'village', 'village', 'village', 'village', 'woodland', 'woodland', 'meadow', 'farmland', 'farmland', 'wetland', 'wetland', 'quarry', 'scrubland'], random)
-  const spawnColumn = xs.findIndex((value, index) => index < 4 && value <= 0 && xs[index + 1] > 0)
-  const spawnRow = zs.findIndex((value, index) => index < 4 && value <= 0 && zs[index + 1] > 0)
-  const spawnIndex = spawnRow * 4 + spawnColumn
-  const villageIndex = roles.indexOf('village')
-  const spawnRole = roles[spawnIndex]
-  roles[spawnIndex] = roles[villageIndex]
-  roles[villageIndex] = spawnRole
+  // 城市从世界中心展开；外围八个区域覆盖剩余土地，不再随机分配城市象限。
+  const halfCityRegion = 160
+  const xs = [WORLD_BOUNDS.minX, -halfCityRegion, halfCityRegion, WORLD_BOUNDS.maxX]
+  const zs = [WORLD_BOUNDS.minZ, -halfCityRegion, halfCityRegion, WORLD_BOUNDS.maxZ]
   const regions = []
-  let cityCount = 0, villageCount = 0
-  for (let row = 0; row < 4; row += 1) {
-    for (let column = 0; column < 4; column += 1) {
-      const index = row * 4 + column, role = roles[index]
-      const id = `district-${row}-${column}`
-      const rng = createRandom(seed, id, 'region-v2')
-      const bounds = { minX: xs[column], maxX: xs[column + 1], minZ: zs[row], maxZ: zs[row + 1] }
-      const center = [Math.round((bounds.minX + bounds.maxX) / 2), Math.round((bounds.minZ + bounds.maxZ) / 2)]
-      const biome = role === 'city' ? 'urban' : role === 'village' ? 'farmland' : role
-      const kind = role === 'city' || role === 'village' ? role : 'wilderness'
-      const name = role === 'city' ? ['灰港城区', '旧工业城', '北岸新城'][cityCount++] : role === 'village' ? ['灰桥村', '松田村', '风车村', '石井村'][villageCount++] : `${biomeCatalog[biome].name} ${row + 1}-${column + 1}`
-      const patchPool = biome === 'urban' ? ['scrubland', 'woodland', 'meadow'] : biome === 'farmland' ? ['meadow', 'woodland', 'wetland'] : ['woodland', 'scrubland', 'meadow', 'wetland']
-      const ecology = Array.from({ length: 3 }, (_, patch) => ({
-        id: `${id}/ecology/${patch}`, biome: patchPool[Math.floor(rng() * patchPool.length)],
-        center: [Math.round(bounds.minX + (0.2 + rng() * 0.6) * (bounds.maxX - bounds.minX)), Math.round(bounds.minZ + (0.2 + rng() * 0.6) * (bounds.maxZ - bounds.minZ))],
-        radius: 65 + Math.round(rng() * 45),
-      }))
-      regions.push({ id, revision: 1, kind, name, biome, center, bounds, radius: Math.min(bounds.maxX - bounds.minX, bounds.maxZ - bounds.minZ) / 2, ecology, color: colorHex(biomeCatalog[biome].color), description: `${name}，含${ecology.map((patch) => biomeCatalog[patch.biome].name).join('、')}过渡生态。`, tags: [kind, biome], connections: [], landmarks: [], scatter: [], placements: [] })
-    }
+  for (let row = 0; row < 3; row++) for (let column = 0; column < 3; column++) {
+    const central = row === 1 && column === 1
+    const bounds = { minX: xs[column], maxX: xs[column + 1], minZ: zs[row], maxZ: zs[row + 1] }
+    const center = [(bounds.minX + bounds.maxX) / 2, (bounds.minZ + bounds.maxZ) / 2]
+    const kind = central ? 'city' : 'wilderness', biome = central ? 'urban' : 'woodland'
+    const name = central ? '中央城镇' : `城郊 ${row + 1}-${column + 1}`
+    regions.push({
+      id: `district-${row}-${column}`, revision: 1, kind, name, biome, center, bounds,
+      radius: Math.min(bounds.maxX - bounds.minX, bounds.maxZ - bounds.minZ) / 2,
+      ecology: [], color: colorHex(biomeCatalog[biome].color), description: name,
+      tags: [kind, biome], connections: [], landmarks: [], scatter: [], placements: [],
+      ...(central ? { citySize: 'medium', growth: 'center-out', fixedCenter: true } : {}),
+    })
   }
-  // 共享边界形成区域邻接图，避免独立随机圆形区域留下空隙。
   regions.forEach((region, index) => {
-    const row = Math.floor(index / 4), column = index % 4
+    const row = Math.floor(index / 3), column = index % 3
     for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-      if (column + dx >= 0 && column + dx < 4 && row + dz >= 0 && row + dz < 4) region.connections.push(`district-${row + dz}-${column + dx}`)
+      if (column + dx >= 0 && column + dx < 3 && row + dz >= 0 && row + dz < 3) region.connections.push(`district-${row + dz}-${column + dx}`)
     }
-  })
-  const citySizes = shuffled(['small', 'medium', 'large'], createRandom(seed, 'city-sizes-v3'))
-  regions.filter(region => region.kind === 'city').forEach((region, index) => {
-    region.citySize = citySizes[index]
-    region.tags.push(region.citySize)
   })
   const hierarchy = createHierarchy(seed, regions)
   const topography = createTopography(seed, hierarchy)
@@ -84,7 +56,7 @@ export function generateWorld(seed) {
       region.center = region.site.center
     }
     region.ecology = []
-    region.description = `${region.name}，生态由跨区域连续场生成。`
+    region.description = region.kind === 'city' ? '城心固定于世界中心，商业与公共设施向外过渡为住宅和城郊。' : `${region.name}，位于中央城镇外围，生态由跨区域连续场生成。`
   }
   const settlements = regions.filter((region) => region.kind !== 'wilderness').map((region) => createRegionalSettlement(seed, region))
   for (const town of settlements) {
@@ -95,7 +67,13 @@ export function generateWorld(seed) {
   for (const cell of hierarchy.cells) {
     cell.settlementIds = settlements.filter(town => town.bounds.minX < cell.bounds.maxX && town.bounds.maxX > cell.bounds.minX && town.bounds.minZ < cell.bounds.maxZ && town.bounds.maxZ > cell.bounds.minZ).map(town => town.id)
   }
-  const roads = createRegionalRoadPlan(settlements, topography)
+  const city = settlements.find(town => town.kind === 'city')
+  // 四向出口沿城市主轴延伸至城郊，距世界边界保留 32 米。
+  const roads = city.gates.map((gate, index) => {
+    const length = Math.hypot(...gate)
+    const end = gate.map(value => value / length * (WORLD_SIZE / 2 - 32))
+    return defineRoad(`outward-${index}`, [gate, end], 'regional')
+  })
   const regionalSegments = compileRoadNetwork(roads)
   for (const town of settlements) {
     // 跨区公路优先，地块和组合装饰避让走廊；不让道路穿过建筑。
@@ -115,13 +93,11 @@ export function generateWorld(seed) {
       return !blocksRoad({...placement,footprint},allSegments,0.5)
     })
   }
-  const startRegion = regions.find((region) => insideRegion(region, 0, 0))
-  const spawnTown = settlements.find((town) => town.regionId === startRegion.id)
-  const world = { seed, hierarchy, topography, generatorVersion: GENERATOR_VERSION, planVersion: PLAN_VERSION, unitSize: WORLD_UNIT, size: WORLD_SIZE, bounds: { ...WORLD_BOUNDS }, terrainVersion: 2, environmentVersion: 1, roadPlanVersion: 3, regions, settlements, roads, spawn: [spawnTown.gate[0] + 20, spawnTown.gate[1]] }
+  const world = { seed, hierarchy, topography, generatorVersion: GENERATOR_VERSION, planVersion: PLAN_VERSION, unitSize: WORLD_UNIT, size: WORLD_SIZE, bounds: { ...WORLD_BOUNDS }, terrainVersion: 2, environmentVersion: 1, roadPlanVersion: 3, regions, settlements, roads, spawn: [0, 0] }
   world.spawnPlan = createSpawnPlan(world)
   return world
 }
 
 export function appendNewRegions() {
-  throw new Error('2048 米世界已完整分区。调整规划配方后请创建新版本世界，不直接覆盖既有区域。')
+  throw new Error(`${WORLD_SIZE} 米世界已完整分区。调整规划配方后请创建新版本世界，不直接覆盖既有区域。`)
 }
