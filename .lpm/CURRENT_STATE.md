@@ -2,6 +2,8 @@
 
 ## 2026-09-07 战斗与犯罪新Goal
 
+最终模块验证：在既有测试授权下补齐精确招架、攻击时窗、视角边界、执法/自卫与恢复用例，12通过、0失败、0跳过。B侧模块与接口交付完成，交接在PR #1（feature/b-combat-rules→core）。正式A侧场景/动作/UI/存储接入仍未完成，core/dev未合并；后续需按COMBAT-PLAN联调。未运行build/lint，没有改A世界模块。
+
 最新验证：用户明确允许运行新增战斗/犯罪模块测试。node --test tests/gameplay/combat-verification.test.mjs：8通过、0失败、0跳过；加入仓库相对导入后复跑仍通过。未运行build/lint，未改规则源码或A场景。COMBAT-REVIEW最新节记录覆盖边界，旧“未运行/等待许可”记录由此更新。
 
 本轮交接审阅：20个模块/声明/示例文件已形成完整B侧接口，公开声明与导出、时间保存及恢复调用路径经源码核对。COMBAT-REVIEW给出逐项证据与限制。准备提交容量接口并发布B分支供core审阅；本记录不表示已合core/dev或实际场景联调通过。正式输入/碰撞/动画/UI/NPC执行/存储由A接入；未运行测试/build/lint。
