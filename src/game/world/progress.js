@@ -1,3 +1,4 @@
+import { applyLivingCheckpoint } from '../living/persistence.js'
 import { validFog } from '../map/fog.js'
 import { validStamina } from '../entities/createStamina.js'
 import { START_TIME, validWorldTime } from './createDayNightCycle.js'
@@ -8,6 +9,7 @@ export function createProgress() {
 }
 
 export function applyProgress(world, progress, event) {
+  if (event.type === 'living-checkpoint') return applyLivingCheckpoint(progress,event)
   if (event.type === 'checkpoint') {
     if (!Array.isArray(event.position) || event.position.length !== 2 || !event.position.every(Number.isFinite)) throw new Error('角色位置无效。')
     if (event.fog !== undefined && !validFog(event.fog)) throw new Error('探索迷雾记录无效。')

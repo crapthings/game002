@@ -23,7 +23,8 @@ import { insideRegion, insideWorld } from '../world/worldConfig.js'
 import { createDayNightCycle } from '../world/createDayNightCycle.js'
 import { useWorldTimeStore } from '../../stores/useWorldTimeStore.js'
 import { createVisibility } from '../map/visibility.js'
-import { createFirstLoopScene } from '../worldLedger/createFirstLoopScene.js'
+import { createLivingScene } from '../living/createLivingScene.js'
+import { useLivingStore } from '../../stores/useLivingStore.js'
 
 export function createWorldScene(engine, canvas, { onLoading, onReady } = {}) {
   const scene = new Scene(engine)
@@ -44,7 +45,7 @@ export function createWorldScene(engine, canvas, { onLoading, onReady } = {}) {
   const locomotion = createLocomotion()
   const audio=createGameAudio()
   audio.setActive(useGameStore.getState().phase==='playing')
-  const input = createMovementInput(scene, () => useGameStore.getState().phase === 'playing')
+  const input = createMovementInput(scene, () => useGameStore.getState().phase === 'playing' && !useLivingStore.getState().panel && (ledger?.isAlive()??true))
   let world = null, activePlan = null, lastSaved = null, lastSavedFog = null
   let ledger = null, lastSavedLedgerRevision = -1
   let stamina = createStamina(), lastSavedStamina = null
@@ -90,8 +91,10 @@ export function createWorldScene(engine, canvas, { onLoading, onReady } = {}) {
     let position = document.progress.playerPosition || document.world.spawn || [0, 0]
     if (!insideWorld(document.world.bounds, ...position, 1)) position = document.world.spawn
     player.root.position.set(position[0], world.terrain.surfaceHeight(...position), position[1])
+    const savedPlayer=document.progress.living?.spatial.player
+    if(savedPlayer){player.root.rotation.y=Number.isFinite(savedPlayer.heading)?savedPlayer.heading:0;player.root.position.y=Math.max(player.root.position.y,savedPlayer.y);if(player.root.position.y>world.terrain.surfaceHeight(...position)+.2)locomotion.beginFall()}
     lastSaved = [...position]
-    ledger = createFirstLoopScene(scene, document.world, world, player, document.progress.ledger, () => checkpoint())
+    ledger = createLivingScene(scene, document.world, world, player, document.progress, () => ({fog:useNavigationStore.getState().fog,stamina:stamina.snapshot(),worldTime:dayNight.snapshot()}))
     lastSavedLedgerRevision = document.progress.ledger?.revision ?? -1
     world.update(...position, 1)
     const initial = world.getStats()
@@ -109,6 +112,7 @@ export function createWorldScene(engine, canvas, { onLoading, onReady } = {}) {
   }
   async function checkpoint() {
     if (useTeleportStore.getState().request || !ready || !world || useWorldStore.getState().document?.world !== activePlan) return
+    await ledger?.checkpoint(useGameStore.getState().phase!=='playing')
     const owner = activePlan
     const position = [player.root.position.x, player.root.position.z]
     const fog = useNavigationStore.getState().fog
@@ -233,6 +237,7 @@ export function createWorldScene(engine, canvas, { onLoading, onReady } = {}) {
       }
     }
     if (useGameStore.getState().phase !== 'playing') return
+    if (ledger && !ledger.canAdvance()) { ledger.present(); return }
     const dt = Math.min(engine.getDeltaTime() / 1000, 0.05)
     dayNight.update(dt)
     lightingTimer += dt
@@ -240,21 +245,25 @@ export function createWorldScene(engine, canvas, { onLoading, onReady } = {}) {
       lightingTimer = 0
       applyLighting()
     }
-    const direction = input.direction()
+    const combat=useLivingStore.getState().view?.fighters.find(f=>f.id==='player')
+    const immobilized=useLivingStore.getState().panel || ledger && !ledger.isAlive() || combat&&['windup','active','recovery','broken','guard'].includes(combat.phase)
+    if(immobilized){input.clear();locomotion.clearInput()}
+    if(document.pointerLockElement===canvas && (!combat||combat.phase==='idle'||combat.phase==='guard')) player.root.rotation.y=Math.atan2(-Math.cos(camera.alpha),-Math.sin(camera.alpha))
+    const direction = immobilized?{x:0,z:0}:input.direction()
     const wantsSprint = input.wantsSprint()
     const debug = useDebugStore.getState()
     const sprintAllowed = wantsSprint
     const speed = debug.infiniteSprint && sprintAllowed ? STAMINA.runSpeed : stamina.speed(sprintAllowed)
     const multiplier = sprintAllowed && speed === STAMINA.runSpeed ? debug.sprintMultiplier : 1
     const motion = locomotion.update(dt, position, world, {
-      direction, speed: speed * multiplier, dashDirection: input.consumeDash(),
+      direction, speed: immobilized?0:speed * multiplier, dashDirection: input.consumeDash(),
       jumpPressed: input.consumeJump(), jumpHeld: input.jumpHeld(),
       bodySupport: (x,z,ceiling) => ledger?.bodySupport(x,z,ceiling) ?? -Infinity,
       bodyClear: (from, to) => ledger?.bodyClear(from,to) ?? true,
     })
     const moving = motion.moving
     const running = debug.infiniteSprint ? moving && sprintAllowed : stamina.update(dt, moving, sprintAllowed)
-    if (moving) {
+    if (moving && document.pointerLockElement!==canvas) {
       const turn = Math.atan2(Math.sin(motion.heading - player.root.rotation.y), Math.cos(motion.heading - player.root.rotation.y))
       player.root.rotation.y += turn * (1 - Math.exp(-dt * (motion.grounded ? 18 : 9)))
     }

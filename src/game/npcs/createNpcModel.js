@@ -1,3 +1,4 @@
+import { combatPose } from '../living/combatPose.js'
 import { createPorterModel } from './createPorterModel.js'
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode'
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder'
@@ -27,6 +28,7 @@ export function createNpcModel(scene,id) {
     part(2,.06,.06,0,1.42,0,straw)
     for(const x of [-.86,.86]) {part(.025,.58,.025,x,1.1,0,dark);part(.4,.35,.4,x,.65,0,straw)}
   }
+  const blade=part(.06,.8,.04,0,-.9,0,mat('#b9ccd0'),arms[1]);blade.setEnabled(false)
   let phase=0
-  return {root,update(dt,moving=false){phase+=dt*(moving?7:1.5);legs.forEach((n,i)=>n.rotation.x=moving?Math.sin(phase+i*Math.PI)*.42:0);arms.forEach((n,i)=>{n.rotation.x=a.role==='porter'?-.65:moving?-Math.sin(phase+i*Math.PI)*.3:Math.sin(phase)*.035});},dispose(){root.dispose();materials.forEach(m=>m.dispose())}}
+  return {root,setEquipment(weapon,armor){blade.setEnabled(!!weapon);cloth.diffuseColor=Color3.FromHexString(armor?'#596473':a.color)},update(dt,moving=false){phase+=dt*(moving?7:1.5);legs.forEach((n,i)=>n.rotation.x=moving?Math.sin(phase+i*Math.PI)*.42:0);arms.forEach((n,i)=>{n.rotation.x=a.role==='porter'?-.65:moving?-Math.sin(phase+i*Math.PI)*.3:Math.sin(phase)*.035});},combatPose(f,at,flash){const pose=combatPose(f,at);root.rotation.z=pose.dead?Math.PI/2:0;root.rotation.x=pose.lean;arms.forEach(n=>n.rotation.z=0);if(f&&!['idle','dead'].includes(f.phase)){arms[1].rotation.x=pose.arm;arms[1].rotation.z=pose.side;if(f.phase==='guard'){arms[0].rotation.x=pose.arm;arms[0].rotation.z=-pose.side}}const active=flash&&at<flash.until;materials.forEach(m=>m.emissiveColor.set(active&&flash.kind!=='parried'?.4:0,active&&flash.kind==='parried'?.4:0,active&&flash.kind==='parried'?.5:0));},dispose(){root.dispose();materials.forEach(m=>m.dispose())}}
 }

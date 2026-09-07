@@ -25,6 +25,7 @@ export interface GameplayConfig {
   id: string; items: ItemInput[]; containers: Container[]; lots?: Lot[]; actors: Actor[];
   combat?: true;
   authorities?: string[];
+  village?: VillageSetup;
 }
 export interface InventoryState {
   version: 1; revision: number; containers: Container[]; lots: Lot[];
@@ -67,7 +68,8 @@ export interface InteractionCommand {
   kind: 'buy' | 'sell' | 'use' | 'gift'; actorId: string; targetId: string;
   lotId: string; quantity: number;
 }
-export type GameplayStep =
+export type GameplayStep = (
+  | { domain: 'village'; command: { kind: 'take' | 'settle' | 'return' | 'aid' | 'reward' | 'mask'; actorId: string; lotId?: string }; context: Policy & { identified?: boolean } }
   | { domain: 'pursuit'; command: { kind: 'sight'; actorId: string; targetId: string };
       context: Policy & { visible: boolean; identified: boolean; position: WorldPoint; proofId: string } }
   | { domain: 'pursuit'; command: { kind: 'lost'; actorId: string; targetId: string };
@@ -94,7 +96,7 @@ export type GameplayStep =
   | { domain: 'knowledge'; command: { kind: 'report'; factId: string; actorId: string; targetId: string };
       context: Policy & { delivered: boolean; proofId: string } }
   | { domain: 'knowledge'; command: { kind: 'relationship'; factId: string; actorId: string; targetId: string };
-      context: Policy & { trustDelta: number; ruleId: string } };
+      context: Policy & { trustDelta: number; ruleId: string } }) & { observations?: { npcId: string; identified: boolean; position: WorldPoint; proofId: string }[] };
 export interface GameplayRequest { id: string; expectedRevision: number; steps: GameplayStep[] }
 /** Retain the returned request unchanged; preparation performs no commit. */
 export function prepareGameplayRequest(state: GameplayState, catalog: Catalog, input: {
@@ -111,6 +113,7 @@ export interface GameplayState {
   robbery?: RobberyState;
   crime?: CrimeState;
   pursuit?: PursuitState;
+  village?: VillageState;
 }
 export interface Fighter {
   id: string; attack: number; defense: number; stamina: number;
@@ -170,7 +173,7 @@ export interface RobberyState {
 }
 export interface CrimeCase {
   id: string; authorityId: string; incidentId: string; victimId: string; subjectId: string | null;
-  severity: number; factIds: string[]; evidenceIds: string[];
+  severity: number; factIds: string[]; evidenceIds: string[]; resolved?: boolean;
 }
 export interface CrimeEvent {
   id: string; kind: 'case_assessed'; at: number; authorityId: string; caseId: string;
@@ -203,7 +206,7 @@ export function pursuitFor(world: GameplayState, authorityId: string, subjectId:
   response: 'none' | 'question' | 'arrest' | 'reinforce';
   mode: 'idle' | 'follow' | 'search'; destination: WorldPoint | null; mayEngage: boolean;
 };
-export type GameplayEvent = InteractionEvent | SocialEvent | CombatEvent | PropertyEvent | EquipmentEvent | RobberyEvent | CrimeEvent | PursuitEvent;
+export type GameplayEvent = VillageEvent | InteractionEvent | SocialEvent | CombatEvent | PropertyEvent | EquipmentEvent | RobberyEvent | CrimeEvent | PursuitEvent;
 export type Failure = { ok: false; code: string; events: [] };
 export type ExecuteResult = Failure | {
   ok: true; code: 'APPLIED' | 'ALREADY_APPLIED'; duplicate: boolean;
@@ -265,3 +268,18 @@ export function createWorldSession(config: GameplayConfig, options: {
   saved?: unknown;
   save: (candidate: WorldCheckpoint, metadata: { configId: string; expectedSequence: number; nextSequence: number }) => WorldSaveReceipt | Promise<WorldSaveReceipt>;
 }): WorldSession;
+
+export interface VillageEvent {
+  id: string; kind: 'take'|'settle'|'return'|'aid'|'reward'|'mask'; at:number;
+  actorId:string; targetId:string|null; cause:string|null; requestId:string;
+  amount?:number; masked?:boolean; subjectId?:string|null;
+}
+export interface VillageState {
+  version:1; masked:boolean; events:VillageEvent[]; settled:string[];
+  aid:{eventId:string|null; dueAt:number|null; subject:string|null; rewardEvent:string|null};
+}
+/** Constructed by the trusted livingConfig migration adapter. */
+export interface VillageSetup extends Omit<VillageState,'version'> {
+  at:number; trust:number;
+  knowledge:{kind:'witness'|'report'; actorId:string; sourceId:string; subjectId:string|null; proofId:string; position?:WorldPoint}[];
+}

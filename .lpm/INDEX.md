@@ -2,6 +2,7 @@
 
 先读仓库根目录 AGENTS.md。本说明书为用户 B 新增的协作草案，不改变已有规则。
 
+- [B接手场景接入与验证边界](../docs/world-ledger/SCENE-INTEGRATION.md)
 - [当前状态](CURRENT_STATE.md)
 - [战斗与犯罪小循环计划](../docs/world-ledger/COMBAT-PLAN.md)
 - [战斗模块接入审阅](../docs/world-ledger/COMBAT-REVIEW.md)

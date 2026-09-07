@@ -68,6 +68,10 @@ export function executeKnowledge(state,command,context) {
         event.subjectId = context.identified ? fact.actorId : null
         event.proofId = context.proofId
         event.observedAt = context.observedAt
+        if(context.position!==undefined) {
+          requireValue(context.position && ['x','y','z'].every(k=>Number.isFinite(context.position[k])&&Math.abs(context.position[k])<=1024),'INVALID_POSITION')
+          event.position=clone(context.position)
+        }
         remember(next,command.actorId,fact.id,event.subjectId,event.id)
       } else if (command.kind === 'report') {
         requireValue(state.actorIds.includes(command.targetId) && command.targetId !== command.actorId,'INVALID_RECIPIENT')
@@ -79,6 +83,8 @@ export function executeKnowledge(state,command,context) {
         event.targetId = command.targetId
         event.subjectId = known.subjectId // Never resolve an anonymous source via the fact's actorId.
         event.proofId = context.proofId
+        const source=state.events.find(e=>e.id===known.evidenceId)
+        if(source?.position) event.position=clone(source.position)
         remember(next,command.targetId,fact.id,known.subjectId,event.id)
       } else {
         const known = state.knowledge.find(k => k.npcId === command.actorId && k.factId === fact.id)

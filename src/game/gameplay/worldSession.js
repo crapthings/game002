@@ -21,7 +21,7 @@ export function createWorldSession(config,{saved,save} = {}) {
   if (typeof save !== 'function') throw new TypeError('A checkpoint save adapter is required.')
   const opened = saved === undefined ? createGameplay(config) : restoreWorldCheckpoint(config,saved)
   if (opened.ok === false) throw Object.assign(new Error(opened.code),{code:opened.code})
-  let current = opened.checkpoint ?? {version:1,sequence:0,simulationAt:0,gameplay:opened.state}
+  let current = opened.checkpoint ?? {version:1,sequence:0,simulationAt:opened.state.at,gameplay:opened.state}
   const catalog = opened.catalog
   let queue = Promise.resolve(), pending = 0, closed = false, recoveryRequired = false, saving = false
 

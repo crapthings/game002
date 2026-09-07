@@ -1,3 +1,4 @@
+import { combatPose } from '../living/combatPose.js'
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode'
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder'
 import { Mesh } from '@babylonjs/core/Meshes/mesh'
@@ -161,6 +162,8 @@ export function createPlayer(scene) {
     sphere(`empty-hand:${side}`, [0.16, 0.19, 0.16], [0, -0.28, 0.018], skin, elbow)
     return { shoulder, elbow, side }
   })
+  const blade=box('equipped-blade',[.065,.85,.035],[0,-.78,.018],material('steel-blade','#b9ccd0'),arms[1].elbow)
+  blade.setEnabled(false)
   const shadow = MeshBuilder.CreateDisc('player-contact-shadow', { radius: 0.43, tessellation: 24 }, scene)
   shadow.rotation.x = Math.PI / 2
   shadow.material = material('contact-shadow', '#0c1514')
@@ -214,6 +217,18 @@ export function createPlayer(scene) {
       shadow.position.set(root.position.x, (motion.groundHeight ?? height) + 0.035, root.position.z)
       shadow.scaling.setAll(1 + Math.min(altitude, 4) * 0.12)
       shadow.material.alpha = 0.3 / (1 + altitude * 0.65)
+    },
+    setEquipment(weapon,armor) {blade.setEnabled(!!weapon);cloth.diffuseColor=Color3.FromHexString(armor?'#596473':'#293e3e')},
+    combatPose(f,at,flash) {
+      const pose=combatPose(f,at)
+      rig.rotation.z=pose.dead?Math.PI/2:0
+      if(f && !['idle','dead'].includes(f.phase)) {
+        arms[1].shoulder.rotation.x=pose.arm;arms[1].shoulder.rotation.z=pose.side
+        if(f.phase==='guard'){arms[0].shoulder.rotation.x=pose.arm;arms[0].shoulder.rotation.z=-pose.side}
+        rig.rotation.x=pose.lean
+      }
+      const active=flash&&at<flash.until
+      for(const m of materials)m.emissiveColor?.set(active&&flash.kind!=='parried'?.35:0,active&&flash.kind==='parried'?.3:0,active&&flash.kind==='parried'?.35:0)
     },
     dispose() {
       root.dispose(); shadow.dispose()

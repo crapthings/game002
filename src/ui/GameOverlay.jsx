@@ -1,3 +1,4 @@
+import { useLivingStore } from '../stores/useLivingStore.js'
 import MouseLookHint from './MouseLookHint.jsx'
 import AudioSettings from './AudioSettings.jsx'
 import { useNavigate } from 'react-router-dom'
@@ -10,7 +11,7 @@ import WorldTimeHud from './WorldTimeHud.jsx'
 import DebugMenu from './DebugMenu.jsx'
 import { useDebugStore } from '../stores/useDebugStore.js'
 import GraphicsSettings from './GraphicsSettings.jsx'
-import LedgerHud from './LedgerHud.jsx'
+import LivingHud from './LivingHud.jsx'
 
 const buttonClass = 'rounded-xl border border-white/15 bg-slate-800 px-5 py-3 text-sm font-medium transition hover:bg-slate-700 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-emerald-300'
 
@@ -31,7 +32,7 @@ export default function GameOverlay() {
         <RadarHud />
         <PlayerStatusHud />
         <WorldTimeHud />
-        {phase === 'playing' && <><LedgerHud /><MouseLookHint /></>}
+        {phase === 'playing' && <><LivingHud /><MouseLookHint /></>}
         {phase === 'playing' && <button type="button" onClick={() => useGameStore.getState().openDebug()} className={`absolute left-4 top-20 z-10 rounded border border-white/10 bg-black/65 px-2 py-1 text-[10px] hover:text-emerald-200 ${debugActive ? 'text-amber-300' : 'text-stone-400'}`}>{debugActive ? '调试已启用' : '开发'} · F2</button>}
         {phase === 'map' && <WorldMap />}
 
@@ -51,9 +52,10 @@ export default function GameOverlay() {
         <AudioSettings />
         <div className="mt-6 flex flex-col gap-3">
           {errorMessage}
+          {error && <button type="button" className={buttonClass} onClick={() => window.location.reload()}>重新读取已保存进度</button>}
           <button type="button" className={buttonClass} onClick={resumeGame}>继续游戏</button>
           <button type="button" className={buttonClass} onClick={() => useGameStore.getState().openDebug()}>开发调试 · F2</button>
-          <button type="button" className={buttonClass} onClick={() => { returnToMenu(); navigate('/', { replace: true }) }}>返回主菜单</button>
+          <button type="button" className={buttonClass} onClick={async () => { if(await useLivingStore.getState().flush()){ returnToMenu(); navigate('/', { replace: true }) } }}>返回主菜单</button>
         </div>
       </div>
     </section>

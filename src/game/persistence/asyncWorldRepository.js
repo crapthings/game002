@@ -52,7 +52,7 @@ export const asyncWorldRepository = {
   },
   async save(document, progress) {
     const db = await database()
-    const next = { ...document, revision: document.revision + 1, progress }
+    const next = { ...document, schemaVersion:progress.living?3:document.schemaVersion, revision: document.revision + 1, progress }
     await new Promise((resolve, reject) => {
       const tx = db.transaction('progress', 'readwrite'), store = tx.objectStore('progress')
       let conflict = false
@@ -60,7 +60,7 @@ export const asyncWorldRepository = {
       request.onsuccess = () => {
         if (request.result?.revision !== document.revision) { conflict = true; tx.abort(); return }
         // 只写进度；世界规划不再每两秒被解析、校验和序列化。
-        store.put({ revision: next.revision, progress }, document.world.seed)
+        store.put({ schemaVersion:next.schemaVersion, revision: next.revision, progress }, document.world.seed)
       }
       tx.oncomplete = resolve
       tx.onabort = () => reject(conflict ? new Error('存档已在其他页面更新，请返回菜单重新进入该种子。') : tx.error || new Error('进度保存失败。'))

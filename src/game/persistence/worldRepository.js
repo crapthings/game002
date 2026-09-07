@@ -1,3 +1,4 @@
+import { validateLiving } from '../living/persistence.js'
 import { createFortifications } from '../world/fortifications/createFortifications.js'
 import { generateWorld, normalizeSeed, appendNewRegions, GENERATOR_VERSION } from '../world/generation/generateWorld.js'
 import { createProgress } from '../world/progress.js'
@@ -15,7 +16,7 @@ const point = value => Array.isArray(value) && value.length === 2 && value.every
 const bounds = b => b && ['minX','maxX','minZ','maxZ'].every(key => Number.isFinite(b[key])) && b.minX < b.maxX && b.minZ < b.maxZ && b.minX >= WORLD_BOUNDS.minX && b.maxX <= WORLD_BOUNDS.maxX && b.minZ >= WORLD_BOUNDS.minZ && b.maxZ <= WORLD_BOUNDS.maxZ
 
 export function validateDocument(document, seed) {
-  if (document?.schemaVersion !== SCHEMA_VERSION || !Number.isInteger(document.revision) || document.revision < 0) throw new Error('存档版本无效，已保留原始数据。')
+  if (![SCHEMA_VERSION,3].includes(document?.schemaVersion) || !Number.isInteger(document.revision) || document.revision < 0) throw new Error('存档版本无效，已保留原始数据。')
   const world = document.world, progress = document.progress
   if (world?.seed !== seed || world.generatorVersion !== GENERATOR_VERSION || world.planVersion !== 2 || world.unitSize !== 1 || world.size !== WORLD_SIZE || !bounds(world.bounds) || !Object.entries(WORLD_BOUNDS).every(([key,value]) => world.bounds[key] === value) || !point(world.spawn) || !insideWorld(world.bounds,...world.spawn,1)) throw new Error('512 米世界规格无效。')
   if (!Array.isArray(world.settlements) || world.settlements.length || !Array.isArray(world.roads) || world.spawnPlan) throw new Error('城市基础规划无效。')
@@ -45,6 +46,7 @@ export function validateDocument(document, seed) {
   if (progress.stamina!==undefined && !validStamina(progress.stamina)) throw new Error('体力无效。')
   if (progress.worldTime!==undefined && !validWorldTime(progress.worldTime)) throw new Error('时间无效。')
   if (progress.ledger!==undefined && !validFirstLoop(progress.ledger,world)) throw new Error('江湖账本存档无效，已保留原始数据。')
+  if (progress.living!==undefined) validateLiving(progress.living,world)
   return document
 }
 
@@ -77,7 +79,7 @@ export function createWorldRepository(storage) {
       const raw = storage.getItem(key)
       const current = raw === null ? null : validateDocument(JSON.parse(raw), document.world.seed)
       if (!current || current.revision !== document.revision) throw new Error('存档已在其他页面更新，请返回菜单重新进入该种子。')
-      const next = { ...document, revision: document.revision + 1, progress }
+      const next = { ...document, schemaVersion:progress.living?3:document.schemaVersion, revision: document.revision + 1, progress }
       validateDocument(next, document.world.seed)
       storage.setItem(key, JSON.stringify(next))
       return next

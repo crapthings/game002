@@ -3,7 +3,7 @@ const clone = value => structuredClone(value)
 const natural = n => Number.isSafeInteger(n) && n >= 0
 const id = s => typeof s === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,95}$/.test(s)
 const check = (ok,code) => { if (!ok) throw new InventoryError(code) }
-const severity = Object.freeze({threatened:1,robbed:2,parried:2,damaged:2,died:3,loot_item:1,loot_money:1})
+const severity = Object.freeze({take:2,threatened:1,robbed:2,parried:2,damaged:2,died:3,loot_item:1,loot_money:1})
 
 export function createCrimeState(actorIds,authorities = []) {
   check(Array.isArray(authorities) && authorities.every(a => actorIds.includes(a)) &&
@@ -28,7 +28,7 @@ function incidentFor(source,events) {
 export function wantedFor(state,authorityId,subjectId) {
   check(state.authorities.includes(authorityId),'NOT_AUTHORITY')
   check(id(subjectId),'INVALID_SUBJECT')
-  const cases = state.cases.filter(c => c.authorityId === authorityId && c.subjectId === subjectId)
+  const cases = state.cases.filter(c => c.authorityId === authorityId && c.subjectId === subjectId && !c.resolved)
   const points = cases.reduce((sum,c) => sum+c.severity,0)
   const level = cases.some(c => c.severity === 3) ? 3 : points === 0 ? 0 : points === 1 ? 1 : points <= 3 ? 2 : 3
   return {authorityId,subjectId,level,points,caseIds:cases.map(c => c.id),
@@ -58,7 +58,7 @@ export function executeCrime(state,world,command,context) {
     check(!state.events.some(e => e.authorityId === command.actorId && e.factId === fact.id && e.evidenceId === known.evidenceId),'EVIDENCE_ALREADY_ASSESSED')
     const evidence = world.social.events.find(e => e.id === known.evidenceId)
     check(evidence && evidence.at <= context.at,'INVALID_EVIDENCE_TIME')
-    const sources = [...world.combat.events,...world.robbery.events,...world.property.events]
+    const sources = [...world.combat.events,...world.robbery.events,...world.property.events,...(world.village?.events??[])]
     const source = sources.find(e => e.id === fact.sourceEventId)
     check(source && Object.hasOwn(severity,source.kind),'NOT_CRIME_FACT')
     const combatFact = ['parried','damaged','died'].includes(source.kind)
@@ -68,6 +68,7 @@ export function executeCrime(state,world,command,context) {
     }
     const ruleId = combatFact ? source.justification.ruleId : 'property.coercion.v1'
     const incidentId = incidentFor(source,sources)
+    check(!world.village?.settled.includes(incidentId),'INCIDENT_RESOLVED')
     const next = clone(state)
     let record = next.cases.find(c => c.authorityId === command.actorId && c.incidentId === incidentId && c.victimId === source.targetId)
     if (!record) {

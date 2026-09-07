@@ -1,5 +1,7 @@
 # 战斗与犯罪小循环 / A-B 接入计划
 
+最新：用户已授权 B 接手原 A 的场景任务，实施与证据见 [SCENE-INTEGRATION](SCENE-INTEGRATION.md)。下文为历史接口推进记录，不能把旧的“未接入/不可运行”当作当前状态。
+
 ## 当前进度
 
 2026-09-07：已有通用框架保存为 d902f34，B开发分支 feature/b-combat-rules。已 fetch 核对 origin/core 仍为 2b988b0；没有待吸收的 A 更新。本轮新增 combat.js 战斗规则草稿，尚未导出公共入口或接入运行协调器，不可当作已完成战斗系统。遵守 AGENTS，不运行测试/build/lint。
