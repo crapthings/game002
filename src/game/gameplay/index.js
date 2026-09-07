@@ -1,6 +1,10 @@
 // Public integration entry. Prefer the coordinator over individual reducers.
-export { createGameplay, executeGameplay, restoreGameplay } from './runtime.js'
+export { createGameplay, executeGameplay, restoreGameplay, previewGameplayCombat } from './runtime.js'
+export { COMBAT_RULES } from './combat.js'
+export { wantedFor } from './crime.js'
+export { pursuitFor, PURSUIT_RULES } from './pursuit.js'
 export { createGameplaySession } from './session.js'
+export { createWorldSession, restoreWorldCheckpoint } from './worldSession.js'
 export { prepareGameplayRequest } from './requests.js'
 export { inventoryContents, occupiedSpace, itemDefinition } from './inventory.js'
 export { knowledgeFor } from './knowledge.js'

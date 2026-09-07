@@ -26,6 +26,15 @@ export function createCatalog(definitions) {
     requireValue(positive(item.unitSpace) && natural(item.healing),'INVALID_ITEM_VALUES')
     requireValue(['consumable','tradable','giftable'].every(key => typeof item[key] === 'boolean'),'INVALID_ITEM_FLAGS')
     requireValue(item.consumable || item.healing === 0,'INVALID_ITEM_EFFECT')
+    // Omit absent equipment fields so earlier non-equipment catalogs retain
+    // their exact serialized shape and configuration signature.
+    if (definition.equipment !== undefined) {
+      const gear = definition.equipment
+      requireValue(gear && ['weapon','armor'].includes(gear.slot) && !item.consumable,'INVALID_EQUIPMENT')
+      const attack = gear.attack ?? 0, defense = gear.defense ?? 0
+      requireValue(natural(attack) && natural(defense),'INVALID_EQUIPMENT_VALUES')
+      item.equipment = Object.freeze({slot:gear.slot,attack,defense})
+    }
     return Object.freeze(item)
   })
   return Object.freeze(catalog)
