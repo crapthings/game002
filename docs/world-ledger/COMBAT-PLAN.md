@@ -31,6 +31,14 @@ restoreGameplay通过可信初始config和完整请求日志重建战斗、物�
 
 ## B继续负责
 
+### 有界账本容量接入
+
+historyCapacity(gameplayState)返回available/low/full与各模块剩余条数。少于等于128条时提前告警；抢劫按最坏两事件估算standaloneOperations，其余按一条估算。这个值不是整批请求可成功次数：一次命中还会登记社会事实，一次请求可以含多步，仍由prepare/dispatch最终决定。
+
+A应在low时停止发起新的长战斗/连续知觉采样，先停止新输入，再处理必要按键释放并保存世界检查点，提示本轮容量接近上限。不要把这项策略误说成自动实施，当前未修改A的UI/循环。full时不自动重试、不清空历史、不用新ID绕过；checkpoint仍可保存已有状态。恢复旧存档不会恢复容量，需要后续正式归档/压缩方案；第一版保持明确的有限演示会话。
+
+本轮是容量可见性与提前收尾契约，未实现长期无上限世界，也没有运行持续追踪性能验证。
+
 ### 世界时间与保存接口续进
 
 新增createWorldSession(config,{saved,save})，作为有独立模拟时钟的世界会话入口。snapshot返回{version:1,sequence,simulationAt,gameplay}；请求expectedRevision取gameplay.revision。A的当前模拟时间从simulationAt恢复，运行时由暂停状态控制推进，不能使用Date.now差值补离线时间。显示预览使用当前模拟时间，不能退回最后一次动作的gameplay.at。

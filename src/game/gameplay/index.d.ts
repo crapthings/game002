@@ -245,6 +245,11 @@ export function createGameplaySession(config: GameplayConfig, options: {
 export interface WorldCheckpoint {
   version: 1; sequence: number; simulationAt: number; gameplay: GameplayState;
 }
+export function historyCapacity(state: GameplayState): {
+  status: 'available' | 'low' | 'full'; checkpointConsumesHistory: false;
+  channels: { domain: string; used: number; limit: number; remaining: number;
+    standaloneOperations: number; status: 'available' | 'low' | 'full' }[];
+};
 export type WorldSaveReceipt = { status: 'committed'; sequence: number } | { status: 'rejected'; code?: string };
 export function restoreWorldCheckpoint(config: GameplayConfig, saved: unknown): Failure | {
   ok: true; code: 'RESTORED'; catalog: Catalog; checkpoint: WorldCheckpoint; events: [];
