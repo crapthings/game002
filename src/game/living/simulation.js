@@ -7,7 +7,7 @@ export function createLivingSimulation({world,legacy=null,saved,save,space,notif
   const config=livingConfig(legacy,world),session=createWorldSession(config,{saved,save})
   let state=session.snapshot().gameplay,clock=session.status().simulationAt,busy=false,stopped=false,guardDesired=false
   let remainder=0
-  let serial=state.revision,sweep=new Map(),view=previewGameplayCombat(state,clock)
+  let serial=Math.max(state.revision,...state.journal.map(r=>/^live-\d+$/.test(r.id)?Number(r.id.slice(5)):0)),sweep=new Map(),view=previewGameplayCombat(state,clock)
   for(const f of view)if(f.phase==='active')sweep.set(f.swing.id,(clock-f.swing.activeAt)/180)
   const actor=id=>state.interactions.actors.find(a=>a.id===id)
   const fighter=id=>view.find(a=>a.id===id)
