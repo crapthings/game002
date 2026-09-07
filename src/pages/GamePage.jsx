@@ -35,7 +35,8 @@ export default function GamePage({ seed }) {
         event.preventDefault()
         if (state.phase === 'map') state.closeMap()
         else if (state.phase === 'playing') state.pauseGame()
-        else if (state.phase === 'paused') state.resumeGame()
+        // Escape may also trigger pointerlockchange: it must never resume a
+        // pause caused by the same browser gesture.
       }
     }
     const onVisibilityChange = () => { if (document.hidden) useGameStore.getState().pauseGame() }

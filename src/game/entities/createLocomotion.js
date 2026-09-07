@@ -28,14 +28,14 @@ export function createLocomotion() {
       grounded = false; jumps = 1; coyote = 0; flipAge = null
     },
     clearInput() { buffer = 0; wallMode=wallNormal=null; if(dashTime>0)vx=vz=0; dashTime=0 },
-    update(dt, position, world, { direction, speed, jumpPressed, jumpHeld, dashDirection = null }) {
+    update(dt, position, world, { direction, speed, jumpPressed, jumpHeld, dashDirection = null, bodyClear = () => true, bodySupport = () => -Infinity }) {
       let jumpEvent=null,dashStarted=false
       if(dashDirection && dashCooldown<=0 && dashTime<=0) {
         const length=Math.hypot(dashDirection.x,dashDirection.z)
         if(length>.01) {dashX=dashDirection.x/length;dashZ=dashDirection.z/length;dashTime=DASH.duration;dashCooldown=DASH.cooldown;dashStarted=true}
       }
       if (jumpPressed) buffer = JUMP.bufferTime
-      const support=(x,z,ceiling)=>world.supportHeight?.(x,z,ceiling)??world.terrain.surfaceHeight(x,z)
+      const support=(x,z,ceiling)=>Math.max(world.supportHeight?.(x,z,ceiling)??world.terrain.surfaceHeight(x,z),bodySupport(x,z,ceiling))
       const startX = position.x, startZ = position.z
       let landed = false, landingImpact = 0
       const count = Math.max(1, Math.ceil(dt / JUMP.step)), h = dt / count
@@ -95,7 +95,7 @@ export function createLocomotion() {
         const moveSteps = Math.max(1, Math.ceil(Math.hypot(dx, dz) / 0.15))
         for (let n = 0; n < moveSteps; n++) {
           const sx = dx / moveSteps, sz = dz / moveSteps
-          const canMove = (x, z) => (world.canTraverse?.(x,z,position.y+(grounded?.4:.03))??world.canMove(x,z)) && world.terrain.surfaceHeight(x, z) <= position.y + (grounded ? 0.4 : 0.05)
+          const canMove = (x, z) => bodyClear(position, { x, y: position.y, z }) && (world.canTraverse?.(x,z,position.y+(grounded?.4:.03))??world.canMove(x,z)) && world.terrain.surfaceHeight(x, z) <= position.y + (grounded ? 0.4 : 0.05)
           if (canMove(position.x + sx, position.z + sz)) {
             position.x += sx; position.z += sz
           } else {

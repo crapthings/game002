@@ -2,26 +2,46 @@ import { ArcRotateCamera } from '@babylonjs/core/Cameras/arcRotateCamera'
 import { Vector3 } from '@babylonjs/core/Maths/math.vector'
 import { Ray } from '@babylonjs/core/Culling/ray'
 
-export function createThirdPersonCamera(scene, canvas, isPlaying) {
+export function createThirdPersonCamera(scene, canvas, isPlaying, onRelease = () => {}) {
   const camera = new ArcRotateCamera('third-person', -Math.PI / 2, 1.22, 6, Vector3.Zero(), scene)
   camera.inputs.clear()
   camera.minZ = 0.08
   camera.fov = Math.PI / 3
-  let drag = null, distance = 6, followHeight = null
-  function clear() {
+  let distance = 6, followHeight = null, wasLocked = false, intentionalRelease = false, drag = null
+  const releaseDrag = () => {
     if (drag !== null && canvas.hasPointerCapture(drag)) canvas.releasePointerCapture(drag)
     drag = null
   }
+  const lockFailed = () => document.dispatchEvent(new CustomEvent('game-pointer-status', {detail:'当前浏览器未能锁定鼠标，可用中键拖动视角'}))
+  function clear() {
+    releaseDrag()
+    intentionalRelease = true
+    if (document.pointerLockElement === canvas) document.exitPointerLock()
+  }
   const down = event => {
-    if (!isPlaying() || event.button !== 0) return
+    if (!isPlaying()) return
+    if (event.button === 1 && document.pointerLockElement !== canvas) { event.preventDefault(); drag = event.pointerId; canvas.setPointerCapture(drag); return }
+    if (event.button !== 0 || document.pointerLockElement === canvas) return
     event.preventDefault()
-    drag = event.pointerId
-    canvas.setPointerCapture(drag)
+    // Acquiring the pointer is a separate gesture; combat input only accepts an
+    // already locked canvas. Rejected permission leaves the interface usable.
+    try { canvas.requestPointerLock()?.catch(lockFailed) } catch { lockFailed() }
+  }
+  const lockChanged = () => {
+    const locked = document.pointerLockElement === canvas
+    if (locked) intentionalRelease = false
+    if (wasLocked && !locked && !intentionalRelease) onRelease()
+    wasLocked = locked
   }
   const move = event => {
-    if (drag !== event.pointerId || !isPlaying()) return
+    if ((document.pointerLockElement !== canvas && drag === null) || !isPlaying()) return
     camera.alpha -= event.movementX * 0.005
     camera.beta = Math.max(0.3, Math.min(1.5, camera.beta - event.movementY * 0.005))
+  }
+  const key = event => {
+    if (event.code !== 'Tab' || !isPlaying() || event.ctrlKey || event.altKey || event.metaKey) return
+    if (/INPUT|TEXTAREA|SELECT/.test(event.target?.tagName) || event.target?.isContentEditable) return
+    if (document.pointerLockElement === canvas) { event.preventDefault(); clear() }
   }
   const wheel = event => {
     if (!isPlaying()) return
@@ -30,10 +50,13 @@ export function createThirdPersonCamera(scene, canvas, isPlaying) {
   }
   const context = event => event.preventDefault()
   canvas.addEventListener('pointerdown', down)
-  canvas.addEventListener('pointermove', move)
-  canvas.addEventListener('pointerup', clear)
-  canvas.addEventListener('pointercancel', clear)
-  canvas.addEventListener('lostpointercapture', clear)
+  canvas.addEventListener('pointerup', releaseDrag)
+  canvas.addEventListener('pointercancel', releaseDrag)
+  canvas.addEventListener('lostpointercapture', releaseDrag)
+  document.addEventListener('pointerlockerror', lockFailed)
+  document.addEventListener('mousemove', move)
+  document.addEventListener('pointerlockchange', lockChanged)
+  window.addEventListener('keydown', key)
   canvas.addEventListener('wheel', wheel, { passive: false })
   canvas.addEventListener('contextmenu', context)
   window.addEventListener('blur', clear)
@@ -55,10 +78,13 @@ export function createThirdPersonCamera(scene, canvas, isPlaying) {
     dispose() {
       clear()
       canvas.removeEventListener('pointerdown', down)
-      canvas.removeEventListener('pointermove', move)
-      canvas.removeEventListener('pointerup', clear)
-      canvas.removeEventListener('pointercancel', clear)
-      canvas.removeEventListener('lostpointercapture', clear)
+      canvas.removeEventListener('pointerup', releaseDrag)
+      canvas.removeEventListener('pointercancel', releaseDrag)
+      canvas.removeEventListener('lostpointercapture', releaseDrag)
+      document.removeEventListener('pointerlockerror', lockFailed)
+      document.removeEventListener('mousemove', move)
+      document.removeEventListener('pointerlockchange', lockChanged)
+      window.removeEventListener('keydown', key)
       canvas.removeEventListener('wheel', wheel)
       canvas.removeEventListener('contextmenu', context)
       window.removeEventListener('blur', clear)

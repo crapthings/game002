@@ -1,3 +1,4 @@
+import { bodyMoveClear, bodySupportHeight } from '../entities/bodyCollision.js'
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder'
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial'
 import { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTexture'
@@ -39,12 +40,18 @@ export function createFirstLoopScene(scene, plan, world, player, saved, onChange
     if (d > .3 && ((target[0] - person.position[0]) * Math.sin(person.heading) + (target[1] - person.position[1]) * Math.cos(person.heading)) / d < Math.cos(Math.PI / 3)) return false
     return clear(person.position, target)
   }
+  const bodies = (excludeId = null) => (rules?.state.npcs ?? [])
+    .filter(n => n.id !== excludeId && loaded(n.position))
+    .map(n => ({ x:n.position[0], y:world.terrain.surfaceHeight(...n.position), z:n.position[1] }))
   const move = (person, target, step) => {
     const d = distance(person.position, target)
     if (d < .12) return
     const amount = Math.min(step, d), dx = (target[0] - person.position[0]) / d * amount, dz = (target[1] - person.position[1]) / d * amount
     for (const [x, z] of [[person.position[0] + dx, person.position[1] + dz], [person.position[0] + dx, person.position[1]], [person.position[0], person.position[1] + dz]]) {
       if (distance(person.position, [x,z]) < .001 || !world.isLoaded(x,z) || !world.canMove(x,z,.38) || !clear(person.position,[x,z])) continue
+      const from = { x:person.position[0], y:world.terrain.surfaceHeight(...person.position), z:person.position[1] }
+      const to = { x, y:world.terrain.surfaceHeight(x,z), z }
+      if (!bodyMoveClear(from,to,[...bodies(person.id), player.root.position])) continue
       person.heading = Math.atan2(x - person.position[0], z - person.position[1])
       person.position = [x,z]
       return
@@ -150,6 +157,8 @@ export function createFirstLoopScene(scene, plan, world, player, saved, onChange
     if (loaded(s.item.position)) itemMesh.position.set(s.item.position[0],world.terrain.surfaceHeight(...s.item.position)+.3,s.item.position[1])
   }
   return {
+    bodySupport: (x,z,ceiling) => bodySupportHeight(x,z,ceiling,bodies()),
+    bodyClear: (from, to) => bodyMoveClear(from,to,bodies()),
     snapshot: () => rules?.snapshot(),
     revision: () => rules?.state.revision ?? -1,
     clearCommands: () => useLedgerStore.getState().clearCommands(),

@@ -1,3 +1,4 @@
+import MouseLookHint from './MouseLookHint.jsx'
 import AudioSettings from './AudioSettings.jsx'
 import { useNavigate } from 'react-router-dom'
 import { useGameStore } from '../stores/useGameStore.js'
@@ -30,7 +31,7 @@ export default function GameOverlay() {
         <RadarHud />
         <PlayerStatusHud />
         <WorldTimeHud />
-        {phase === 'playing' && <LedgerHud />}
+        {phase === 'playing' && <><LedgerHud /><MouseLookHint /></>}
         {phase === 'playing' && <button type="button" onClick={() => useGameStore.getState().openDebug()} className={`absolute left-4 top-20 z-10 rounded border border-white/10 bg-black/65 px-2 py-1 text-[10px] hover:text-emerald-200 ${debugActive ? 'text-amber-300' : 'text-stone-400'}`}>{debugActive ? '调试已启用' : '开发'} · F2</button>}
         {phase === 'map' && <WorldMap />}
 
@@ -45,7 +46,7 @@ export default function GameOverlay() {
         <p className="text-xs font-semibold tracking-widest text-emerald-300">GAME002</p>
         <h1 className="mt-3 text-3xl font-semibold">游戏已暂停</h1>
         <p className="mt-4 text-sm leading-6 text-slate-400">旅途暂歇。继续探索，或返回菜单切换世界。</p>
-        <p className="mt-3 text-xs leading-5 text-slate-400">WASD 移动 · Shift 奔跑 · 空格轻功 / 再按二段跳 · 贴墙按住空格＋方向攀跑 / 松开再按蹬墙 · 双击方向冲刺 · 左键拖动视角 · 滚轮缩放</p>
+        <p className="mt-3 text-xs leading-5 text-slate-400">WASD 移动 · Shift 奔跑 · 空格轻功 / 再按二段跳 · 贴墙按住空格＋方向攀跑 / 松开再按蹬墙 · 双击方向冲刺 · 点击场景后鼠标转动视角 · Tab 释放鼠标操作面板 · 滚轮缩放</p>
         <GraphicsSettings />
         <AudioSettings />
         <div className="mt-6 flex flex-col gap-3">

@@ -32,7 +32,7 @@ export function createWorldScene(engine, canvas, { onLoading, onReady } = {}) {
   scene.fogColor = new Color3(0.105, 0.14, 0.13)
   scene.fogStart = 52
   scene.fogEnd = 88
-  const thirdPerson = createThirdPersonCamera(scene, canvas, () => useGameStore.getState().phase === 'playing')
+  const thirdPerson = createThirdPersonCamera(scene, canvas, () => useGameStore.getState().phase === 'playing', () => useGameStore.getState().pauseGame())
   const camera = thirdPerson.camera
   const ambient = new HemisphericLight('ambient', new Vector3(0, 1, 0), scene)
   ambient.intensity = 0.8
@@ -147,6 +147,8 @@ export function createWorldScene(engine, canvas, { onLoading, onReady } = {}) {
       if (previous.phase === 'playing') checkpoint()
     }
   })
+  const clearPointerInput = () => { if (document.pointerLockElement !== canvas) { input.clear(); locomotion.clearInput(); ledger?.clearCommands() } }
+  document.addEventListener('pointerlockchange', clearPointerInput)
   window.addEventListener('pagehide', checkpoint)
 
   scene.onBeforeRenderObservable.add(() => {
@@ -247,6 +249,8 @@ export function createWorldScene(engine, canvas, { onLoading, onReady } = {}) {
     const motion = locomotion.update(dt, position, world, {
       direction, speed: speed * multiplier, dashDirection: input.consumeDash(),
       jumpPressed: input.consumeJump(), jumpHeld: input.jumpHeld(),
+      bodySupport: (x,z,ceiling) => ledger?.bodySupport(x,z,ceiling) ?? -Infinity,
+      bodyClear: (from, to) => ledger?.bodyClear(from,to) ?? true,
     })
     const moving = motion.moving
     const running = debug.infiniteSprint ? moving && sprintAllowed : stamina.update(dt, moving, sprintAllowed)
@@ -295,6 +299,7 @@ export function createWorldScene(engine, canvas, { onLoading, onReady } = {}) {
     useTeleportStore.getState().finish()
     unsubscribeWorld()
     unsubscribePhase()
+    document.removeEventListener('pointerlockchange', clearPointerInput)
     window.removeEventListener('pagehide', checkpoint)
     unsubscribeGraphics()
     audio.dispose()
