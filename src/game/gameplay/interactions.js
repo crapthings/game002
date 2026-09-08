@@ -1,4 +1,5 @@
 import { assertInventory, consumeLot, transferLot, itemDefinition, InventoryError } from './inventory.js'
+import { requireAvailableFunds,requireAvailableLot } from './reservations.js'
 
 const clone = value => structuredClone(value)
 const natural = value => Number.isSafeInteger(value) && value >= 0
@@ -66,6 +67,7 @@ export function executeInteraction(state,catalog,command,context) {
     requireValue(lot.holderId === sourceActor.containerId,'NOT_HELD')
     requireValue(lot.ownerId === sourceActor.id,'NOT_OWNED')
     requireValue(command.quantity <= lot.quantity,'INSUFFICIENT_QUANTITY')
+    requireAvailableLot(state,lot.id,command.quantity)
     const item = itemDefinition(catalog,lot.itemType)
     const next = clone(state)
     let amount = 0, restoredHealth = 0
@@ -84,6 +86,7 @@ export function executeInteraction(state,catalog,command,context) {
         amount = context.unitPrice * command.quantity
         requireValue(natural(amount),'AMOUNT_OVERFLOW')
         requireValue(recipient.wallet >= amount,'INSUFFICIENT_FUNDS')
+        requireAvailableFunds(state,recipient.id,amount)
         requireValue(natural(sourceActor.wallet+amount),'AMOUNT_OVERFLOW')
         next.actors.find(a => a.id === recipient.id).wallet -= amount
         next.actors.find(a => a.id === sourceActor.id).wallet += amount

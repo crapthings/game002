@@ -5,6 +5,7 @@
 - [活世界下一阶段：城内分布、12 项能力与 29 张任务卡](../docs/world-ledger/next/README.md)
 - [持续 Goal 执行记录](../docs/world-ledger/next/A-START.md)
 - [生活、营业与现场表达接入](../docs/world-ledger/next/LIFE-IMPLEMENTATION.md)
+- [当面对话、委托与报酬接入](../docs/world-ledger/next/DIALOGUE-IMPLEMENTATION.md)
 - [旧规则冻结与版本映射](../docs/world-ledger/next/VERSIONING.md)
 - [B接手场景接入与验证边界](../docs/world-ledger/SCENE-INTEGRATION.md)
 - [当前状态](CURRENT_STATE.md)

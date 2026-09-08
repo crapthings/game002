@@ -1,4 +1,5 @@
 import { InventoryError, transferLot, consumeLot } from './inventory.js'
+import { requireAvailableFunds,requireAvailableLot } from './reservations.js'
 const clone = value => structuredClone(value)
 const check = (ok, code) => { if (!ok) throw new InventoryError(code) }
 export function createVillageState(setup) {
@@ -45,6 +46,7 @@ export function executeVillage(world,catalog,command,context) {
     check(actor.id==='player' && parcel?.holderId===player.containerId,'NOT_HELD')
     check(actors.find(a=>a.id==='guard')?.health>0,'RECIPIENT_DEAD')
     check(player.wallet>=20,'INSUFFICIENT_FUNDS')
+    requireAvailableFunds(world.interactions,player.id,20)
     const source=s.events.findLast(e=>e.kind==='take')
     check(source && !s.settled.includes(source.id),'NOT_AVAILABLE')
     world.interactions.inventory=transferLot(inventory,catalog,{lotId:parcel.id,quantity:1,toHolderId:'guard-bag'})
@@ -62,6 +64,7 @@ export function executeVillage(world,catalog,command,context) {
     check(!s.aid.eventId,'ALREADY_HELPED')
     check(lot?.holderId===player.containerId && lot.ownerId===player.id && lot.itemType==='medicine','OWN_MEDICINE_REQUIRED')
     check(typeof context.identified==='boolean','MISSING_OBSERVATION')
+    requireAvailableLot(world.interactions,lot.id,1)
     world.interactions.inventory=consumeLot(inventory,catalog,{lotId:lot.id,quantity:1})
     patient.health=Math.min(patient.maxHealth,patient.health+25)
     s.aid={eventId:event.id,dueAt:context.at+20000,subject:context.identified&&!s.masked?'player':null,rewardEvent:null}
@@ -72,6 +75,7 @@ export function executeVillage(world,catalog,command,context) {
     check(s.aid.eventId && !s.aid.rewardEvent && s.aid.subject==='player' && context.at>=s.aid.dueAt,'REWARD_NOT_DUE')
     check(context.identified===true && !s.masked,'SUBJECT_UNIDENTIFIED')
     check(actor.wallet>=15,'INSUFFICIENT_FUNDS')
+    requireAvailableFunds(world.interactions,actor.id,15)
     check(Number.isSafeInteger(player.wallet+15),'AMOUNT_OVERFLOW')
     actor.wallet-=15; player.wallet+=15; s.aid.rewardEvent=event.id
     event.targetId='player'; event.cause=s.aid.eventId; event.amount=15

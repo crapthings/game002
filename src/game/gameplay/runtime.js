@@ -5,6 +5,7 @@ import { executePlaces,addArrivalPlace } from './places.js'
 import { executeLife,addArrivalLife } from './life.js'
 import { assertTradeService } from './commerce.js'
 import { executeDialogue } from './dialogue.js'
+import { executeOpportunities,applyOpportunityConsequences } from './opportunities.js'
 import { executeVillage } from './village.js'
 import { InventoryError } from './inventory.js'
 import { executeInteraction } from './interactions.js'
@@ -73,10 +74,11 @@ export function executeGameplay(state,catalog,request) {
     requireValue(state.journal.length < 4096,'HISTORY_FULL')
     const next = clone(state), events = []
     for (const [i,step] of request.steps.entries()) {
-      requireValue(step && ['interaction','knowledge','combat','property','equipment','robbery','crime','pursuit','village','registry','places','life','dialogue'].includes(step.domain) && step.command && step.context,'INVALID_STEP')
+      requireValue(step && ['interaction','knowledge','combat','property','equipment','robbery','crime','pursuit','village','registry','places','life','dialogue','opportunities'].includes(step.domain) && step.command && step.context,'INVALID_STEP')
       requireValue(!Object.hasOwn(step.command,'id') && !Object.hasOwn(step.command,'expectedRevision'),'RESERVED_COMMAND_FIELDS')
       requireValue(natural(step.context.at) && step.context.at >= next.at,'INVALID_TIME')
       const firstFact = next.social.facts.length
+      const firstEvent=events.length
       const commandId = `${request.id}:${i}`
       if(step.domain==='registry') {
         const emitted=executeRegistry(next,catalog,{...step.command,id:commandId},step.context)
@@ -96,6 +98,10 @@ export function executeGameplay(state,catalog,request) {
         const emitted=executeDialogue(next,{...step.command,id:commandId},step.context)
         events.push(...emitted)
         for(const event of emitted)if(event.id.startsWith('dialogue:'))events.push(...registerFact(next,event,commandId))
+      } else if(step.domain==='opportunities') {
+        const emitted=executeOpportunities(next,{...step.command,id:commandId},step.context)
+        events.push(...emitted)
+        for(const event of emitted)events.push(...registerFact(next,event,`${commandId}:${event.id}`))
       } else if (step.domain === 'interaction') {
         assertTradeService(next,step.command,step.context)
         if (next.combat) {
@@ -236,6 +242,11 @@ export function executeGameplay(state,catalog,request) {
           requireValue(result.ok,result.code); next.social=result.state; events.push(...result.events)
         }
       }
+      // Consequences are world facts; witnesses of the hit do not automatically
+      // learn the victim's private contracts or reserved budget.
+      const consequences=applyOpportunityConsequences(next,events.slice(firstEvent),step.context.at,commandId)
+      events.push(...consequences)
+      for(const event of consequences)events.push(...registerFact(next,event,`${commandId}:${event.id}`))
       if (next.equipment) refreshEquipment(next.equipment,next.combat,next.interactions,catalog)
       next.at = step.context.at
     }

@@ -6,6 +6,6 @@ export function spokenAnswer(world,answer,names) {
     const who=answer.subjectId?(answer.subjectId==='player'?'你':names[answer.subjectId]??'那个人'):'一个没认出身份的人'
     return [`${evidence?.kind==='witness'?'我亲眼见到':'我听人说'}：${who}${factWords[fact.action]??'参与了那件事'}。${answer.subjectId===null?'我不知道当事人是谁。':''}`]
   }
-  if(answer.kind==='requests')return ['眼下没有已经登记、可请你承接的请求。']
+  if(answer.kind==='requests')return answer.opportunityIds.length?['我想请人帮忙办这些事：',...answer.opportunityIds.map(id=>world.opportunities.entries.find(r=>r.id===id)?.title).filter(Boolean)]:['眼下没有已经登记、可请你承接的请求。']
   return [answer.text]
 }

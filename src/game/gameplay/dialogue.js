@@ -49,7 +49,7 @@ export function dialogueAnswer(world,speakerId,listenerId,topicId,context) {
     return known?{ok:true,kind:'news',factId:known.factId,subjectId:known.subjectId,evidenceId:known.evidenceId}:
       {ok:true,kind:'text',text:'我没有亲眼见到或听人讲过什么可告诉你的新事。'}
   }
-  if(topicId==='work'||topicId==='requests')return {ok:true,kind:'requests',text:'可以看看我眼下已经登记的请求。'}
+  if(topicId==='work'||topicId==='requests')return {ok:true,kind:'requests',opportunityIds:(world.opportunities?.entries??[]).filter(r=>r.issuerId===speakerId&&r.status==='offered'&&r.deadlineAt>context.at&&!r.declinedBy.includes(listenerId)).map(r=>r.id)}
   return {ok:false,code:'UNKNOWN_TOPIC'}
 }
 export function executeDialogue(world,command,context) {

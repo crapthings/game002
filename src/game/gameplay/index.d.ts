@@ -40,7 +40,13 @@ export interface InteractionEvent {
 export interface InteractionState {
   version: 1; revision: number; inventory: InventoryState; actors: Actor[];
   events: InteractionEvent[]; receipts: Receipt[];
+  reservations?:MoneyReservation[]; itemReservations?:ItemReservation[];
 }
+export interface Reservation {id:string;actorId:string;sourceId:string;status:'held'|'impaired'|'released'|'spent';at:number;reasonEventId:string|null}
+export interface MoneyReservation extends Reservation {amount:number}
+export interface ItemReservation extends Reservation {lotId:string;holderId:string;quantity:number}
+export function availableWallet(state:InteractionState,actorId:string,usingId?:string|null):number;
+export function availableQuantity(state:InteractionState,lotId:string,usingId?:string|null):number;
 export interface Fact {
   id: string; actorId: string; targetId: string | null; action: string;
   at: number; sourceEventId: string; eventId: string;
@@ -75,6 +81,7 @@ export type GameplayStep = (
   | { domain:'life'; command:LifeCommand; context:Policy & {present?:boolean;proofId?:string;cause?:string|null;safe?:boolean} }
   | { domain:'dialogue'; command:{kind:'initialize';actorId:string}; context:Policy }
   | { domain:'dialogue'; command:{kind:'tell_place';actorId:string;targetId:string;placeId:string}|{kind:'share_news';actorId:string;targetId:string;factId:string}; context:MeetingContext }
+  | { domain:'opportunities'; command:OpportunityCommand; context:Policy & Partial<MeetingContext> & {identified?:boolean} }
   | { domain: 'registry'; command: { kind: 'arrive'; actorId: string; templateId: string };
       context: Policy & { geometryConfirmed: true; proofId: string; body: RegistryBody } }
   | { domain: 'village'; command: { kind: 'take' | 'settle' | 'return' | 'aid' | 'reward' | 'mask'; actorId: string; lotId?: string }; context: Policy & { identified?: boolean } }
@@ -131,7 +138,28 @@ export interface GameplayState {
   places?: {version:1;serviceVersion?:1;definitions:RegisteredPlace[];bindings:RegistryBody['binding'][];entries:PlaceEntry[];events:PlaceEvent[]};
   life?: {version:1;actors:LifeActor[];events:LifeEvent[]};
   dialogue?: {version:1;addresses:KnownAddress[];events:DialogueEvent[]};
+  opportunities?:{version:1;needs:{id:string;templateId:string;issuerId:string;targetActorId:string;source:string}[];entries:Opportunity[];events:OpportunityEvent[]};
 }
+export interface Opportunity {
+  id:string;templateId:string;title:string;issuerId:string;rootCauseId:string;offeredEventId:string;
+  targetActorId:string;targetPlaceId:string;returnPlaceId:string;requirements:{kind:'message_roundtrip';messageId:string};
+  proposedReward:number;rewardAmount:number|null;rewardReservationId:string|null;deadlineAt:number;
+  status:'offered'|'accepted'|'fulfilled'|'failed'|'cancelled'|'expired';assigneeId:string|null;acceptedAt:number|null;identifiedAssignee:boolean;
+  completionEventId:string|null;reason:string|null;fundsBlocked:boolean;knownBy:string[];declinedBy:string[];
+  message:{id:string;senderId:string;recipientId:string;contentType:string;deliveredEventId:string|null;receiptEventId:string|null};
+}
+export type OpportunityCommand =
+  | {kind:'initialize';actorId:string}
+  | {kind:'offer';actorId:string;needId:string}
+  | {kind:'reveal';actorId:string;targetId:string;opportunityId:string}
+  | {kind:'accept';actorId:string;opportunityId:string;terms:'paid'|'unpaid'}
+  | {kind:'decline'|'cancel'|'expire';actorId:string;opportunityId:string};
+export interface OpportunityEvent {
+  id:string;kind:string;actorId:string;targetId:string|null;at:number;cause:string|null;requestId:string;
+  opportunityId?:string;rootCauseId?:string;reason?:string;amount?:number;reservationId?:string|null;proofId?:string;identified?:boolean;declaredNeedIds?:string[];
+}
+export function opportunityQuote(state:GameplayState,opportunity:Opportunity):{amount:number;unpaid:boolean};
+export function knownOpportunities(state:GameplayState,actorId:string,at:number):(Opportunity & {expired:boolean;quote:{amount:number|null;unpaid:boolean}})[];
 export interface MeetingContext extends Policy {withinRange:boolean;clear:boolean;facing:boolean;meetingId:string;proofId:string}
 export interface KnownAddress {listenerId:string;speakerId:string;placeId:string;at:number;eventId:string}
 export interface DialogueEvent {
@@ -141,7 +169,7 @@ export interface DialogueEvent {
 export function meetingEligibility(state:GameplayState,speakerId:string,listenerId:string,context:MeetingContext):{available:boolean;reason:string|null};
 export function dialogueTopics():{id:string;label:string}[];
 export function dialogueAnswer(state:GameplayState,speakerId:string,listenerId:string,topicId:string,context:MeetingContext):
-  {ok:false;code:string}|{ok:true;kind:'text'|'places'|'news'|'requests';text?:string;placeIds?:string[];factId?:string;subjectId?:string|null;evidenceId?:string};
+  {ok:false;code:string}|{ok:true;kind:'text'|'places'|'news'|'requests';text?:string;placeIds?:string[];factId?:string;subjectId?:string|null;evidenceId?:string;opportunityIds?:string[]};
 export type RoutineKind = 'work'|'rest'|'social'|'eat'|'patrol';
 export type InterruptionKind = 'combat'|'pursuit'|'report'|'delivery'|'reward'|'flee';
 export interface LifeIntent {
@@ -283,7 +311,7 @@ export function pursuitFor(world: GameplayState, authorityId: string, subjectId:
   response: 'none' | 'question' | 'arrest' | 'reinforce';
   mode: 'idle' | 'follow' | 'search'; destination: WorldPoint | null; mayEngage: boolean;
 };
-export type GameplayEvent = DialogueEvent | LifeEvent | PlaceEvent | RegistryEvent | VillageEvent | InteractionEvent | SocialEvent | CombatEvent | PropertyEvent | EquipmentEvent | RobberyEvent | CrimeEvent | PursuitEvent;
+export type GameplayEvent = OpportunityEvent | DialogueEvent | LifeEvent | PlaceEvent | RegistryEvent | VillageEvent | InteractionEvent | SocialEvent | CombatEvent | PropertyEvent | EquipmentEvent | RobberyEvent | CrimeEvent | PursuitEvent;
 export type Failure = { ok: false; code: string; events: [] };
 export type ExecuteResult = Failure | {
   ok: true; code: 'APPLIED' | 'ALREADY_APPLIED'; duplicate: boolean;

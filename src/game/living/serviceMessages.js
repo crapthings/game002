@@ -10,4 +10,9 @@ export const SERVICE_REASONS={
   OFFICIAL_CASE_PENDING:'捕快正在处理与你有关的案件；药包纠纷可用交还赔偿处理。',
   MISSING_MEETING_EVIDENCE:'请先与对方开始当面交谈。',SPEAKER_UNINFORMED:'对方并不知道这件事。',
   UNKNOWN_TOPIC:'对方没有这个话题可谈。',ALREADY_KNOWN:'这条消息已经记下了。',
+  FUNDS_COMMITTED:'这笔钱已经约定用于别的事情，暂时不能支出。',ITEMS_COMMITTED:'这份物品已经约定交付，暂时不能使用或出售。',
+  OPPORTUNITY_FINISHED:'这件委托已经结束。',OPPORTUNITY_EXPIRED:'这件委托已经过期。',
+  OPPORTUNITY_TAKEN:'这件委托已经有人承接。',OFFER_NOT_KNOWN:'请先向委托人了解这件事。',
+  UNPAID_CONFIRMATION_REQUIRED:'委托人的现钱不够，需要重新选择是否愿意无偿帮忙。',
+  NOT_CONTRACT_PARTY:'这不是你承接或发起的委托。',OPPORTUNITY_LIMIT:'目前要处理的事情已经够多，稍后再来。',
 }

@@ -1,0 +1,131 @@
+import { InventoryError } from './inventory.js'
+import { meetingEligibility } from './dialogue.js'
+import { availableWallet,reserveMoney,releaseReservation,reconcileReservations } from './reservations.js'
+import { SHI_MESSAGE_V1 } from './content/opportunityTemplatesV1.js'
+
+const copy=value=>structuredClone(value)
+const check=(ok,code)=>{if(!ok)throw new InventoryError(code)}
+const active=row=>['offered','accepted'].includes(row.status)
+const actor=(world,id)=>world.interactions.actors.find(a=>a.id===id)
+const alive=(world,id)=>actor(world,id)?.health>0
+const lookup=(world,id)=>world.opportunities.entries.find(row=>row.id===id)
+function emit(world,kind,actorId,targetId,at,requestId,extra={}) {
+  check(world.opportunities.events.length<4096,'HISTORY_FULL')
+  const event={id:`opportunity:${world.opportunities.events.length+1}`,kind,actorId,targetId,at,cause:null,requestId,...extra}
+  world.opportunities.events.push(event);return copy(event)
+}
+function meeting(world,speakerId,listenerId,context) {
+  const eligible=meetingEligibility(world,speakerId,listenerId,context)
+  check(eligible.available,eligible.reason)
+  check(typeof context.meetingId==='string'&&context.meetingId.length>0&&typeof context.proofId==='string'&&context.proofId.length>0,'MISSING_MEETING_EVIDENCE')
+}
+function releaseReward(world,row) {
+  if(row.rewardReservationId)releaseReservation(world.interactions,row.rewardReservationId)
+  for(const reservation of world.interactions.itemReservations??[])if(reservation.sourceId===row.id&&['held','impaired'].includes(reservation.status))releaseReservation(world.interactions,reservation.id)
+}
+function finish(world,row,status,reason,at,requestId,cause=null,initiatorId=row.issuerId) {
+  releaseReward(world,row)
+  row.status=status;row.reason=reason;row.fundsBlocked=false
+  const event=emit(world,`opportunity_${status}`,initiatorId,initiatorId===row.issuerId?row.assigneeId:row.issuerId,at,requestId,{opportunityId:row.id,rootCauseId:row.rootCauseId,cause: cause??row.offeredEventId,reason})
+  row.completionEventId=event.id;return event
+}
+export function opportunityQuote(world,row) {
+  const budget=availableWallet(world.interactions,row.issuerId)
+  return {amount:budget>=row.proposedReward?row.proposedReward:0,unpaid:budget<row.proposedReward}
+}
+export function knownOpportunities(world,actorId,at) {
+  return (world.opportunities?.entries??[]).filter(row=>row.knownBy.includes(actorId)).map(row=>({...copy(row),expired:active(row)&&at>=row.deadlineAt,
+    quote:row.status==='offered'?opportunityQuote(world,row):{amount:row.rewardAmount,unpaid:row.rewardAmount===0}}))
+}
+export function executeOpportunities(world,command,context) {
+  check(world.version===2&&context.allowed===true,'INTERACTION_DENIED')
+  check(Number.isSafeInteger(context.at)&&context.at>=0&&Number.isSafeInteger(context.at+360000),'INVALID_TIME')
+  if(command.kind==='initialize') {
+    check(!world.opportunities&&world.dialogue,'OPPORTUNITIES_ALREADY_INITIALIZED')
+    world.interactions.reservations??=[];world.interactions.itemReservations??=[]
+    const needs=alive(world,SHI_MESSAGE_V1.issuerId)&&alive(world,SHI_MESSAGE_V1.targetActorId)?[{id:SHI_MESSAGE_V1.needId,templateId:SHI_MESSAGE_V1.id,issuerId:SHI_MESSAGE_V1.issuerId,targetActorId:SHI_MESSAGE_V1.targetActorId,source:SHI_MESSAGE_V1.source}]:[]
+    world.opportunities={version:1,needs,entries:[],events:[]}
+    return [emit(world,'opportunities_initialized',command.actorId,null,context.at,command.id,{declaredNeedIds:needs.map(n=>n.id)})]
+  }
+  check(world.opportunities,'OPPORTUNITIES_NOT_READY')
+  if(command.kind==='offer') {
+    const need=world.opportunities.needs.find(n=>n.id===command.needId)
+    check(need?.templateId===SHI_MESSAGE_V1.id&&need.issuerId===command.actorId,'UNKNOWN_NEED')
+    check(!world.opportunities.entries.some(row=>row.rootCauseId===need.id&&row.templateId===need.templateId),'NEED_ALREADY_OFFERED')
+    check(alive(world,command.actorId)&&alive(world,SHI_MESSAGE_V1.targetActorId),'ACTOR_DEAD')
+    check(world.opportunities.entries.length<4096&&world.opportunities.entries.filter(active).length<8&&world.opportunities.entries.filter(r=>active(r)&&r.issuerId===command.actorId).length<2,'OPPORTUNITY_LIMIT')
+    const template=SHI_MESSAGE_V1,id=`op:${world.opportunities.entries.length+1}`
+    const event=emit(world,'opportunity_offered',command.actorId,null,context.at,command.id,{opportunityId:id,rootCauseId:need.id,cause:world.opportunities.events[0].id})
+    const targetPlaceId=world.places.bindings.find(b=>b.actorId===template.targetActorId)?.workPlaceId
+    const returnPlaceId=world.places.bindings.find(b=>b.actorId===command.actorId)?.homePlaceId
+    check(targetPlaceId&&returnPlaceId,'PLACE_BINDING_MISSING')
+    world.opportunities.entries.push({id,templateId:template.id,title:template.title,issuerId:command.actorId,rootCauseId:need.id,
+      offeredEventId:event.id,targetActorId:template.targetActorId,targetPlaceId,returnPlaceId,
+      requirements:{kind:'message_roundtrip',messageId:`message:${id}`},proposedReward:template.reward,rewardAmount:null,rewardReservationId:null,
+      deadlineAt:context.at+template.durationMs,status:'offered',assigneeId:null,acceptedAt:null,identifiedAssignee:false,
+      completionEventId:null,reason:null,fundsBlocked:false,knownBy:[command.actorId],declinedBy:[],
+      message:{id:`message:${id}`,senderId:command.actorId,recipientId:template.targetActorId,contentType:template.contentType,deliveredEventId:null,receiptEventId:null}})
+    return [event]
+  }
+  const row=lookup(world,command.opportunityId)
+  check(row,'UNKNOWN_OPPORTUNITY');check(active(row),'OPPORTUNITY_FINISHED')
+  if(command.kind==='expire') {
+    check(command.actorId===row.issuerId&&context.at>=row.deadlineAt,'NOT_DUE')
+    return [finish(world,row,'expired','DEADLINE_PASSED',context.at,command.id)]
+  }
+  check(context.at<row.deadlineAt,'OPPORTUNITY_EXPIRED')
+  check(alive(world,row.issuerId)&&alive(world,row.targetActorId),'ACTOR_DEAD')
+  if(command.kind==='reveal') {
+    check(command.actorId===row.issuerId&&!row.knownBy.includes(command.targetId),'ALREADY_KNOWN')
+    meeting(world,command.actorId,command.targetId,context)
+    row.knownBy.push(command.targetId)
+    const event=emit(world,'opportunity_disclosed',command.actorId,command.targetId,context.at,command.id,{opportunityId:row.id,rootCauseId:row.rootCauseId,cause:row.offeredEventId,proofId:context.proofId})
+    for(const placeId of [row.targetPlaceId,row.returnPlaceId])if(!world.dialogue.addresses.some(a=>a.listenerId===command.targetId&&a.placeId===placeId))
+      world.dialogue.addresses.push({listenerId:command.targetId,speakerId:command.actorId,placeId,at:context.at,eventId:event.id})
+    return [event]
+  }
+  if(command.kind==='accept') {
+    check(row.status==='offered'&&command.actorId!==row.issuerId&&command.actorId!==row.targetActorId,'OPPORTUNITY_TAKEN')
+    check(row.knownBy.includes(command.actorId)&&!row.declinedBy.includes(command.actorId),'OFFER_NOT_KNOWN')
+    meeting(world,row.issuerId,command.actorId,context)
+    check(['paid','unpaid'].includes(command.terms)&&typeof context.identified==='boolean','INVALID_TERMS')
+    const amount=command.terms==='paid'?row.proposedReward:0
+    if(amount) {
+      check(opportunityQuote(world,row).amount===amount,'UNPAID_CONFIRMATION_REQUIRED')
+      row.rewardReservationId=`reserve:${row.id}:reward`
+      reserveMoney(world.interactions,{id:row.rewardReservationId,actorId:row.issuerId,amount,sourceId:row.id,at:context.at})
+    }
+    row.status='accepted';row.assigneeId=command.actorId;row.acceptedAt=context.at;row.rewardAmount=amount;row.identifiedAssignee=context.identified
+    return [emit(world,'opportunity_accepted',command.actorId,row.issuerId,context.at,command.id,{opportunityId:row.id,rootCauseId:row.rootCauseId,cause:row.offeredEventId,amount,reservationId:row.rewardReservationId,proofId:context.proofId,identified:context.identified})]
+  }
+  if(command.kind==='decline') {
+    check(row.status==='offered'&&row.knownBy.includes(command.actorId)&&!row.declinedBy.includes(command.actorId),'NO_CHANGE')
+    meeting(world,row.issuerId,command.actorId,context)
+    row.declinedBy.push(command.actorId)
+    return [emit(world,'opportunity_declined',command.actorId,row.issuerId,context.at,command.id,{opportunityId:row.id,rootCauseId:row.rootCauseId,cause:row.offeredEventId,proofId:context.proofId})]
+  }
+  if(command.kind==='cancel') {
+    check(command.actorId===row.issuerId||command.actorId===row.assigneeId,'NOT_CONTRACT_PARTY')
+    return [finish(world,row,'cancelled','CANCELLED_BY_PARTY',context.at,command.id,null,command.actorId)]
+  }
+  throw new InventoryError('INVALID_COMMAND')
+}
+
+/** Runs after actual force/death results, in the same world transaction. */
+export function applyOpportunityConsequences(world,sourceEvents,at,requestId) {
+  if(!world.opportunities)return []
+  const cause=sourceEvents.findLast(e=>['died','robbed','loot_money','loot_item'].includes(e.kind))?.id
+  if(!cause)return []
+  const events=[],losses=reconcileReservations(world.interactions,cause)
+  for(const row of world.opportunities.entries.filter(active)) {
+    const reason=!alive(world,row.issuerId)?'ISSUER_DEAD':!alive(world,row.targetActorId)?'RECIPIENT_DEAD':row.assigneeId&&!alive(world,row.assigneeId)?'ASSIGNEE_DEAD':null
+    if(reason){events.push(finish(world,row,'failed',reason,at,requestId,cause));continue}
+    const loss=losses.find(loss=>loss.sourceId===row.id)
+    if(loss?.reason==='CARGO_UNAVAILABLE'){events.push(finish(world,row,'failed','CARGO_UNAVAILABLE',at,requestId,cause));continue}
+    if(loss) {
+      row.fundsBlocked=true;row.reason='FUNDS_UNAVAILABLE'
+      events.push(emit(world,'opportunity_funds_lost',row.issuerId,row.assigneeId,at,requestId,{opportunityId:row.id,rootCauseId:row.rootCauseId,cause,reason:row.reason}))
+    }
+  }
+  return events
+}

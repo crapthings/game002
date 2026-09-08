@@ -1,4 +1,4 @@
-import { createGameplay, createWorldSession, migrateWorldToV2, previewGameplayCombat, pursuitFor, tradeEligibility, servicePresence, meetingEligibility, dialogueTopics, dialogueAnswer } from '../gameplay/index.js'
+import { createGameplay, createWorldSession, migrateWorldToV2, previewGameplayCombat, pursuitFor, tradeEligibility, servicePresence, meetingEligibility, dialogueTopics, dialogueAnswer, availableWallet, knownOpportunities } from '../gameplay/index.js'
 import { createLivingStateIndex } from './createLivingStateIndex.js'
 import { livingConfig, LIVING_NPCS, PRICES } from './config.js'
 import { distance, facingAngle, sweptContact } from './geometry.js'
@@ -99,7 +99,7 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
       if(!actor(data.targetId)){notify('请靠近想交谈的人。');return}
       const eligible=meetingEligibility(state,data.targetId,'player',meetingContext(data.targetId))
       if(!eligible.available){notify(eligible.reason);return}
-      if(conversation?.speakerId!==data.targetId)conversation={id:`meeting:${serial}:${++meetingSerial}`,speakerId:data.targetId,listenerId:'player',touchedAt:clock,lines:['你想问些什么？'],placeIds:[]}
+      if(conversation?.speakerId!==data.targetId)conversation={id:`meeting:${serial}:${++meetingSerial}`,speakerId:data.targetId,listenerId:'player',touchedAt:clock,lines:['你想问些什么？'],placeIds:[],opportunityIds:[]}
       conversation.touchedAt=clock
       space.face(data.targetId,space.point('player'));return
     }
@@ -111,9 +111,11 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
     const knownPlaces=new Set([...(space.knownPlaceIds?.()??[]),...state.dialogue.addresses.filter(a=>a.listenerId==='player').map(a=>a.placeId)])
     const commands=answer.kind==='places'?answer.placeIds.filter(id=>!knownPlaces.has(id)).map(placeId=>({kind:'tell_place',actorId:current.speakerId,targetId:'player',placeId})):
       answer.kind==='news'&&!state.social.knowledge.some(k=>k.npcId==='player'&&k.factId===answer.factId&&(k.subjectId!==null||answer.subjectId===null))?[{kind:'share_news',actorId:current.speakerId,targetId:'player',factId:answer.factId}]:[]
-    const display=()=>{if(conversation?.id===current.id){current.lines=spokenAnswer(state,answer,Object.fromEntries(npcs().map(n=>[n.id,n.name])));current.placeIds=answer.placeIds??[]}}
-    if(!commands.length){display();return}
-    send('dialogue',commands[0],context,false,commands.slice(1).map(command=>({domain:'dialogue',command,context}))).then(result=>{if(result.ok)display()})
+    const steps=commands.map(command=>({domain:'dialogue',command,context}))
+    if(answer.kind==='requests')for(const id of answer.opportunityIds)if(!state.opportunities.entries.find(r=>r.id===id).knownBy.includes('player'))steps.push({domain:'opportunities',command:{kind:'reveal',actorId:current.speakerId,targetId:'player',opportunityId:id},context})
+    const display=()=>{if(conversation?.id===current.id){current.lines=spokenAnswer(state,answer,Object.fromEntries(npcs().map(n=>[n.id,n.name])));current.placeIds=answer.placeIds??[];current.opportunityIds=answer.opportunityIds??[]}}
+    if(!steps.length){display();return}
+    send(steps[0].domain,steps[0].command,context,false,steps.slice(1)).then(result=>{if(result.ok)display()})
   }
   function command(kind,data={}) {
     if(kind==='guard'){guardDesired=data.held;return}
@@ -151,13 +153,6 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
     const index=indexed()
     if(!guardDesired && alive('player') && (hero.guardHeld||hero.mustRelease)) {send('combat',{kind:'guard',actorId:'player',held:false});return}
     if(index.capacityStatus!=='available'){guardDesired=false;if(alive('player')&&(hero.guardHeld||hero.mustRelease)){send('combat',{kind:'guard',actorId:'player',held:false});return}stopped=true;notify('本轮账本接近容量上限，已停止新增行动，请保存退出。');session.checkpoint(clock).then(result=>{if(!result.ok)notify(result.code)});return}
-    if(!state.places&&space.placeSetup){send('places',{kind:'register',actorId:'player',...space.placeSetup()},{geometryConfirmed:true});return}
-    if(state.places&&!state.life) {
-      const setup=space.lifeSetup?.()
-      if(setup){send('places',{kind:'extend',actorId:'player',...setup},{geometryConfirmed:true},false,[{domain:'life',command:{kind:'initialize',actorId:'player'}}]);return}
-    }
-    if(state.life&&!state.places.serviceVersion){send('places',{kind:'enable_services',actorId:'player'});return}
-    if(state.places?.serviceVersion&&!state.dialogue){send('dialogue',{kind:'initialize',actorId:'player'});return}
     if(guardDesired && alive('player') && !hero.guardHeld&&!hero.mustRelease&&hero.phase==='idle'&&hero.stamina>=25000){send('combat',{kind:'guard',actorId:'player',held:true});return}
     for(const f of view) {
       if(f.phase!=='active')continue
@@ -172,6 +167,20 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
       sweep.set(f.swing.id,fraction)
     }
     for(const id of sweep.keys())if(!view.some(f=>f.swing?.id===id))sweep.delete(id)
+    if(!state.places&&space.placeSetup){send('places',{kind:'register',actorId:'player',...space.placeSetup()},{geometryConfirmed:true});return}
+    if(state.places&&!state.life) {
+      const setup=space.lifeSetup?.()
+      if(setup){send('places',{kind:'extend',actorId:'player',...setup},{geometryConfirmed:true},false,[{domain:'life',command:{kind:'initialize',actorId:'player'}}]);return}
+    }
+    if(state.life&&!state.places.serviceVersion){send('places',{kind:'enable_services',actorId:'player'});return}
+    if(state.places?.serviceVersion&&!state.dialogue){send('dialogue',{kind:'initialize',actorId:'player'});return}
+    if(state.dialogue&&!state.opportunities){send('opportunities',{kind:'initialize',actorId:'player'});return}
+    if(state.opportunities) {
+      const due=state.opportunities.entries.find(r=>['offered','accepted'].includes(r.status)&&clock>=r.deadlineAt)
+      if(due){send('opportunities',{kind:'expire',actorId:due.issuerId,opportunityId:due.id});return}
+      const need=state.opportunities.needs.find(n=>alive(n.issuerId)&&alive(n.targetActorId)&&!state.opportunities.entries.some(r=>r.rootCauseId===n.id))
+      if(need){send('opportunities',{kind:'offer',actorId:need.issuerId,needId:need.id});return}
+    }
     if(refreshServices())return
     for(const npc of npcs()) {
       const id=npc.id,f=fighter(id)
@@ -248,7 +257,7 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
         continue
       }
       const aid=state.village.aid
-      if(id==='resident-1'&&aid.subject==='player'&&!aid.rewardEvent&&aid.eventId&&clock>=aid.dueAt&&alive('player')&&sees(id,'player',true)) {
+      if(id==='resident-1'&&aid.subject==='player'&&!aid.rewardEvent&&aid.eventId&&clock>=aid.dueAt&&alive('player')&&sees(id,'player',true)&&availableWallet(state.interactions,id)>=15) {
         if(interruptRoutine(id,'reward',60,aid.eventId))return
         if(near(id,'player')){send('village',{kind:'reward',actorId:id},{identified:true});return}
         if(f.phase==='idle')space.move(id,space.point('player'),dt,1.2)
@@ -288,7 +297,7 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
   return {update,command,checkpoint,release:()=>{guardDesired=false},
     canAdvance:()=>!busy&&!stopped&&!checkpointDepth,view:()=>view,state:()=>state,clock:()=>clock,
     calendar:()=>clockAt(state.calendar.clockOrigin,clock),tradeStatus,
-    conversation:()=>{refreshConversation();return conversation?{...copy(conversation),topics:dialogueTopics()}:null},
+    conversation:()=>{refreshConversation();return conversation?{...copy(conversation),topics:dialogueTopics(),opportunities:knownOpportunities(state,'player',clock).filter(r=>conversation.opportunityIds.includes(r.id))}:null},
     busy:()=>busy||checkpointDepth>0,stopped:()=>stopped,config,
     close:async()=>{await checkpoint(true);return session.close()}}
 }
