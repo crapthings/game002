@@ -4,7 +4,7 @@ import { livingConfig, LIVING_NPCS, PRICES } from './config.js'
 import { distance, facingAngle, sweptContact } from './geometry.js'
 import { createClockOrigin, clockAt } from './clock.js'
 import { sceneActorDefinitions } from './actorRegistry.js'
-import { scheduledActivity } from './dailySchedule.js'
+import { nextDailyActivity } from './dailySchedule.js'
 const copy=v=>structuredClone(v)
 export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,save,space,notify=()=>{},effects=()=>{}}) {
   const config=livingConfig(legacy,world)
@@ -46,6 +46,12 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
       }
       return result
     } finally {busy=false}
+  }
+  function interruptRoutine(actorId,reason,priority,cause=null) {
+    const row=state.life?.actors.find(a=>a.actorId===actorId)
+    if(!row?.intent||row.interruption?.priority>=priority)return false
+    send('life',{kind:'interrupt',actorId,reason,priority},{cause}).then(result=>{if(result.ok)space.suspendRoutine?.(actorId)})
+    return true
   }
   function command(kind,data={}) {
     if(kind==='guard'){guardDesired=data.held;return}
@@ -103,6 +109,7 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
       const id=npc.id,f=fighter(id)
       if(!alive(id))continue
       const knowledge=index.npcs.get(id),gear=knowledge.gear
+      if(f.phase!=='idle'&&interruptRoutine(id,'combat',90,f.swing?.cause??knowledge.lastAttack?.id??null))return
       if(gear&&f.phase==='idle'){const slot=index.items.get(gear.itemType).equipment.slot;if(!index.loadouts.get(id)[slot]){send('equipment',{kind:'equip',actorId:id,slot,lotId:gear.id});return}}
       if(f.guardHeld) {
         const raised=knowledge.guardRaised
@@ -115,20 +122,21 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
         // Reinforcement is another existing guard; it learns via a delivered report.
         if(wanted.level>=3&&id==='guard'&&alive('guard-2')) {
           const unsent=knowledge.reinforcement
-          if(unsent){if(near(id,'guard-2')){send('knowledge',{kind:'report',actorId:id,targetId:'guard-2',factId:unsent.factId},{delivered:true,proofId:`reinforce-${serial+1}`});return}space.move(id,space.point('guard-2'),dt,1.3);continue}
+          if(unsent){if(interruptRoutine(id,'report',70,unsent.evidenceId))return;if(near(id,'guard-2')){send('knowledge',{kind:'report',actorId:id,targetId:'guard-2',factId:unsent.factId},{delivered:true,proofId:`reinforce-${serial+1}`});return}if(f.phase==='idle')space.move(id,space.point('guard-2'),dt,1.3);continue}
         }
         if(wanted.level>0&&alive('player')) {
           if(sees(id,'player',true)&&(!track||clock-track.seenAt>=500)) {send('pursuit',{kind:'sight',actorId:id,targetId:'player'},{visible:true,identified:true,position:copy(space.point('player')),proofId:`track-${serial+1}`});return}
           if(!sees(id,'player',true)&&track?.lostAt===null){send('pursuit',{kind:'lost',actorId:id,targetId:'player'},{visible:false,proofId:`lost-${serial+1}`});return}
           const pursuit=pursuitFor(state,id,'player',clock)
           if(pursuit.destination) {
+            if(interruptRoutine(id,'pursuit',80,knowledge.lastCrimePosition?.id??null))return
             if(pursuit.mayEngage&&near(id,'player',1.65)) {space.face(id,space.point('player')); if(f.phase==='idle'){send('combat',hero.phase==='windup'&&f.stamina>=25000&&!f.mustRelease?{kind:'guard',actorId:id,held:true}:{kind:'attack',actorId:id});return}}
             else if(f.phase==='idle')space.move(id,pursuit.destination,dt,1.2)
             continue
           }
           // Reports provide a fixed last-seen point, never a live player lookup.
           const memory=knowledge.lastCrimePosition
-          if(!track&&memory&&clock-memory.at<30000&&f.phase==='idle'){space.move(id,memory.position,dt,1.1);continue}
+          if(!track&&memory&&clock-memory.at<30000&&f.phase==='idle'){if(interruptRoutine(id,'pursuit',80,memory.id))return;space.move(id,memory.position,dt,1.1);continue}
         }
       } else {
         const threat=knowledge.lastThreat&&clock-knowledge.lastThreat.at<30000?knowledge.lastThreat:undefined
@@ -136,21 +144,29 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
         const recognized=event=>event&&knowledge.identifiedEvents.has(event.id)
         const fight=recognized(threat)&&threat.reaction==='fight'||recognized(attack)&&actor(id).courage>=70
         if(fight&&alive('player')&&sees(id,'player',true)) {
+          if(interruptRoutine(id,'combat',90,attack?.id??threat?.id??null))return
           space.face(id,space.point('player'))
           if(near(id,'player',1.65)&&f.phase==='idle'){send('combat',hero.phase==='windup'&&f.stamina>=25000&&!f.mustRelease?{kind:'guard',actorId:id,held:true}:{kind:'attack',actorId:id});return}
           if(f.phase==='idle')space.move(id,space.point('player'),dt,1.2)
           continue
         }
+        if((attack||threat?.reaction==='flee')&&alive('player')&&sees(id,'player')&&near(id,'player',10)) {
+          if(interruptRoutine(id,'flee',80,attack?.id??threat?.id??null))return
+          if(f.phase==='idle')space.flee(id,space.point('player'),dt)
+          continue
+        }
         const pending=knowledge.unreported
         if(pending&&alive('guard')) {
+          if(interruptRoutine(id,'report',70,pending.evidenceId))return
           if(near(id,'guard')){send('knowledge',{kind:'report',actorId:id,targetId:'guard',factId:pending.factId},{delivered:true,proofId:`report-${serial+1}`});return}
           if(f.phase==='idle')space.move(id,space.point('guard'),dt,1.3)
           continue
         }
-        if((threat?.reaction==='flee'||attack)&&f.phase==='idle'){const source=knowledge.lastKnownPosition;if(source)space.flee(id,source.position,dt);continue}
+        if((threat?.reaction==='flee'||attack)&&f.phase==='idle'){if(interruptRoutine(id,'flee',80,attack?.id??threat?.id??null))return;const source=knowledge.lastKnownPosition;if(source)space.flee(id,source.position,dt);continue}
       }
       const parcel=index.lots.get('medicine-parcel')
       if(id==='merchant'&&space.relocationPending?.()&&['stall','merchant-bag'].includes(parcel.holderId)) {
+        if(interruptRoutine(id,'delivery',70))return
         const carrying=parcel.holderId==='merchant-bag',destination=carrying?'relocation':'stall'
         if(near(id,destination)) {send('village',{kind:carrying?'relocate_deliver':'relocate_pickup',actorId:id},
           {reachable:true,position:copy(space.point(destination)),proofId:`relocate-${serial+1}`});return}
@@ -158,12 +174,14 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
         continue
       }
       if(id==='guard'&&parcel.holderId==='guard-bag') {
+        if(interruptRoutine(id,'delivery',70,state.village.events.findLast(e=>e.kind==='settle')?.id??null))return
         if(near(id,'stall')){send('village',{kind:'return',actorId:id});return}
         if(f.phase==='idle')space.move(id,space.point('stall'),dt,1.1)
         continue
       }
       const aid=state.village.aid
       if(id==='resident-1'&&aid.subject==='player'&&!aid.rewardEvent&&aid.eventId&&clock>=aid.dueAt&&alive('player')&&sees(id,'player',true)) {
+        if(interruptRoutine(id,'reward',60,aid.eventId))return
         if(near(id,'player')){send('village',{kind:'reward',actorId:id},{identified:true});return}
         if(f.phase==='idle')space.move(id,space.point('player'),dt,1.2)
         continue
@@ -171,11 +189,13 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
       if(f.phase==='idle') {
         if(state.life) {
           const row=state.life.actors.find(a=>a.actorId===id)
-          if(!row.intent||clock>=(routineDue.get(id)??0)) {
-            routineDue.set(id,clock+1000)
-            const activity=scheduledActivity(state,id,clock)
+          if(!row.intent||row.interruption||clock>=(routineDue.get(id)??0)) {
+            const offset=npcs().findIndex(n=>n.id===id)*97%1000
+            routineDue.set(id,Math.floor((clock-offset)/1000)*1000+1000+offset)
+            const activity=nextDailyActivity(state,id,clock)
             if(activity.status==='blocked')continue
-            if(`${activity.kind}:${activity.placeId}`!==row.activityId) {send('life',{kind:'activity',actorId:id,activity:activity.kind,placeId:activity.placeId,priority:activity.priority});return}
+            if(`${activity.kind}:${activity.placeId}`!==row.activityId||activity.priority!==row.intent?.priority) {send('life',{kind:'activity',actorId:id,activity:activity.kind,placeId:activity.placeId,priority:activity.priority});return}
+            if(row.interruption){send('life',{kind:'resume',actorId:id},{safe:true});return}
           }
           if(row.intent?.phase==='travelling'&&space.atPlace(id,row.intent.placeId)) {send('life',{kind:'arrive',actorId:id,intentId:row.intent.id},{present:true,proofId:`routine-${serial+1}`});return}
           if(row.intent)space.routine(id,row.intent,dt,clock)

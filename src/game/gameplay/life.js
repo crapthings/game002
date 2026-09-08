@@ -36,7 +36,7 @@ export function executeLife(world,command,context) {
   if(command.kind==='activity') {
     check(kinds.includes(command.activity)&&world.places.definitions.some(p=>p.id===command.placeId)&&[10,40,50].includes(command.priority),'INVALID_ACTIVITY')
     const activityId=`${command.activity}:${command.placeId}`
-    check(activityId!==row.activityId||row.interruption,'NO_CHANGE')
+    check(activityId!==row.activityId||row.interruption||command.priority!==row.intent?.priority,'NO_CHANGE')
     settleNeeds(row,context.at)
     row.activityId=activityId;row.activityStartedAt=context.at;row.interruption=null
     row.intent={id:`routine:${actor.id}:${event.id}`,actorId:actor.id,kind:command.activity,placeId:command.placeId,targetId:null,
