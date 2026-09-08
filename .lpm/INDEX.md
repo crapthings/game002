@@ -3,7 +3,7 @@
 先读仓库根目录 AGENTS.md。本说明书为用户 B 新增的协作草案，不改变已有规则。
 
 - [活世界下一阶段：城内分布、12 项能力与 29 张任务卡](../docs/world-ledger/next/README.md)
-- [给 A 的逐卡执行入口](../docs/world-ledger/next/A-START.md)
+- [持续 Goal 执行记录](../docs/world-ledger/next/A-START.md)
 - [B接手场景接入与验证边界](../docs/world-ledger/SCENE-INTEGRATION.md)
 - [当前状态](CURRENT_STATE.md)
 - [渲染、GPU 骨骼与 Worker 性能优化](../docs/performance.md)
