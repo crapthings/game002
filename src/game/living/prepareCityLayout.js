@@ -5,7 +5,7 @@ import { distance } from './geometry.js'
 
 /** Incremental bootstrap. Only one place's data is pinned at a time. */
 export function prepareCityLayout(plan, world, options={}) {
-  const candidates = options.candidates??resolveCityPlaces(plan), places = [], owner = options.extra?'city-housing':'city-layout'
+  const candidates = options.candidates??resolveCityPlaces(plan), places = [], owner = options.owner??(options.extra?'city-housing':'city-layout')
   const knownPlaces=options.knownPlaces??[]
   let index = 0, pending = false, closed = false, failure = candidates.unresolved[0]?.code ?? null, result = null, parcelSpot = null
   const ground = p => ({ x: p.x, y: world.terrain.surfaceHeight(p.x, p.z), z: p.z })

@@ -3,6 +3,7 @@ import { meetingEligibility } from './dialogue.js'
 import { availableWallet,reserveMoney,releaseReservation,reconcileReservations,requireAvailableFunds } from './reservations.js'
 import { SHI_MESSAGE_V1 } from './content/opportunityTemplatesV1.js'
 import { personalOpportunity,sameKnownProgress } from './opportunityKnowledge.js'
+import { offerProcurement,executeProcurement } from './procurement.js'
 
 const copy=value=>structuredClone(value)
 const check=(ok,code)=>{if(!ok)throw new InventoryError(code)}
@@ -22,6 +23,8 @@ function meeting(world,speakerId,listenerId,context) {
 }
 function releaseReward(world,row) {
   if(row.rewardReservationId)releaseReservation(world.interactions,row.rewardReservationId)
+  const purchase=world.interactions.reservations.find(r=>r.id===row.purchaseReservationId)
+  if(purchase&&['held','impaired'].includes(purchase.status))releaseReservation(world.interactions,purchase.id)
   for(const reservation of world.interactions.itemReservations??[])if(reservation.sourceId===row.id&&['held','impaired'].includes(reservation.status))releaseReservation(world.interactions,reservation.id)
 }
 function assignmentFor(world,row) {return world.life?.actors.find(a=>a.actorId===row.assigneeId)?.assignment}
@@ -39,10 +42,11 @@ function finish(world,row,status,reason,at,requestId,cause=null,initiatorId=row.
   releaseReward(world,row)
   row.status=status;row.reason=reason;row.fundsBlocked=false
   const event=emit(world,`opportunity_${status}`,initiatorId,initiatorId===row.issuerId?row.assigneeId:row.issuerId,at,requestId,{opportunityId:row.id,rootCauseId:row.rootCauseId,cause: cause??row.offeredEventId,reason})
+  if(row.shipment?.pickedUpEventId&&!row.shipment.deliveredEventId)row.restitution={ownerId:row.issuerId,carrierId:row.assigneeId,sourceEventId:event.id,returnedEventId:null}
   row.completionEventId=event.id;return event
 }
 export function opportunityQuote(world,row) {
-  const budget=availableWallet(world.interactions,row.issuerId)
+  const budget=availableWallet(world.interactions,row.issuerId)-(row.requirements.kind==='procurement'?row.purchaseBudget:0)
   return {amount:budget>=row.proposedReward?row.proposedReward:0,unpaid:budget<row.proposedReward}
 }
 export function knownOpportunities(world,actorId,at,meetingSpeakerId=null) {
@@ -53,12 +57,14 @@ export function knownOpportunities(world,actorId,at,meetingSpeakerId=null) {
     return {...copy(row),status,assigneeId:known.assigneeId,rewardAmount:known.amount,
       reason:known.reason,fundsBlocked:known.stage==='payment',completionEventId:known.stage==='ended'?known.evidenceId:null,
       returnEventId:known.stage==='payment'||known.status==='fulfilled'?known.evidenceId:null,
-      message:{...copy(row.message),deliveredEventId:delivered?row.message.deliveredEventId:null,receiptEventId:delivered?row.message.receiptEventId:null},
+      message:row.message?{...copy(row.message),deliveredEventId:delivered?row.message.deliveredEventId:null,receiptEventId:delivered?row.message.receiptEventId:null}:null,
+      shipment:row.shipment?{...copy(row.shipment),pickedUpEventId:delivered?row.shipment.pickedUpEventId:null,deliveredEventId:known.stage==='payment'||known.status==='fulfilled'?row.shipment.deliveredEventId:null}:null,
       expired:status==='expired',paymentAvailable:local&&status==='accepted'&&availableWallet(world.interactions,row.issuerId,row.rewardReservationId)>=known.amount,
+      purchaseFunded:row.requirements.kind!=='procurement'||local&&availableWallet(world.interactions,row.issuerId)>=row.purchaseBudget,
       quote:status==='offered'&&local?opportunityQuote(world,row):{amount:known.amount,unpaid:known.amount===0}}
   })
 }
-export function executeOpportunities(world,command,context) {
+export function executeOpportunities(world,command,context,catalog) {
   check(world.version===2&&context.allowed===true,'INTERACTION_DENIED')
   check(Number.isSafeInteger(context.at)&&context.at>=0&&Number.isSafeInteger(context.at+360000),'INVALID_TIME')
   if(command.kind==='initialize') {
@@ -79,11 +85,12 @@ export function executeOpportunities(world,command,context) {
     return [emit(world,'opportunity_autonomy_enabled',command.actorId,null,context.at,command.id)]
   }
   if(command.kind==='offer') {
-    const need=world.opportunities.needs.find(n=>n.id===command.needId)
-    check(need?.templateId===SHI_MESSAGE_V1.id&&need.issuerId===command.actorId,'UNKNOWN_NEED')
+    const need=[...world.opportunities.needs,...(world.economy?.needs??[])].find(n=>n.id===command.needId)
+    check(need&&[SHI_MESSAGE_V1.id,'merchant-restock-v1'].includes(need.templateId)&&need.issuerId===command.actorId,'UNKNOWN_NEED')
     check(!world.opportunities.entries.some(row=>row.rootCauseId===need.id&&row.templateId===need.templateId),'NEED_ALREADY_OFFERED')
-    check(alive(world,command.actorId)&&alive(world,SHI_MESSAGE_V1.targetActorId),'ACTOR_DEAD')
+    check(alive(world,command.actorId)&&alive(world,need.targetActorId),'ACTOR_DEAD')
     check(world.opportunities.entries.length<4096&&world.opportunities.entries.filter(active).length<8&&world.opportunities.entries.filter(r=>active(r)&&r.issuerId===command.actorId).length<2,'OPPORTUNITY_LIMIT')
+    if(need.templateId==='merchant-restock-v1')return offerProcurement(world,need,command,context,{emit})
     const template=SHI_MESSAGE_V1,id=`op:${world.opportunities.entries.length+1}`
     const event=emit(world,'opportunity_offered',command.actorId,null,context.at,command.id,{opportunityId:id,rootCauseId:need.id,cause:world.opportunities.events[0].id})
     const targetPlaceId=world.places.bindings.find(b=>b.actorId===template.targetActorId)?.workPlaceId
@@ -99,6 +106,10 @@ export function executeOpportunities(world,command,context) {
   }
   const row=lookup(world,command.opportunityId)
   check(row,'UNKNOWN_OPPORTUNITY')
+  if(['pickup_cargo','deliver_cargo','return_cargo'].includes(command.kind)) {
+    check(row.requirements.kind==='procurement','INVALID_COMMAND')
+    return executeProcurement(world,catalog,row,command,context,{emit,finish,meeting,closeKnownAssignment})
+  }
   if(command.kind==='tell_status') {
     check(command.actorId===row.issuerId&&row.knownBy.includes(command.targetId),'OFFER_NOT_KNOWN')
     meeting(world,command.actorId,command.targetId,context)
@@ -131,7 +142,7 @@ export function executeOpportunities(world,command,context) {
     return [finish(world,row,'expired','DEADLINE_PASSED',context.at,command.id)]
   }
   check(context.at<row.deadlineAt||row.returnEventId&&['collect_reward','cancel'].includes(command.kind),'OPPORTUNITY_EXPIRED')
-  check(alive(world,row.issuerId)&&(row.message.deliveredEventId||alive(world,row.targetActorId)),'ACTOR_DEAD')
+  check(alive(world,row.issuerId)&&(row.message?.deliveredEventId||row.shipment?.pickedUpEventId||alive(world,row.targetActorId)),'ACTOR_DEAD')
   if(command.kind==='reveal') {
     check(command.actorId===row.issuerId&&!row.knownBy.includes(command.targetId),'ALREADY_KNOWN')
     meeting(world,command.actorId,command.targetId,context)
@@ -152,6 +163,10 @@ export function executeOpportunities(world,command,context) {
       row.rewardReservationId=`reserve:${row.id}:reward`
       reserveMoney(world.interactions,{id:row.rewardReservationId,actorId:row.issuerId,amount,sourceId:row.id,at:context.at})
     }
+    if(row.requirements.kind==='procurement') {
+      row.purchaseReservationId=`reserve:${row.id}:purchase`
+      reserveMoney(world.interactions,{id:row.purchaseReservationId,actorId:row.issuerId,amount:row.purchaseBudget,sourceId:row.id,at:context.at})
+    }
     row.status='accepted';row.assigneeId=command.actorId;row.acceptedAt=context.at;row.rewardAmount=amount;row.identifiedAssignee=context.identified
     const event=emit(world,'opportunity_accepted',command.actorId,row.issuerId,context.at,command.id,{opportunityId:row.id,rootCauseId:row.rootCauseId,cause:row.offeredEventId,amount,reservationId:row.rewardReservationId,proofId:context.proofId,identified:context.identified})
     rememberAssignment(world,row,event.id);return [event]
@@ -170,7 +185,7 @@ export function executeOpportunities(world,command,context) {
   }
   if(command.kind==='deliver_message') {
     check(row.status==='accepted'&&row.assigneeId===command.actorId,'NOT_ASSIGNEE')
-    check(!row.message.deliveredEventId&&row.requirements.kind==='message_roundtrip','MESSAGE_ALREADY_DELIVERED')
+    check(row.requirements.kind==='message_roundtrip'&&!row.message.deliveredEventId,'MESSAGE_ALREADY_DELIVERED')
     meeting(world,row.targetActorId,command.actorId,context)
     check(typeof context.identified==='boolean','MISSING_OBSERVATION')
     const delivered=emit(world,'message_delivered',command.actorId,row.targetActorId,context.at,command.id,
@@ -182,7 +197,7 @@ export function executeOpportunities(world,command,context) {
     return [delivered,reply]
   }
   if(command.kind==='collect_reward') {
-    check(row.status==='accepted'&&row.assigneeId===command.actorId&&row.message.receiptEventId,'DELIVERY_NOT_COMPLETE')
+    check(row.status==='accepted'&&row.assigneeId===command.actorId&&row.message?.receiptEventId,'DELIVERY_NOT_COMPLETE')
     meeting(world,row.issuerId,command.actorId,context)
     check(typeof context.identified==='boolean','MISSING_OBSERVATION')
     if(availableWallet(world.interactions,row.issuerId,row.rewardReservationId)<row.rewardAmount) {
@@ -217,7 +232,7 @@ export function applyOpportunityConsequences(world,sourceEvents,at,requestId) {
   if(!cause)return []
   const events=[],losses=reconcileReservations(world.interactions,cause)
   for(const row of world.opportunities.entries.filter(active)) {
-    const reason=!alive(world,row.issuerId)?'ISSUER_DEAD':!row.message.deliveredEventId&&!alive(world,row.targetActorId)?'RECIPIENT_DEAD':row.assigneeId&&!alive(world,row.assigneeId)?'ASSIGNEE_DEAD':null
+    const reason=!alive(world,row.issuerId)?'ISSUER_DEAD':!row.message?.deliveredEventId&&!row.shipment?.pickedUpEventId&&!alive(world,row.targetActorId)?'RECIPIENT_DEAD':row.assigneeId&&!alive(world,row.assigneeId)?'ASSIGNEE_DEAD':null
     if(reason){events.push(finish(world,row,'failed',reason,at,requestId,cause));continue}
     const loss=losses.find(loss=>loss.sourceId===row.id)
     if(loss?.reason==='CARGO_UNAVAILABLE'){events.push(finish(world,row,'failed','CARGO_UNAVAILABLE',at,requestId,cause));continue}

@@ -5,9 +5,10 @@ import { prepareCommitment } from '../gameplay/commitments.js'
 import { availableWallet } from '../gameplay/reservations.js'
 import { distance } from './geometry.js'
 import { relationFor } from '../gameplay/relations.js'
+import { placeStatus } from '../gameplay/places.js'
 
 /** People learn in physical meetings; route goals are known fixed places. */
-export function createOpportunityDirector({state,clock,ids,point,notice,contact,face,move,interrupt,send,talkingTo}) {
+export function createOpportunityDirector({state,clock,ids,point,notice,contact,face,move,interrupt,send,talkingTo,atPlace}) {
   let nextAcceptanceAt=0
   const scanDue=new Map(),invited=new Map()
   const actor=(world,id)=>world.interactions.actors.find(a=>a.id===id)
@@ -45,6 +46,7 @@ export function createOpportunityDirector({state,clock,ids,point,notice,contact,
       if(assignment&&!assignment.outcomeEventId) {
         const row=world.opportunities.entries.find(r=>r.id===assignment.opportunityId)
         if(!row)return false
+        const returning=!!(row.message?.receiptEventId||row.shipment?.pickedUpEventId)
         if(!row.returnEventId&&at>=assignment.deadlineAt) {
           send('opportunities',{kind:'notice_outcome',actorId:id,opportunityId:row.id},{at,allowed:true});return 'committed'
         }
@@ -59,9 +61,9 @@ export function createOpportunityDirector({state,clock,ids,point,notice,contact,
             if(meetingEligibility(world,row.issuerId,id,context).available){send('opportunities',{kind:'notice_outcome',actorId:id,opportunityId:row.id},context);return 'committed'}
           }
           if(interrupt(id,'contract',60,assignment.acceptedEventId))return 'committed'
-          return goTo(id,row.message.receiptEventId?row.issuerId:row.targetActorId,row.message.receiptEventId?row.returnPlaceId:row.targetPlaceId,dt)
+          return goTo(id,returning?row.issuerId:row.targetActorId,returning?row.returnPlaceId:row.targetPlaceId,dt)
         }
-        const recipient=row.message.receiptEventId?row.issuerId:row.targetActorId
+        const recipient=returning?row.issuerId:row.targetActorId
         // A debt is remembered without reading the distant payer's pockets.
         if(row.returnEventId&&!(notice(id,recipient)&&contact(id,recipient)))return false
         if(notice(id,recipient)&&contact(id,recipient)) {
@@ -69,10 +71,16 @@ export function createOpportunityDirector({state,clock,ids,point,notice,contact,
           if(!meetingEligibility(world,recipient,id,context).available)return 'busy'
           if(row.returnEventId&&availableWallet(world.interactions,row.issuerId,row.rewardReservationId)<row.rewardAmount)return false
           if(interrupt(id,'contract',60,assignment.acceptedEventId))return 'committed'
-          return commit(world,row.message.receiptEventId?'collect':'deliver',id,row,context)
+          if(row.requirements.kind==='procurement') {
+            context.placeId=returning?row.returnPlaceId:row.targetPlaceId;context.present=atPlace(recipient,context.placeId)
+            if(!context.present)return 'busy'
+            if(!returning&&!placeStatus(world,context.placeId,at).open)return 'busy'
+            return commit(world,returning?'deliver_cargo':'pickup',id,row,context)
+          }
+          return commit(world,returning?'collect':'deliver',id,row,context)
         }
         if(interrupt(id,'contract',60,assignment.acceptedEventId))return 'committed'
-        return goTo(id,recipient,row.message.receiptEventId?row.returnPlaceId:row.targetPlaceId,dt)
+        return goTo(id,recipient,returning?row.returnPlaceId:row.targetPlaceId,dt)
       }
       if(idleForJob(world,id)&&at>=nextAcceptanceAt) {
         const offered=world.opportunities.entries.filter(r=>r.status==='offered'&&at<r.deadlineAt&&r.knownBy.includes(id)&&!r.declinedBy.includes(id)&&r.issuerId!==id&&r.targetActorId!==id)
@@ -81,13 +89,24 @@ export function createOpportunityDirector({state,clock,ids,point,notice,contact,
           const context=meeting(row.issuerId,id)
           if(!meetingEligibility(world,row.issuerId,id,context).available)continue
           const quote=opportunityQuote(world,row)
+          if(row.requirements.kind==='procurement'&&availableWallet(world.interactions,row.issuerId)<row.purchaseBudget)continue
           const relation=relationFor(world,id,row.issuerId)
           if(relation.fear>=25||relation.trust<0||quote.unpaid&&relation.gratitude<10&&relation.trust<15)continue
           nextAcceptanceAt=at+1000;return commit(world,'accept',id,row,context,quote.unpaid?'unpaid':'paid')
         }
+        // A shopkeeper asking for a hand is visible; the actual request is
+        // disclosed only after approaching for a real conversation.
+        const caller=world.opportunities.entries.find(r=>r.requirements.kind==='procurement'&&r.status==='offered'&&at<r.deadlineAt&&r.targetActorId!==id&&r.issuerId!==id&&!r.knownBy.includes(id)&&
+          notice(id,r.issuerId)&&atPlace(r.issuerId,r.returnPlaceId)&&!life(world,r.issuerId)?.interruption)
+        if(caller) {
+          if(contact(id,caller.issuerId)) {
+            const context=meeting(caller.issuerId,id)
+            if(meetingEligibility(world,caller.issuerId,id,context).available){send('opportunities',{kind:'reveal',actorId:caller.issuerId,targetId:id,opportunityId:caller.id},context);return 'committed'}
+          } else {move(id,{...point(caller.issuerId)},dt,1.3);return 'busy'}
+        }
       }
       const own=world.opportunities.entries.find(r=>r.issuerId===id&&r.status==='offered'&&at<r.deadlineAt)
-      if(!own||personal.intent.priority>=40||personal.interruption&&personal.interruption.kind!=='seek_help')return false
+      if(!own||own.requirements.kind==='procurement'||personal.intent.priority>=40||personal.interruption&&personal.interruption.kind!=='seek_help')return false
       if(interrupt(id,'seek_help',40,own.offeredEventId))return 'committed'
       if(at>=(scanDue.get(id)??0)) {
         scanDue.set(id,at+1000)

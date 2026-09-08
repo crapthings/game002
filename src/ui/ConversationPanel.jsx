@@ -14,19 +14,22 @@ export default function ConversationPanel({view,lockReason}) {
     <div className="my-2 text-sm text-amber-100" aria-live="polite">{meeting.lines.map((line,i)=><p className="mt-1" key={i}>{line}</p>)}</div>
     {meeting.opportunities?.map(row=><div className="my-2 rounded border border-white/10 p-2 text-xs" key={row.id}>
       <p>{row.title} · {row.quote.unpaid?'无偿帮忙':`约定报酬 ${row.quote.amount}文`}</p>
-      <p className="mt-1 text-stone-400">把石伯的口信带给小何，再回来交代答复。</p>
+      <p className="mt-1 text-stone-400">{row.requirements.kind==='procurement'?`去城门货郎处取${row.requirements.lines.map(l=>`${l.itemType==='medicine'?'止血药':'干粮'}${l.quantity}份`).join('、')}，运回药铺。采购款${row.purchaseBudget}文由掌柜预留。`:'把石伯的口信带给小何，再回来交代答复。'}</p>
       <p className="mt-1 text-stone-400">{row.returnEventId&&row.status==='accepted'?'事情已经办妥，约定报酬仍待支付':row.expired?'已到期':['fulfilled','failed','cancelled','expired'].includes(row.status)?({fulfilled:'已办妥并结清',failed:'未能完成',cancelled:'已取消',expired:'已过期'}[row.status]):`还剩${Math.max(0,Math.ceil((row.deadlineAt-view.clock)/1000))}游戏分钟`}</p>
       {row.status==='offered'&&!row.declinedBy.includes('player')&&<div className="mt-2 flex flex-wrap gap-2">
-        <InteractionButton className={button} reason={lockReason||(row.expired?'委托已过期':null)} onClick={()=>act('accept',row,row.quote.unpaid?'unpaid':'paid')}>{row.quote.unpaid?'愿意无偿帮忙':`答应帮忙 · 报酬${row.quote.amount}文`}</InteractionButton>
+        <InteractionButton className={button} reason={lockReason||(row.expired?'委托已过期':!row.purchaseFunded?'掌柜的采购款还没凑足':null)} onClick={()=>act('accept',row,row.quote.unpaid?'unpaid':'paid')}>{row.quote.unpaid?'愿意无偿帮忙':`答应帮忙 · 报酬${row.quote.amount}文`}</InteractionButton>
         <InteractionButton className={button} reason={lockReason||(row.expired?'委托已过期':null)} onClick={()=>act('decline',row)}>婉拒</InteractionButton>
       </div>}
       {row.declinedBy.includes('player')&&<p className="mt-2 text-stone-400">你已经婉拒；别人仍可以帮忙。</p>}
       {row.status==='accepted'&&row.assigneeId==='player'&&<div className="mt-2 flex flex-wrap gap-2">
-        {!row.message.deliveredEventId&&meeting.speakerId===row.targetActorId&&<InteractionButton className={button} reason={lockReason||(row.expired?'委托已过期':null)} onClick={()=>act('deliver',row)}>转达石伯的口信</InteractionButton>}
-        {!!row.message.receiptEventId&&meeting.speakerId===row.issuerId&&<InteractionButton className={button} reason={lockReason||(row.expired?'委托已过期':row.returnEventId&&!row.paymentAvailable?'报酬仍不足，稍后再来':null)} onClick={()=>act('collect',row)}>交代答复并结清</InteractionButton>}
-        <button className={button} onClick={()=>useLivingStore.getState().trackPlace(row.message.receiptEventId?row.returnPlaceId:row.targetPlaceId)}>{row.message.receiptEventId?'指路：回去找石伯':'指路：小何常去的地方'}</button>
+        {row.message&&!row.message.deliveredEventId&&meeting.speakerId===row.targetActorId&&<InteractionButton className={button} reason={lockReason||(row.expired?'委托已过期':null)} onClick={()=>act('deliver',row)}>转达石伯的口信</InteractionButton>}
+        {!!row.message?.receiptEventId&&meeting.speakerId===row.issuerId&&<InteractionButton className={button} reason={lockReason||(row.expired?'委托已过期':row.returnEventId&&!row.paymentAvailable?'报酬仍不足，稍后再来':null)} onClick={()=>act('collect',row)}>交代答复并结清</InteractionButton>}
+        {row.shipment&&!row.shipment.pickedUpEventId&&meeting.speakerId===row.targetActorId&&<InteractionButton className={button} reason={lockReason||(row.expired?'委托已过期':row.requirements.lines.reduce((n,l)=>n+l.quantity,0)+view.bagCount>6?'背包放不下这批货，请先腾位置':null)} onClick={()=>act('pickup',row)}>领取采购货物</InteractionButton>}
+        {!!row.shipment?.pickedUpEventId&&meeting.speakerId===row.issuerId&&<InteractionButton className={button} reason={lockReason||(row.expired?'委托已过期':row.returnEventId&&!row.paymentAvailable?'跑腿报酬仍待支付':null)} onClick={()=>act('deliver_cargo',row)}>交回货物并结清</InteractionButton>}
+        <button className={button} onClick={()=>useLivingStore.getState().trackPlace(row.message?.receiptEventId||row.shipment?.pickedUpEventId?row.returnPlaceId:row.targetPlaceId)}>指路：{row.message?.receiptEventId||row.shipment?.pickedUpEventId?'回程地点':'取信或取货地点'}</button>
         <InteractionButton className={button} reason={lockReason} onClick={()=>act('cancel',row)}>{row.returnEventId?'放弃报酬请求':'放弃委托'}</InteractionButton>
       </div>}
+      {row.restitution&&!row.restitution.returnedEventId&&row.assigneeId==='player'&&meeting.speakerId===row.issuerId&&<InteractionButton className={`${button} mt-2`} reason={lockReason} onClick={()=>act('return_cargo',row)}>交还仍持有的货物（不领报酬）</InteractionButton>}
     </div>)}
     {!!meeting.placeIds.length&&<div className="mb-2">{meeting.placeIds.map(id=>{
       const place=view.places.find(p=>p.id===id)

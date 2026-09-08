@@ -41,6 +41,17 @@ export function reserveItems(state,{id,actorId,lotId,quantity,sourceId,at}) {
   requireAvailableLot(state,lotId,quantity)
   const row={id,actorId,lotId,quantity,holderId:lot.holderId,sourceId,status:'held',at,reasonEventId:null};state.itemReservations.push(row);return row
 }
+/** Authorized contract cargo: the owner and the actual carrier are distinct. */
+export function reserveCargo(state,{id,actorId,lotId,holderId,quantity,sourceId,at}) {
+  check(Array.isArray(state.itemReservations)&&!state.itemReservations.some(r=>r.id===id),'RESERVATION_EXISTS')
+  check(state.itemReservations.length<4096,'HISTORY_FULL')
+  check(validId(id)&&validId(sourceId)&&natural(at),'INVALID_RESERVATION')
+  const lot=state.inventory.lots.find(l=>l.id===lotId)
+  check(lot&&lot.ownerId===actorId&&lot.holderId===holderId&&state.actors.some(a=>a.containerId===holderId),'CARGO_UNAVAILABLE')
+  requireAvailableLot(state,lotId,quantity)
+  const row={id,actorId,lotId,holderId,quantity,sourceId,status:'held',at,reasonEventId:null}
+  state.itemReservations.push(row);return row
+}
 export function releaseReservation(state,id,status='released') {
   if(id===null)return
   check(['released','spent'].includes(status),'INVALID_RESERVATION_STATUS')

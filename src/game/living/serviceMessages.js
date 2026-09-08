@@ -20,4 +20,5 @@ export const SERVICE_REASONS={
   TERMS_ALREADY_FIXED:'之前已经约定了报酬，重复操作不能改价。',
   NPC_ALREADY_ASSIGNED:'对方已经答应了另一件事。',MISSING_OUTCOME_EVIDENCE:'还没有当面确认事情后来的变化。',
   NEWS_REST:'对方刚聊过一些事，稍后再叙。',MEETING_ALREADY_SHARED:'这次会面已经交流过一条消息。',MESSAGE_TOO_DISTANT:'这条消息已经转述过几次，暂时不再传下去。',
+  SUPPLIER_CLOSED:'货郎现在没有接待，请在白天等他回到卸货场。',CARGO_ALREADY_PICKED_UP:'这批货已经领取过。',NO_CARGO_TO_RETURN:'没有仍在你手中的这批货物可归还。',CARGO_UNAVAILABLE:'货物不在承运人手中，不能交付。',OWN_FOOD_REQUIRED:'需要本人持有的一份自有干粮。',
 }

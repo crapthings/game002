@@ -29,7 +29,7 @@ function overlaps(point, box, radius = .65) {
 }
 
 /** Resolve deterministic candidates only. Live navigation must confirm geometry. */
-export function resolveCityPlaces(plan,additionalHomes=[]) {
+export function resolveCityPlaces(plan,additionalHomes=[],additionalPlaces=[]) {
   const city = plan?.city
   if (!city || !Number.isFinite(city.elevation) || !Array.isArray(city.placements) || !Array.isArray(city.roads)) {
     return { version: 1, places: [], unresolved: [{ placeId: null, code: 'CITY_PLAN_MISSING' }] }
@@ -145,7 +145,16 @@ export function resolveCityPlaces(plan,additionalHomes=[]) {
       accept:isHome,exclude:usedHomes,public:false,fallbackRadius:28})
     if(place?.buildingId)usedHomes.add(place.buildingId)
   }
+  for(const spec of additionalPlaces)add(spec)
   return { version: 1, places, unresolved }
+}
+
+export function resolveSupplierPlace(plan) {
+  const gate=plan.fortifications?.gates?.slice().sort((a,b)=>a.z-b.z||a.id.localeCompare(b.id))[0]
+  if(!gate)return {version:1,places:[],unresolved:[{placeId:'place.supplier-loading',code:'GATE_PLACE_MISSING'}]}
+  const length=Math.hypot(gate.x,gate.z),anchor={x:gate.x-gate.x/length*32,z:gate.z-gate.z/length*32}
+  const resolved=resolveCityPlaces(plan,[],[{id:'place.supplier-loading',label:'城门卸货场',kind:'loading',anchor,radius:0,fallbackRadius:28,public:true,hours:[{startMinute:480,endMinute:1080}]}])
+  return {version:1,places:resolved.places.filter(p=>p.id==='place.supplier-loading'),unresolved:resolved.unresolved.filter(p=>p.placeId===null||p.placeId==='place.supplier-loading')}
 }
 
 export function resolveRoleHomes(plan) {

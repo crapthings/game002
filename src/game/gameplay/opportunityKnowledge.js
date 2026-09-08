@@ -34,6 +34,7 @@ export function personalOpportunity(world,row,viewerId,at) {
     if(e.kind==='opportunity_accepted'&&involved)change={status:'accepted',assigneeId:e.actorId,amount:e.amount,stage:'deliver',reason:null}
     if(e.kind==='opportunity_declined'&&e.actorId===viewerId)change={status:'declined',stage:'ended',reason:'DECLINED'}
     if(e.kind==='message_acknowledged'&&involved)change={stage:'return'}
+    if(e.kind==='cargo_picked_up'&&involved)change={stage:'return'}
     if(e.kind==='opportunity_payment_due'&&involved)change={stage:'payment',reason:'AWAITING_PAYMENT'}
     if(e.kind==='opportunity_fulfilled'&&involved)change={status:'fulfilled',stage:'ended',amount:e.amount,reason:null}
     if(e.kind==='opportunity_cancelled'&&e.actorId===viewerId)change={status:'cancelled',stage:'ended',reason:e.reason}

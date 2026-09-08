@@ -1,6 +1,6 @@
 import { personalOpportunity } from '../gameplay/opportunityKnowledge.js'
 
-export const taskReasons={DEADLINE_PASSED:'约定期限已过',CANCELLED_BY_PARTY:'一方已取消约定',DECLINED:'你婉拒了这件事',ISSUER_DEAD:'委托人已经去世',RECIPIENT_DEAD:'收信人已经去世',ASSIGNEE_DEAD:'承接人已经去世',CARGO_UNAVAILABLE:'约定货物已无法交付',AWAITING_PAYMENT:'事情已交代，报酬仍待支付'}
+export const taskReasons={DEADLINE_PASSED:'约定期限已过',CANCELLED_BY_PARTY:'一方已取消约定',DECLINED:'你婉拒了这件事',ISSUER_DEAD:'委托人已经去世',RECIPIENT_DEAD:'收信人或供货人已经去世',ASSIGNEE_DEAD:'承接人已经去世',CARGO_UNAVAILABLE:'约定货物已无法交付',AWAITING_PAYMENT:'事情已交代，报酬仍待支付',SUPPLIER_EXHAUSTED:'货郎的有限存货已不足',PROCUREMENT_FUNDS_UNAVAILABLE:'预留采购款已不足，尚未购货'}
 export function personalTasks(state,at,names) {
   const name=id=>id==='player'?'你':names[id]??'街坊'
   const rows=(state.opportunities?.entries??[]).flatMap(row=>{
@@ -8,11 +8,12 @@ export function personalTasks(state,at,names) {
     if(!known)return []
     const ended=['fulfilled','failed','cancelled','expired','declined'].includes(known.status)
     const own=known.assigneeId==='player'
+    const procurement=row.requirements.kind==='procurement'
     const next=ended?(known.status==='fulfilled'?'已按约定办妥并结清':taskReasons[known.reason]??'这件事已结束'):
       known.status==='offered'?`再见${name(row.issuerId)}确认是否仍需帮忙`:
       !own?`${name(known.assigneeId)}已经答应帮忙；之后可向委托人打听`:
       known.stage==='payment'?`等${name(row.issuerId)}筹到钱，再当面结清`:
-      known.stage==='return'?`把答复带回给${name(row.issuerId)}`:`找到${name(row.targetActorId)}，当面传达口信`
+      known.stage==='return'?(procurement?'把实际货物运回药铺':`把答复带回给${name(row.issuerId)}`):`找到${name(row.targetActorId)}，${procurement?'领取掌柜委托采购的货物':'当面传达口信'}`
     const placeId=known.stage==='deliver'&&own?row.targetPlaceId:row.returnPlaceId
     return [{id:row.id,title:row.title,issuer:name(row.issuerId),ended,next,placeId,
       placeLabel:state.places.definitions.find(p=>p.id===placeId)?.label??'约定的地点',

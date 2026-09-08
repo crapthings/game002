@@ -24,6 +24,7 @@ export function createPresentationSelectors() {
       else if(life?.interruption)actorStates[id]=life.interruption.kind==='flee'?'正在避险':'正在处理事务'
       else if(life?.intent?.phase==='travelling')actorStates[id]='正在赶路'
       else if(life?.intent?.kind==='rest'&&actor.health<actor.maxHealth)actorStates[id]='受伤，正在休养'
+      else if(id==='merchant'&&life?.intent?.phase==='interacting'&&state.opportunities?.entries.some(r=>r.issuerId===id&&r.requirements.kind==='procurement'&&r.status==='offered'&&r.deadlineAt>at))actorStates[id]='在铺前招呼帮手去采购'
       else actorStates[id]=activityWords[life?.intent?.kind]??(actor.health<actor.maxHealth?'身上有伤':'在此停留')
     }
     const places=knownPlaces.map(marker=>{

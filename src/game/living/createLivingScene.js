@@ -8,7 +8,7 @@ import { createLivingSimulation } from './simulation.js'
 import { createCombatInput } from './createCombatInput.js'
 import { validateLiving } from './persistence.js'
 import { prepareCityLayout } from './prepareCityLayout.js'
-import { resolveRoleHomes } from './cityPlaces.js'
+import { resolveRoleHomes,resolveSupplierPlace } from './cityPlaces.js'
 import { createCityTravel } from './createCityTravel.js'
 import { CITY_NOTICE_TEXT, readCityNotice, placeClues, destinationDirection } from './placeClues.js'
 import { clockAt } from './clock.js'
@@ -38,6 +38,7 @@ export function createLivingScene(scene,plan,world,player,progress,extras=()=>({
   const migration=copy(saved?.migration??{fromVersion:saved?1:0})
   let clues=copy(saved?.clues??[]),pendingClues=null
   let housing=null,housingMessage=null
+  let supplierPlace=null,supplierMessage=null
   const point=id=>id==='player'?{x:player.root.position.x,y:player.root.position.y,z:player.root.position.z,heading:player.root.rotation.y}:id==='stall'?spatial.stall:id==='relocation'?cityLayout.parcelSpot:id==='notice'?cityLayout.notice:spatial.npcs.find(n=>n.id===id)
   const loaded=p=>world.isLoaded(p.x,p.z)
   function clear(a,b,r=.06) {
@@ -100,6 +101,20 @@ export function createLivingScene(scene,plan,world,player,progress,extras=()=>({
     }
     return {definitions,bindings}
   }
+  function prepareSupplier() {
+    const state=simulation.state()
+    if(!state.economy||state.registry.actors.some(a=>a.actorId==='supplier-1'))return
+    if(!supplierPlace)supplierPlace=prepareCityLayout(plan,world,{extra:true,owner:'city-supplier',candidates:resolveSupplierPlace(plan),knownPlaces:state.places.definitions})
+    supplierPlace.update()
+    const status=supplierPlace.status()
+    if(status.status==='blocked'&&supplierMessage!==status.reason){supplierMessage=status.reason;store().notify(`货郎的停靠地点尚未确认：${status.reason}`)}
+  }
+  function supplierSetup() {
+    const place=supplierPlace?.result()?.places[0]
+    if(!place)return null
+    return {spawn:{...copy(place.approach),heading:place.heading},place:copy(place),
+      binding:{actorId:'supplier-1',homePlaceId:place.id,workPlaceId:place.id,idlePlaceId:place.id,patrolPlaceIds:[]}}
+  }
   function atPlace(id,placeId) {
     const place=registeredPlaces(simulation.state(),cityLayout).find(p=>p.id===placeId),p=point(id)
     return !!place&&distance(p,place.approach)<=1&&Math.abs(p.y-place.approach.y)<.5&&contactClear(p,place.approach)
@@ -127,7 +142,7 @@ export function createLivingScene(scene,plan,world,player,progress,extras=()=>({
     if(!spatial)spatial=initialSpatial()
     simulation=createLivingSimulation({world:plan,legacy,saved:saved?.checkpoint,initialHour:progress.worldTime??7.5,space:{point,clear,contactClear,visible,move,
       placeSetup:()=>({definitions:registeredPlaces(simulation.state(),cityLayout),bindings:[...cityLayout.bindings,...simulation.state().registry.actors.filter(a=>a.body).map(a=>a.body.binding)]}),
-      lifeSetup,atPlace,routine,
+      lifeSetup,supplierSetup,atPlace,routine,
       knownPlaceIds:()=>clues.map(c=>c.placeId),
       conversationOpen:()=>store().panel,
       suspendRoutine:id=>{const intent=simulation.state().life?.actors.find(a=>a.actorId===id)?.intent;if(intent)travel.cancelTravel(intent.id)},
@@ -264,9 +279,9 @@ export function createLivingScene(scene,plan,world,player,progress,extras=()=>({
           if(meeting?.speakerId==='resident-1')simulation.command('talk_topic',{meetingId:meeting.id,topicId:'hours'})
         } else simulation.command(kind,{...data,...(kind==='threaten'?{targetId:selected}:{})})
       }
-      prepareHomes();simulation.update(dt);travel.releaseInactive(simulation.clock(),alive);draw(dt)
+      prepareHomes();prepareSupplier();simulation.update(dt);travel.releaseInactive(simulation.clock(),alive);draw(dt)
       publish()
     },
-    dispose(){closing=true;preparing?.dispose();housing?.dispose();input.dispose();if(simulation)simulation.close().finally(()=>{travel.dispose();disposed=true});else{travel.dispose();disposed=true}for(const e of models.values())e.model.dispose();parcel.dispose();notice.dispose();resources.forEach(r=>r.dispose());store().reset()},
+    dispose(){closing=true;preparing?.dispose();housing?.dispose();supplierPlace?.dispose();input.dispose();if(simulation)simulation.close().finally(()=>{travel.dispose();disposed=true});else{travel.dispose();disposed=true}for(const e of models.values())e.model.dispose();parcel.dispose();notice.dispose();resources.forEach(r=>r.dispose());store().reset()},
   }
 }

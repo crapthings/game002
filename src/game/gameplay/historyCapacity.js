@@ -18,6 +18,7 @@ export function historyCapacity(state) {
     ['dialogue',state.dialogue?.events,1],
     ['opportunities',state.opportunities?.events,1],
     ['relations',state.relations?.events,1],
+    ['economy',state.economy?.events,1],
     ['money-reservations',state.interactions.reservations,1],
     ['item-reservations',state.interactions.itemReservations,1],
   ].filter(([,entries]) => entries !== undefined)

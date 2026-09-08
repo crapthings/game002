@@ -83,9 +83,10 @@ export type GameplayStep = (
   | { domain:'life'; command:LifeCommand; context:Policy & {present?:boolean;proofId?:string;cause?:string|null;safe?:boolean} }
   | { domain:'relations';command:{kind:'initialize';actorId:string}|{kind:'react';actorId:string;factId:string};context:Policy }
   | { domain:'exchange';command:{kind:'enable';actorId:string}|{kind:'leave';actorId:string;relayId:string}|{kind:'share';actorId:string;targetId:string;factId:string};context:Policy & Partial<MeetingContext> & {separated?:boolean;solicited?:boolean} }
+  | { domain:'economy';command:{kind:'initialize';actorId:string}|{kind:'eat';actorId:string;lotId:string}|{kind:'notice_shortage';actorId:string}|{kind:'food_unavailable';actorId:string;reason:string};context:Policy & {present?:boolean;placeId?:string;proofId?:string} }
   | { domain:'dialogue'; command:{kind:'initialize';actorId:string}; context:Policy }
   | { domain:'dialogue'; command:{kind:'tell_place';actorId:string;targetId:string;placeId:string}|{kind:'share_news';actorId:string;targetId:string;factId:string}; context:MeetingContext }
-  | { domain:'opportunities'; command:OpportunityCommand; context:Policy & Partial<MeetingContext> & {identified?:boolean;deadActorId?:string} }
+  | { domain:'opportunities'; command:OpportunityCommand; context:Policy & Partial<MeetingContext> & {identified?:boolean;deadActorId?:string;present?:boolean;placeId?:string} }
   | { domain: 'registry'; command: { kind: 'arrive'; actorId: string; templateId: string };
       context: Policy & { geometryConfirmed: true; proofId: string; body: RegistryBody } }
   | { domain: 'village'; command: { kind: 'take' | 'settle' | 'return' | 'aid' | 'reward' | 'mask'; actorId: string; lotId?: string }; context: Policy & { identified?: boolean } }
@@ -143,30 +144,40 @@ export interface GameplayState {
   life?: {version:1;actors:LifeActor[];events:LifeEvent[]};
   dialogue?: {version:1;addresses:KnownAddress[];events:DialogueEvent[]};
   relations?:{version:1;exchangeVersion?:1;relays?:RelationRelay[];applications:{actorId:string;factId:string;eventId:string}[];events:RelationEvent[]};
+  economy?:{version:1;needs:ProcurementNeed[];foodNeeds:{actorId:string;reason:string;sourceEventId:string;resolvedEventId:string|null}[];events:EconomyEvent[]};
   opportunities?:{version:1;autonomyVersion?:1;needs:{id:string;templateId:string;issuerId:string;targetActorId:string;source:string}[];entries:Opportunity[];events:OpportunityEvent[]};
 }
 export interface Opportunity {
   id:string;templateId:string;title:string;issuerId:string;rootCauseId:string;offeredEventId:string;
-  targetActorId:string;targetPlaceId:string;returnPlaceId:string;requirements:{kind:'message_roundtrip';messageId:string};
+  targetActorId:string;targetPlaceId:string;returnPlaceId:string;requirements:{kind:'message_roundtrip';messageId:string}|{kind:'procurement';lines:{itemType:'medicine'|'ration';quantity:number}[]};
   proposedReward:number;rewardAmount:number|null;rewardReservationId:string|null;deadlineAt:number;
   status:'offered'|'accepted'|'fulfilled'|'failed'|'cancelled'|'expired';assigneeId:string|null;acceptedAt:number|null;identifiedAssignee:boolean;
   completionEventId:string|null;returnEventId?:string|null;reason:string|null;fundsBlocked:boolean;knownBy:string[];declinedBy:string[];
-  message:{id:string;senderId:string;recipientId:string;contentType:string;deliveredEventId:string|null;receiptEventId:string|null};
+  message?:{id:string;senderId:string;recipientId:string;contentType:string;deliveredEventId:string|null;receiptEventId:string|null}|null;
+  purchaseBudget?:number;purchaseReservationId?:string|null;
+  shipment?:{pickedUpEventId:string|null;deliveredEventId:string|null;cargo:CargoLot[]}|null;
+  restitution?:{ownerId:string;carrierId:string;sourceEventId:string;returnedEventId:string|null};
 }
+export interface CargoLot {lotId:string;sourceLotId:string;itemType:string;quantity:number;reservationId:string}
+export interface ProcurementNeed {id:string;templateId:'merchant-restock-v1';issuerId:string;targetActorId:string;sourceEventId:string;key:string;lines:{itemType:'medicine'|'ration';quantity:number}[];at:number}
+export interface EconomyEvent {id:string;kind:string;actorId:string;targetId:string|null;at:number;cause:string|null;requestId:string;sourceLotId?:string;itemType?:string;quantity?:number;hungerRelief?:number;placeId?:string;proofId?:string;reason?:string;rootCauseId?:string;lines?:{itemType:string;quantity:number}[]}
+export function shopStock(state:GameplayState,itemType:string):number;
+export function shortageProposal(state:GameplayState,at:number):null|{key:string;sourceEventId:string;lines:{itemType:string;quantity:number}[]};
 export type OpportunityCommand =
   | {kind:'initialize'|'enable_autonomy';actorId:string}
   | {kind:'offer';actorId:string;needId:string}
   | {kind:'reveal'|'tell_status';actorId:string;targetId:string;opportunityId:string}
   | {kind:'accept';actorId:string;opportunityId:string;terms:'paid'|'unpaid'}
-  | {kind:'decline'|'cancel'|'expire'|'deliver_message'|'collect_reward'|'notice_outcome';actorId:string;opportunityId:string};
+  | {kind:'decline'|'cancel'|'expire'|'deliver_message'|'collect_reward'|'notice_outcome'|'pickup_cargo'|'deliver_cargo'|'return_cargo';actorId:string;opportunityId:string};
 export interface OpportunityEvent {
   id:string;kind:string;actorId:string;targetId:string|null;at:number;cause:string|null;requestId:string;
   opportunityId?:string;rootCauseId?:string;reason?:string;amount?:number;reservationId?:string|null;proofId?:string;identified?:boolean;declaredNeedIds?:string[];messageId?:string;contentType?:string;
   knownState?:{status:string;stage:string;assigneeId:string|null;amount:number|null;reason:string|null;evidenceId:string};
+  cargo?:CargoLot[]|{lotId:string;quantity:number}[];placeId?:string;
 }
 export function opportunityQuote(state:GameplayState,opportunity:Opportunity):{amount:number;unpaid:boolean};
-export function knownOpportunities(state:GameplayState,actorId:string,at:number,meetingSpeakerId?:string|null):(Opportunity & {expired:boolean;paymentAvailable:boolean;quote:{amount:number|null;unpaid:boolean}})[];
-export function prepareCommitment(state:GameplayState,input:{kind:'accept'|'decline'|'cancel'|'deliver'|'collect';actorId:string;opportunityId:string;terms?:'paid'|'unpaid'},context:Policy & Partial<MeetingContext> & {identified?:boolean}):
+export function knownOpportunities(state:GameplayState,actorId:string,at:number,meetingSpeakerId?:string|null):(Opportunity & {expired:boolean;paymentAvailable:boolean;purchaseFunded:boolean;quote:{amount:number|null;unpaid:boolean}})[];
+export function prepareCommitment(state:GameplayState,input:{kind:'accept'|'decline'|'cancel'|'deliver'|'collect'|'pickup'|'deliver_cargo'|'return_cargo';actorId:string;opportunityId:string;terms?:'paid'|'unpaid'},context:Policy & Partial<MeetingContext> & {identified?:boolean;present?:boolean;placeId?:string}):
   {ok:false;code:string}|{ok:true;duplicate:boolean;receiptId:string|null;steps:GameplayStep[]};
 export interface MeetingContext extends Policy {withinRange:boolean;clear:boolean;facing:boolean;meetingId:string;proofId:string;identified?:boolean}
 export interface RelationEvent {

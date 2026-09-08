@@ -10,6 +10,7 @@ import { createOpportunityDirector } from './opportunityDirector.js'
 import { personalOpportunity,sameKnownProgress } from '../gameplay/opportunityKnowledge.js'
 import { relationFor } from '../gameplay/relations.js'
 import { createSocialController } from './socialController.js'
+import { createEconomyController } from './economyController.js'
 const copy=v=>structuredClone(v)
 export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,save,space,notify=()=>{},effects=()=>{}}) {
   const config=livingConfig(legacy,world)
@@ -44,9 +45,11 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
   const noticesPerson=(a,b)=>alive(a)&&near(a,b,12)&&(near(a,b)||Math.abs(facingAngle(space.point(a),space.point(b)))<=65)
   const opportunityDirector=createOpportunityDirector({state:()=>state,clock:()=>clock,ids:()=>npcs().map(n=>n.id),
     point:space.point,notice:noticesPerson,contact:near,face:space.face,move:space.move,
-    interrupt:interruptRoutine,send,talkingTo:()=>conversation?.speakerId})
+    interrupt:interruptRoutine,send,talkingTo:()=>conversation?.speakerId,atPlace:space.atPlace})
   const socialController=createSocialController({state:()=>state,clock:()=>clock,ids:()=>npcs().map(n=>n.id),point:space.point,contact:near,
     face:space.face,send,talkingTo:()=>conversation?.speakerId})
+  const economyController=createEconomyController({state:()=>state,clock:()=>clock,atPlace:space.atPlace,contact:near,point:space.point,
+    face:space.face,tradeContext,send,talkingTo:()=>conversation?.speakerId})
   async function send(domain,command,extra={},observe=false,continuation=[]) {
     if(busy||stopped)return {ok:false,code:'BUSY'}
     busy=true
@@ -73,7 +76,7 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
     const entry=state.places?.entries.find(e=>(e.businessActorId??e.operatorId)===targetId&&state.places.definitions.some(p=>p.id===e.placeId&&p.kind==='shop'))
     const provider=entry?.operatorId
     return {at:clock,placeId:entry?.placeId??null,operatorId:provider??null,
-      withinRange:!!provider&&near(actorId,provider),clear:!!provider&&space.clear(space.point(actorId),space.point(provider)),
+      withinRange:!!provider&&near(actorId,provider),clear:!!provider&&(space.contactClear??space.clear)(space.point(actorId),space.point(provider)),
       facing:!!provider&&Math.abs(facingAngle(space.point(actorId),space.point(provider)))<=65,
       operatorPresent:!!provider&&space.atPlace(provider,entry.placeId),proofId:`service-${serial+1}`}
   }
@@ -146,9 +149,10 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
       const row=state.opportunities?.entries.find(r=>r.id===data.opportunityId)
       if(!row){notify('UNKNOWN_OPPORTUNITY');return}
       refreshConversation()
-      const recipient=data.action==='deliver'?row.targetActorId:row.issuerId
+      const recipient=['deliver','pickup'].includes(data.action)?row.targetActorId:row.issuerId
       if(data.action!=='cancel'&&(!conversation||conversation.id!==data.meetingId||conversation.speakerId!==recipient)){notify('MEETING_ENDED');return}
       const context=data.action==='cancel'?{allowed:true,at:clock}:{...meetingContext(recipient),identified:sees(recipient,'player',true)}
+      if(['pickup','deliver_cargo','return_cargo'].includes(data.action)){context.placeId=data.action==='pickup'?row.targetPlaceId:row.returnPlaceId;context.present=space.atPlace(recipient,context.placeId)}
       const prepared=prepareCommitment(state,{kind:data.action,actorId:'player',opportunityId:row.id,terms:data.terms},context)
       if(!prepared.ok){notify(prepared.code);return}
       if(prepared.duplicate){notify('这一步已经有回执，沿用原来的结果。');return}
@@ -157,7 +161,10 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
       send(first.domain,first.command,first.context,false,rest).then(result=>{
         if(!result.ok)return
         const current=state.opportunities.entries.find(r=>r.id===row.id)
-        const message=data.action==='accept'?`已经答应帮忙，先去找小何。${current.rewardAmount===0?'这次明确约定无偿帮忙。':''}`:
+        const message=data.action==='accept'?`已经答应帮忙，先去找${current.requirements.kind==='procurement'?'货郎':'小何'}。${current.rewardAmount===0?'这次明确约定无偿帮忙。':''}`:
+          data.action==='pickup'?(current.status==='failed'?'货郎无法按约提供货物或采购款不足，采购已结束。':'已经取得真实货物，货款从掌柜预留的钱中支付。请运回药铺。'):
+          data.action==='deliver_cargo'?(current.status==='fulfilled'?`货物已交回药铺，结清${current.rewardAmount}文跑腿报酬。`:'货物已交回，但跑腿报酬仍待支付。'):
+          data.action==='return_cargo'?'你把仍持有的货物交回了物主；原委托仍已结束，没有再次发放报酬。':
           data.action==='deliver'?'小何收到了口信，也给了你答复。现在可以回去告诉石伯。':
           data.action==='collect'?(current.status==='fulfilled'?(current.rewardAmount?`委托已完成，收到${current.rewardAmount}文。`:'已经按约定无偿办妥。'):'石伯确认事情办到了，但现钱不足；这笔报酬仍然欠着。'):
           data.action==='decline'?'你婉拒了这件事，没有扣除钱物。':'已放弃这件委托。'
@@ -218,10 +225,15 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
     if(state.opportunities&&!state.opportunities.autonomyVersion){send('opportunities',{kind:'enable_autonomy',actorId:'player'});return}
     if(state.opportunities?.autonomyVersion&&!state.relations){send('relations',{kind:'initialize',actorId:'player'});return}
     if(state.relations&&!state.relations.exchangeVersion){send('exchange',{kind:'enable',actorId:'player'});return}
+    if(state.relations?.exchangeVersion&&!state.economy){send('economy',{kind:'initialize',actorId:'player'});return}
+    if(state.economy&&!state.registry.actors.some(a=>a.actorId==='supplier-1')) {
+      const body=space.supplierSetup?.()
+      if(body){send('registry',{kind:'arrive',actorId:'supplier-1',templateId:'supplier-1'},{geometryConfirmed:true,proofId:'supplier-site-confirmed',body});return}
+    }
     if(state.opportunities) {
       const due=state.opportunities.entries.find(r=>['offered','accepted'].includes(r.status)&&!r.returnEventId&&clock>=r.deadlineAt)
       if(due){send('opportunities',{kind:'expire',actorId:due.issuerId,opportunityId:due.id});return}
-      const need=state.opportunities.needs.find(n=>alive(n.issuerId)&&alive(n.targetActorId)&&!state.opportunities.entries.some(r=>r.rootCauseId===n.id))
+      const need=[...state.opportunities.needs,...(state.economy?.needs??[])].find(n=>alive(n.issuerId)&&alive(n.targetActorId)&&!state.opportunities.entries.some(r=>r.rootCauseId===n.id))
       if(need){send('opportunities',{kind:'offer',actorId:need.issuerId,needId:need.id});return}
     }
     if(refreshServices())return
@@ -309,6 +321,7 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
       }
       if(conversation?.speakerId===id){space.face(id,space.point('player'));continue}
       if(f.phase==='idle') {
+        if(economyController.updateNpc(id))return
         if(knowledge.relationReactionFactId){send('relations',{kind:'react',actorId:id,factId:knowledge.relationReactionFactId});return}
         if(!config.authorities.includes(id)&&relationFor(state,id,'player').fear>=25&&sees(id,'player',true)&&near(id,'player',8)) {
           if(interruptRoutine(id,'flee',80,state.relations?.applications.findLast(a=>a.actorId===id)?.eventId??null))return
