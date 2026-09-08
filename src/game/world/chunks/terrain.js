@@ -96,7 +96,7 @@ export function requiredChunks(center, radius = LOAD_RADIUS) {
 }
 
 export function generateChunk(terrain, cx, cz) {
-  const positions = [], indices = [], colors = [], placements = []
+  const positions = [], indices = [], colors = []
   const step = CHUNK_SIZE / CHUNK_SEGMENTS
   for (let z = 0; z <= CHUNK_SEGMENTS; z += 1) {
     for (let x = 0; x <= CHUNK_SEGMENTS; x += 1) {
@@ -133,6 +133,13 @@ export function generateChunk(terrain, cx, cz) {
       indices.push(a, a + 1, a + stride, a + 1, a + stride + 1, a + stride)
     }
   }
+  return { x: cx, z: cz, key: chunkKey(cx, cz), positions, indices, colors, placements: generateChunkPlacements(terrain, cx, cz) }
+}
+
+// Rendering and navigation call the same placement sampler; geometry-only
+// requests do not allocate terrain vertices, colours, normals or textures.
+export function generateChunkPlacements(terrain, cx, cz) {
+  const placements = []
   for (let index = 0; index < 36; index += 1) {
     const random = createRandom(terrain.seed, terrain.plan?.terrainVersion || TERRAIN_VERSION, 'chunk-props', cx, cz, index)
     const x = Math.round(cx * CHUNK_SIZE + (index % 6 + 0.3 + random() * 0.4) * CHUNK_SIZE / 6)
@@ -146,5 +153,5 @@ export function generateChunk(terrain, cx, cz) {
     const assetId = chooseBiomeAsset(biomeCatalog[profile.biome], random)
     placements.push({ id: `terrain/${cx}/${cz}/${index}`, assetId, position: [x, terrain.height(x, z), z], rotation: random() * Math.PI * 2, scale: 0.85 + random() * 0.4 })
   }
-  return { x: cx, z: cz, key: chunkKey(cx, cz), positions, indices, colors, placements }
+  return placements
 }

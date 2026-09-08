@@ -13,6 +13,7 @@ export default function PerformanceHud() {
     {sample.world && <>
       <p>模板材质批次 {sample.world.staticMaterialBatchesBefore} → {sample.world.staticMaterialBatchesAfter}</p>
       <p>碰撞体 {sample.world.collisionBodies} · 候选/查询 {sample.world.collisionQueries ? (sample.world.collisionCandidates / sample.world.collisionQueries).toFixed(1) : '—'}</p>
+      <p>导航区块 {sample.world.navigationChunks}/{sample.world.navigationCapacity} · 等待 {sample.world.navigationWaiting} · 寻路 {sample.world.navigationPending}</p>
     </>}
     <p>{sample.width} × {sample.height}</p>
   </aside>

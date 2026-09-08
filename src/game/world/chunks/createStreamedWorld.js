@@ -1,13 +1,14 @@
-import { buildingBodies, createTraversal } from './createTraversal.js'
+import { createTraversal } from './createTraversal.js'
+import { plannedPlacementIndex, includeWorldPlacement, placementCollisionBodies, collisionBounds } from './chunkGeometry.js'
 import { createNpcCrowd } from '../../npcs/createNpcCrowd.js'
 import { RawTexture } from '@babylonjs/core/Materials/Textures/rawTexture'
 import { Texture } from '@babylonjs/core/Materials/Textures/texture'
 import { GROUND_TEXTURE_SIZE } from './groundTexture.js'
 import { inCanal, onBridge } from '../city/createCityPlan.js'
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder'
-import { wuxiaDefinitions } from '../../assets/wuxia/catalog.js'
 import { canMoveInWorld } from './movementQuery.js'
 import { createNavigationWorker } from '../../living/createNavigationWorker.js'
+import { createNavigationResidency } from './navigationResidency.js'
 import { createCollisionIndex, fortificationBodies } from './collisionIndex.js'
 import { Mesh } from '@babylonjs/core/Meshes/mesh'
 import { VertexData } from '@babylonjs/core/Meshes/mesh.vertexData'
@@ -15,11 +16,9 @@ import { TransformNode } from '@babylonjs/core/Meshes/transformNode'
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial'
 import { Color3 } from '@babylonjs/core/Maths/math.color'
 import { createAssetRegistry } from '../../assets/createAssetRegistry.js'
-import { environmentCatalog } from '../../assets/environment/catalog.js'
 import { biomeCatalog } from '../biomes/catalog.js'
 import { HUMAN_SCALE } from '../worldMetrics.js'
 import { insideWorld } from '../worldConfig.js'
-import { townSurface } from '../settlements/createTownPlan.js'
 import { createTerrain, chunkAt, chunkKey, requiredChunks, CHUNK_SIZE } from './terrain.js'
 
 export function createStreamedWorld(scene, plan, initialViewDistance = 64) {
@@ -30,6 +29,7 @@ export function createStreamedWorld(scene, plan, initialViewDistance = 64) {
   const collisionIndex = createCollisionIndex()
   collisionIndex.replace('fortifications', fortificationBodies(plan.fortifications))
   const navigation = createNavigationWorker(plan)
+  const navigationData = createNavigationResidency(plan, navigation)
   const material = new StandardMaterial('terrain-material', scene)
   material.diffuseColor = Color3.White()
   material.specularColor = Color3.Black()
@@ -63,37 +63,7 @@ export function createStreamedWorld(scene, plan, initialViewDistance = 64) {
   worker.onmessageerror = () => { failure = new Error('无法读取世界生成线程结果') }
   worker.postMessage({ type: 'init', plan })
   // 区域仅是语义和地标覆盖，不再绘制孤立的圆形区域底座。
-  const overrides = new Map()
-  for (const region of plan.regions) {
-    for (const placement of region.placements) {
-      const chunk = chunkAt(placement.position[0], placement.position[2])
-      const key = chunkKey(chunk.x, chunk.z)
-      if (!overrides.has(key)) overrides.set(key, [])
-      overrides.get(key).push({ ...placement, regionId: region.id, planned: true })
-    }
-  }
-  for (const town of towns) {
-    for (const placement of town.placements) {
-      const chunk = chunkAt(placement.position[0], placement.position[2])
-      const key = chunkKey(chunk.x, chunk.z)
-      if (!overrides.has(key)) overrides.set(key, [])
-      overrides.get(key).push({ ...placement, regionId: town.id, building: true })
-    }
-  }
-  for (const town of towns) {
-    for (const placement of town.decorations || []) {
-      const chunk = chunkAt(placement.position[0], placement.position[2])
-      const key = chunkKey(chunk.x, chunk.z)
-      if (!overrides.has(key)) overrides.set(key, [])
-      overrides.get(key).push({ ...placement, regionId: town.regionId, decoration: true })
-    }
-  }
-  for (const placement of [...(plan.fortifications?.placements || []),...(plan.city?.placements || [])]) {
-    const chunk = chunkAt(placement.position[0], placement.position[2])
-    const key = chunkKey(chunk.x, chunk.z)
-    if (!overrides.has(key)) overrides.set(key, [])
-    overrides.get(key).push(placement)
-  }
+  const overrides = plannedPlacementIndex(plan)
   function* build(chunk, data, root) {
     const mesh = new Mesh(`ground:${chunk.key}`, scene)
     mesh.parent = root
@@ -139,12 +109,7 @@ export function createStreamedWorld(scene, plan, initialViewDistance = 64) {
     yield
     const colliders = [], landingObstacles = []
     for (const placement of data.placements) {
-      if (!placement.planned && !placement.building && !placement.decoration && plan.regions.some((region) => region.placements.length > 0 && Math.hypot(placement.position[0] - region.center[0], placement.position[2] - region.center[1]) < region.radius)) continue
-      const x = placement.position[0], z = placement.position[2]
-      // 不占用出生点；地标代理留待真实交互素材接入。
-      const spawn = plan.spawn || [0, 0]
-      if (Math.hypot(x - spawn[0], z - spawn[1]) < 3 || placement.assetId.startsWith('landmark.')) continue
-      if (!placement.building && !placement.decoration && townSurface(towns, x, z)?.weight > 0.5) continue
+      if (!includeWorldPlacement(plan, placement)) continue
       const instance = assets.create(placement, root, placement.regionId)
       instance.computeWorldMatrix(true)
       const box = instance.getBoundingInfo().boundingBox
@@ -154,35 +119,14 @@ export function createStreamedWorld(scene, plan, initialViewDistance = 64) {
         minZ: box.minimumWorld.z, maxZ: box.maximumWorld.z,
         top: box.maximumWorld.y,
       })
-      if (placement.fortification || placement.infrastructure) { yield; continue }
-      const definition = environmentCatalog[placement.assetId] || wuxiaDefinitions[placement.assetId]
-      const footprint = placement.footprint || definition?.footprint
-      if (wuxiaDefinitions[placement.assetId]) {
-        if(definition.kind.startsWith('market-'))colliders.push({x,z,rotation:placement.rotation,halfWidth:definition.width*placement.scale/2,halfDepth:definition.depth*placement.scale/2,base:placement.position[1],top:box.maximumWorld.y})
-        else colliders.push(...buildingBodies(definition,placement))
-      } else if (definition?.kind==='court' || definition?.layout==='court' || definition?.layout==='wing') {
-        const c=Math.cos(placement.rotation),s=Math.sin(placement.rotation)
-        for(const [ox,oz,w,d] of [[0,definition.depth/2-2,definition.width,4],[-definition.width/2+1.75,-2,3.5,definition.depth-4],...(definition.layout==='wing'?[]:[[definition.width/2-1.75,-2,3.5,definition.depth-4]])])colliders.push({x:x+c*ox+s*oz,z:z-s*ox+c*oz,rotation:placement.rotation,halfWidth:w/2,halfDepth:d/2})
-      } else if (footprint) {
-        colliders.push({ x, z, rotation: placement.rotation, halfWidth: footprint.width * placement.scale / 2, halfDepth: footprint.depth * placement.scale / 2 })
-      } else {
-        const radius = definition?.radius ?? (placement.assetId === 'nature.tree' ? 0.45 : 0.9)
-        if (radius > 0) colliders.push({ x, z, radius: radius * placement.scale, top:box.maximumWorld.y })
-      }
+      colliders.push(...placementCollisionBodies(placement, box.maximumWorld.y))
       yield
     }
     // All chunk geometry is static. Visibility still changes on chunk entry/exit.
     root.freezeWorldMatrix()
     for (const mesh of root.getChildMeshes()) { mesh.freezeWorldMatrix(); mesh.doNotSyncBoundingInfo = true }
     root.setEnabled(true)
-    const bounds = colliders.reduce((bounds, obstacle) => {
-      const reach = obstacle.radius ?? Math.hypot(obstacle.halfWidth, obstacle.halfDepth)
-      bounds.minX = Math.min(bounds.minX, obstacle.x - reach)
-      bounds.maxX = Math.max(bounds.maxX, obstacle.x + reach)
-      bounds.minZ = Math.min(bounds.minZ, obstacle.z - reach)
-      bounds.maxZ = Math.max(bounds.maxZ, obstacle.z + reach)
-      return bounds
-    }, { minX: Infinity, maxX: -Infinity, minZ: Infinity, maxZ: -Infinity })
+    const bounds = collisionBounds(colliders)
     const entry = { root, colliders, bounds, landingObstacles }
     loaded.set(chunk.key, entry)
     collisionIndex.replace(chunk.key, colliders)
@@ -251,7 +195,10 @@ export function createStreamedWorld(scene, plan, initialViewDistance = 64) {
     setViewDistance(value) { viewDistance = value },
     getViewDistance: () => viewDistance,
     findRoute: (start, target) => navigation.findRoute(start, target),
-    getStats: () => ({ loaded: loaded.size, queued: required.filter((chunk) => !loaded.has(chunk.key)).length, required: required.length, ready: required.filter((chunk) => loaded.has(chunk.key)).length, templatesReady: templateCount - warmup.length, templatesTotal: templateCount, pending: Boolean(pending), assembling: Boolean(assembling), center, ...navigation.stats(), ...collisionIndex.stats(), ...assets.stats() }),
+    findLocalRoute: (start, target) => navigation.findLocalRoute(start, target),
+    findCityRoute: (start, target, options) => navigation.findCityRoute(start, target, options),
+    navigationData,
+    getStats: () => ({ loaded: loaded.size, queued: required.filter((chunk) => !loaded.has(chunk.key)).length, required: required.length, ready: required.filter((chunk) => loaded.has(chunk.key)).length, templatesReady: templateCount - warmup.length, templatesTotal: templateCount, pending: Boolean(pending), assembling: Boolean(assembling), center, ...navigation.stats(), ...navigationData.stats(), ...collisionIndex.stats(), ...assets.stats() }),
     // 所有导航与移动共用这层检查，不依赖美术模型的三角面。
     isLoaded(x,z) { const at=chunkAt(x,z); return loaded.has(chunkKey(at.x,at.z)) },
     isClearLanding(x, z) {
@@ -274,6 +221,7 @@ export function createStreamedWorld(scene, plan, initialViewDistance = 64) {
       crowd?.dispose()
       disposed = true
       worker.terminate()
+      navigationData.dispose()
       navigation.dispose()
       assembling?.iterator.return()
       assembling?.root.dispose()
