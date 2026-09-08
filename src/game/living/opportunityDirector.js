@@ -6,6 +6,7 @@ import { availableWallet } from '../gameplay/reservations.js'
 import { distance } from './geometry.js'
 import { relationFor } from '../gameplay/relations.js'
 import { placeStatus } from '../gameplay/places.js'
+import { escortMemory,hasEscortAssignment } from '../gameplay/escorts.js'
 
 /** People learn in physical meetings; route goals are known fixed places. */
 export function createOpportunityDirector({state,clock,ids,point,notice,contact,face,move,interrupt,send,talkingTo,atPlace}) {
@@ -22,7 +23,7 @@ export function createOpportunityDirector({state,clock,ids,point,notice,contact,
   }
   function idleForJob(world,id) {
     const row=life(world,id)
-    if(id==='merchant'||id===talkingTo()||!row?.intent||row.interruption||row.assignment&&!row.assignment.outcomeEventId)return false
+    if(id==='merchant'||id===talkingTo()||!row?.intent||row.interruption||row.assignment&&!row.assignment.outcomeEventId||hasEscortAssignment(world,id))return false
     const needs=projectedNeeds(row,clock())
     return actor(world,id).health>=70&&needs.energy>=50&&needs.hunger<60&&row.intent.priority<=10
   }
@@ -47,6 +48,18 @@ export function createOpportunityDirector({state,clock,ids,point,notice,contact,
         const row=world.opportunities.entries.find(r=>r.id===assignment.opportunityId)
         if(!row)return false
         const returning=!!(row.message?.receiptEventId||row.shipment?.pickedUpEventId)
+        if(returning&&row.shipment&&!row.shipment.deliveredEventId&&at<row.deadlineAt) {
+          const escort=world.factions?.escorts?.find(r=>r.opportunityId===row.id)
+          const known=escort&&escortMemory(world,escort.id,id)
+          // The courier was told at acceptance to wait here for one game hour.
+          if(known&&['offered','accepted'].includes(known.status)) {
+            const pickup=world.places.definitions.find(p=>p.id===row.targetPlaceId)
+            if(pickup&&distance(point(id),pickup.approach)<=3) {
+              if(!escort.waitUntil){send('factions',{kind:'wait_escort',actorId:id,escortId:escort.id},{present:true,placeId:row.targetPlaceId});return 'committed'}
+              if(at<escort.waitUntil)return 'busy'
+            }
+          }
+        }
         if(!row.returnEventId&&at>=assignment.deadlineAt) {
           send('opportunities',{kind:'notice_outcome',actorId:id,opportunityId:row.id},{at,allowed:true});return 'committed'
         }

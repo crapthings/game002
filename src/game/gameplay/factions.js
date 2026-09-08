@@ -1,6 +1,7 @@
 import { InventoryError } from './inventory.js'
 import { activeEventCount,nextEventNumber } from './historyArchive.js'
-import { availableWallet } from './reservations.js'
+import { executeFactionActions } from './factionActions.js'
+export { roleHolders,factionFunds } from './factionRoles.js'
 import { FACTIONS_V1,FACTION_ROLE_WORDS } from './content/factionsV1.js'
 const copy=value=>structuredClone(value)
 const check=(ok,code)=>{if(!ok)throw new InventoryError(code)}
@@ -19,9 +20,10 @@ function memberRow(world,member,sourceEventId) {
   check(registry&&actor(world,member.actorId),'MEMBER_NOT_REGISTERED')
   return {...copy(member),sourceEventId:registry.sourceEventId??sourceEventId}
 }
-export function executeFactions(world,command,context) {
+export function executeFactions(world,command,context,catalog) {
   check(world.version===2&&context.allowed===true&&world.economy?.employmentVersion===1,'FACTIONS_NOT_READY')
   check(Number.isSafeInteger(context.at)&&context.at>=0,'INVALID_TIME')
+  if(command.kind!=='initialize')return executeFactionActions(world,catalog,command,context)
   check(command.kind==='initialize'&&!world.factions,'FACTIONS_ALREADY_INITIALIZED')
   world.factions={version:1,entries:[],events:[]}
   const event=emit(world,'factions_initialized',command.actorId,null,context.at,command.id)
@@ -50,16 +52,6 @@ export function addFactionArrival(world,actorId,sourceEventId,at,requestId) {
     events.push(emit(world,'faction_member_arrived',actorId,null,at,requestId,{factionId:row.id,roles:copy(member.roles),cause:sourceEventId}))
   }
   return events
-}
-export function roleHolders(world,kind,role,{alive=true}={}) {
-  const ids=world.factions?world.factions.entries.filter(f=>f.kind===kind).flatMap(f=>f.memberRoles.filter(m=>m.roles.includes(role)).map(m=>m.actorId)):
-    kind==='law'&&['constable','case_officer','reinforcement'].includes(role)?world.crime.authorities:[]
-  return [...new Set(ids)].filter(id=>actor(world,id)&&(!alive||actor(world,id).health>0))
-}
-export function factionFunds(world,factionId) {
-  const faction=world.factions?.entries.find(f=>f.id===factionId),steward=actor(world,faction?.treasuryActorId)
-  return !steward||steward.health<=0?{available:0,reason:'TREASURER_UNAVAILABLE'}:
-    {available:availableWallet(world.interactions,steward.id),reason:null,actorId:steward.id}
 }
 /** Called during an actual meeting. It reveals the speaker's own duties only. */
 export function factionIntroduction(world,speakerId) {

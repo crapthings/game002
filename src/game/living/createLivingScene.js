@@ -233,7 +233,9 @@ export function createLivingScene(scene,plan,world,player,progress,extras=()=>({
     const seenActors=npcDefinitions().filter(n=>visible('player',n.id)).map(n=>({id:n.id,point:point(n.id)}))
     const temporary=s.interactions.inventory.lots.some(l=>l.id==='medicine-parcel'&&l.holderId==='stall')?spatial.stall:null
     const addresses=(s.dialogue?.addresses??[]).filter(a=>a.listenerId==='player')
-    const allClues=[...clues,...addresses.map(a=>({placeId:a.placeId,source:a.eventId,at:a.at}))]
+    const escortClues=(s.factions?.escortKnowledge??[]).filter(k=>k.actorId==='player').flatMap(k=>[k.pickupPlaceId,k.returnPlaceId]
+      .map(placeId=>({placeId,source:k.evidenceId,at:k.at})))
+    const allClues=[...clues,...addresses.map(a=>({placeId:a.placeId,source:a.eventId,at:a.at})),...escortClues]
     const trade=simulation.tradeStatus(),presentation=presentWorld(s,{at:simulation.clock(),
       knownPlaces:placeClues({...cityLayout,places:registeredPlaces(s,cityLayout)},allClues,useNavigationStore.getState().fog,p,{},temporary,addresses),seenActors,seenPlaceIds,fighters:simulation.view(),targetId:selected,trade})
     const places=presentation.places
@@ -241,6 +243,8 @@ export function createLivingScene(scene,plan,world,player,progress,extras=()=>({
     store().publish({state:s,fighters:simulation.view(),hero,targetId:selected,names:Object.fromEntries(npcDefinitions().map(n=>[n.id,n.name])),
       ...presentation,tracked:tracked?{...tracked,direction:destinationDirection(p,tracked)}:null,noticeDistance:Math.round(distance(p,cityLayout.notice)),calendar:simulation.calendar(),trade,
       conversation:simulation.conversation(),
+      caseOptions:simulation.caseOptions(selected),
+      factionView:simulation.factionView(selected),
       bagCount:s.interactions.inventory.lots.filter(l=>l.holderId==='player-bag').reduce((n,l)=>n+l.quantity,0),clock:simulation.clock(),
       wanted:['guard','guard-2'].map(id=>wantedFor(s.crime,id,'player')).sort((a,b)=>b.level-a.level)[0],pursuit:['guard','guard-2'].map(id=>pursuitFor(s,id,'player',simulation.clock())).sort((a,b)=>({follow:2,search:1,idle:0}[b.mode]-{follow:2,search:1,idle:0}[a.mode]))[0],
       busy:simulation.busy(),stopped:simulation.stopped(),legacyEvents:legacy?.events??[]})

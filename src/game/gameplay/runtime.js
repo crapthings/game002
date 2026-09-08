@@ -11,6 +11,9 @@ import { executeExchange } from './exchange.js'
 import { executeEconomy } from './economy.js'
 import { applyLaborInterruptions } from './employment.js'
 import { executeFactions,addFactionArrival } from './factions.js'
+import { applyEscortConsequences } from './escorts.js'
+import { reconcileCaseKnowledge } from './caseSettlement.js'
+import { reconcileBounties } from './bounties.js'
 import { executeVillage } from './village.js'
 import { InventoryError } from './inventory.js'
 import { executeInteraction } from './interactions.js'
@@ -119,9 +122,16 @@ export function executeGameplay(state,catalog,request) {
         events.push(...emitted)
         for(const event of emitted)events.push(...registerFact(next,event,`${commandId}:${event.id}`))
       } else if(step.domain==='factions') {
-        const emitted=executeFactions(next,{...step.command,id:commandId},step.context)
+        const emitted=executeFactions(next,{...step.command,id:commandId},step.context,catalog)
         events.push(...emitted)
-        for(const event of emitted)events.push(...registerFact(next,event,`${commandId}:${event.id}`))
+        for(const event of emitted)if(event.id.startsWith('factions:')) {
+          events.push(...registerFact(next,event,`${commandId}:${event.id}`))
+          if(event.kind==='case_settled')for(const participant of [event.actorId,event.targetId]) {
+            const learned=executeKnowledge(next.social,{id:`${commandId}:receipt:${participant}`,kind:'witness',actorId:participant,
+              factId:`fact:${event.id}`,expectedRevision:next.social.revision},{allowed:true,at:event.at,observedAt:event.at,observed:true,identified:true,proofId:event.proofId})
+            requireValue(learned.ok,learned.code);next.social=learned.state;events.push(...learned.events)
+          }
+        }
       } else if(step.domain==='economy') {
         const emitted=executeEconomy(next,catalog,{...step.command,id:commandId},step.context)
         events.push(...emitted)
@@ -282,6 +292,15 @@ export function executeGameplay(state,catalog,request) {
       const consequences=applyOpportunityConsequences(next,events.slice(firstEvent),step.context.at,commandId)
       events.push(...consequences)
       for(const event of consequences)events.push(...registerFact(next,event,`${commandId}:${event.id}`))
+      const caseEvents=reconcileCaseKnowledge(next,events.slice(firstEvent),step.context.at,commandId)
+      events.push(...caseEvents)
+      for(const event of caseEvents)events.push(...registerFact(next,event,`${commandId}:${event.id}`))
+      const bountyEvents=reconcileBounties(next,events.slice(firstEvent),step.context.at,commandId)
+      events.push(...bountyEvents)
+      for(const event of bountyEvents)events.push(...registerFact(next,event,`${commandId}:${event.id}`))
+      const escortEvents=applyEscortConsequences(next,events.slice(firstEvent),step.context.at,commandId)
+      events.push(...escortEvents)
+      for(const event of escortEvents)events.push(...registerFact(next,event,`${commandId}:${event.id}`))
       const laborEvents=applyLaborInterruptions(next,events.slice(firstEvent),step.context.at,commandId)
       events.push(...laborEvents)
       for(const event of laborEvents)events.push(...registerFact(next,event,`${commandId}:${event.id}`))

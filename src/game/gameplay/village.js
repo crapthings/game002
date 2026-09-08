@@ -1,6 +1,8 @@
 import { activeEventCount,nextEventNumber } from './historyArchive.js'
 import { InventoryError, transferLot, consumeLot } from './inventory.js'
 import { requireAvailableFunds,requireAvailableLot } from './reservations.js'
+import { roleHolders } from './factionRoles.js'
+import { COMBAT_RULES } from './combat.js'
 const clone = value => structuredClone(value)
 const check = (ok, code) => { if (!ok) throw new InventoryError(code) }
 export function createVillageState(setup) {
@@ -45,18 +47,25 @@ export function executeVillage(world,catalog,command,context) {
     event.targetId='merchant'
   } else if(command.kind==='settle') {
     check(actor.id==='player' && parcel?.holderId===player.containerId,'NOT_HELD')
-    check(actors.find(a=>a.id==='guard')?.health>0,'RECIPIENT_DEAD')
+    const officerId=world.factions?.actionsVersion?(command.authorityId??'guard'):'guard'
+    check(actors.find(a=>a.id===officerId)?.health>0,'RECIPIENT_DEAD')
+    if(world.factions?.actionsVersion)check(roleHolders(world,'law','constable').includes(officerId)&&context.reachable===true,'MISSING_CASE_MEETING')
     check(player.wallet>=20,'INSUFFICIENT_FUNDS')
     requireAvailableFunds(world.interactions,player.id,20)
     const source=s.events.findLast(e=>e.kind==='take')
     check(source && !s.settled.includes(source.id),'NOT_AVAILABLE')
-    world.interactions.inventory=transferLot(inventory,catalog,{lotId:parcel.id,quantity:1,toHolderId:'guard-bag'})
+    world.interactions.inventory=transferLot(inventory,catalog,{lotId:parcel.id,quantity:1,toHolderId:actors.find(a=>a.id===officerId).containerId})
     check(Number.isSafeInteger(merchant.wallet+20),'AMOUNT_OVERFLOW')
     player.wallet-=20; merchant.wallet+=20; s.settled.push(source.id)
     for(const c of world.crime.cases) if(c.incidentId===source.id) c.resolved=true
-    event.targetId='guard'; event.cause=source.id; event.amount=20
+    event.targetId=officerId; event.cause=source.id; event.amount=20
+    if(world.factions?.actionsVersion&&!world.crime.cases.some(c=>c.authorityId===officerId&&c.subjectId==='player'&&!c.resolved)) {
+      const fighter=world.combat.fighters.find(f=>f.id===officerId)
+      fighter.swing=null;fighter.guardHeld=false;fighter.guarding=false;fighter.mustRelease=false;fighter.regenAt=Math.max(fighter.regenAt,context.at+COMBAT_RULES.regenDelayMs)
+    }
   } else if(command.kind==='return') {
-    check(actor.id==='guard' && parcel?.holderId==='guard-bag','NOT_HELD')
+    const receiver=world.factions?.actionsVersion?roleHolders(world,'law','constable').includes(actor.id):actor.id==='guard'
+    check(receiver && parcel?.holderId===actor.containerId,'NOT_HELD')
     world.interactions.inventory=transferLot(inventory,catalog,{lotId:parcel.id,quantity:1,toHolderId:'stall'})
     event.targetId='merchant'; event.cause=s.events.findLast(e=>e.kind==='settle')?.id??null
   } else if(command.kind==='aid') {

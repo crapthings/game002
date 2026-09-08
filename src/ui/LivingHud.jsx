@@ -9,8 +9,10 @@ import { messageKnowledge } from '../game/living/knowledgePresentation.js'
 import { eventWords } from '../game/living/eventPresentation.js'
 import TaskPanel from './TaskPanel.jsx'
 import LivingReview from './LivingReview.jsx'
+import CasePanel from './CasePanel.jsx'
+import FactionPanel from './FactionPanel.jsx'
 const button='rounded border border-white/20 px-2 py-1 text-xs disabled:opacity-35 enabled:hover:bg-white/15'
-const errors={HISTORY_FULL:'本轮记录已满，请保存退出后换新种子体验',TARGET_BUSY:'对方正忙，暂时无法交涉',NOT_AVAILABLE:'物品已不在原处',OWN_MEDICINE_REQUIRED:'需要一份自有止血药',REWARD_NOT_DUE:'尚未满足答谢条件',SUBJECT_UNIDENTIFIED:'对方没有确认你的身份',ACTOR_DEAD:'角色已经倒下',TARGET_NOT_DEAD:'对方仍然活着，不能搜刮',INSUFFICIENT_QUANTITY:'物品数量不足',NO_CHANGE:'当前状态无需更改',ACTOR_BUSY:'正在出招或收招',RELEASE_REQUIRED:'先松开招架，再回气至25',INSUFFICIENT_STAMINA:'气力不足',BAG_FULL:'背包已满',INSUFFICIENT_FUNDS:'铜钱不足',NOT_OWNED:'这件物品仍属于别人',ITEM_EQUIPPED:'先卸下装备',THREAT_COOLDOWN:'对方仍在警惕，稍后再试',SAVE_OUTCOME_UNKNOWN:'保存结果未确认，请返回菜单重新读档',RECOVERY_REQUIRED:'请重新读档后继续',ALREADY_HELPED:'柳娘已经接受过救助',HEALTH_FULL:'气血已满',BUSY:'正在保存上一动作'}
+const errors={HISTORY_FULL:'当前保留记录接近容量上限，请保存退出，保留原档',TARGET_BUSY:'对方正忙，暂时无法交涉',NOT_AVAILABLE:'物品已不在原处',OWN_MEDICINE_REQUIRED:'需要一份自有止血药',REWARD_NOT_DUE:'尚未满足答谢条件',SUBJECT_UNIDENTIFIED:'对方没有确认你的身份',ACTOR_DEAD:'角色已经倒下',TARGET_NOT_DEAD:'对方仍然活着，不能搜刮',INSUFFICIENT_QUANTITY:'物品数量不足',NO_CHANGE:'当前状态无需更改',ACTOR_BUSY:'正在出招或收招',RELEASE_REQUIRED:'先松开招架，再回气至25',INSUFFICIENT_STAMINA:'气力不足',BAG_FULL:'背包已满',INSUFFICIENT_FUNDS:'铜钱不足',NOT_OWNED:'这件物品仍属于别人',ITEM_EQUIPPED:'先卸下装备',THREAT_COOLDOWN:'对方仍在警惕，稍后再试',SAVE_OUTCOME_UNKNOWN:'保存结果未确认，请返回菜单重新读档',RECOVERY_REQUIRED:'请重新读档后继续',ALREADY_HELPED:'柳娘已经接受过救助',HEALTH_FULL:'气血已满',BUSY:'正在保存上一动作'}
 export default function LivingHud(){
  const [reviewOpen,setReviewOpen]=useState(false),[knowledgeOpen,setKnowledgeOpen]=useState(false),[reviewFocus,setReviewFocus]=useState(null)
  const v=useLivingStore(s=>s.view),panel=useLivingStore(s=>s.panel),message=useLivingStore(s=>s.message),request=useLivingStore.getState().request
@@ -56,11 +58,13 @@ export default function LivingHud(){
    <h3 className="mt-4 text-amber-200">{target?`${name(target.id)} · 气血 ${target.health}/${target.maxHealth}`:'面向近处角色以交互'}</h3>
    {v.targetStatus&&<p className="mt-1 text-xs text-stone-300">{v.targetStatus}</p>}
    <ConversationPanel view={v} lockReason={lockReason}/>
+   <CasePanel view={v} lockReason={lockReason}/>
+   <FactionPanel view={v} lockReason={lockReason}/>
    <TaskPanel view={v} onReview={showReview}/>
    {target&&<p className="mt-2 text-xs text-stone-400">{target.id.startsWith('guard')?'官府':target.id==='merchant'?'商户':'街坊'} · 攻击 {v.fighters.find(f=>f.id===target.id)?.attack} / 防御 {v.fighters.find(f=>f.id===target.id)?.defense}</p>}
    {target?.health>0&&<InteractionButton className={`${button} mt-2`} reason={threatReason} onClick={()=>act('threaten',{targetId:target.id})}>威胁索要20文</InteractionButton>}
    {v.targetId==='merchant'&&target?.health>0&&<><p className="mt-2 text-xs text-amber-200">{v.trade?.available?'药铺正在营业。':SERVICE_REASONS[v.trade?.reason]??errors[v.trade?.reason]??'暂时无法交易。'}</p>{lots.filter(l=>l.holderId==='merchant-bag'&&l.ownerId==='merchant'&&PRICES[l.itemType]).map(l=><InteractionButton key={l.id} className={`${button} mt-2 mr-2`} reason={noTrade||(availableQuantity(s.interactions,l.id)<1?'这批货已经约定交付':v.bagCount>=6?'背包已满':availableCash<PRICES[l.itemType][0]?'可支配铜钱不足':null)} onClick={()=>act('buy',{lotId:l.id})}>买{item(l.itemType).name} {PRICES[l.itemType][0]}文 · 可售{availableQuantity(s.interactions,l.id)}</InteractionButton>)}</>}
-   {v.targetId==='guard'&&own.some(l=>l.id==='medicine-parcel')&&<InteractionButton className={`${button} mt-2`} reason={lockReason||(target?.health===0?'捕快已经倒下':availableCash<20?'赔偿需要20文可支配铜钱':null)} onClick={()=>act('settle')}>交还药包并赔偿20文</InteractionButton>}
+   {(s.factions?.actionsVersion?s.crime.authorities.includes(v.targetId):v.targetId==='guard')&&own.some(l=>l.id==='medicine-parcel')&&<InteractionButton className={`${button} mt-2`} reason={lockReason||(target?.health===0?'捕快已经倒下':availableCash<20?'赔偿需要20文可支配铜钱':null)} onClick={()=>act('settle',{authorityId:v.targetId})}>交还药包并赔偿20文</InteractionButton>}
    {v.targetId==='resident-1'&&<><InteractionButton className={`${button} mt-2 mr-2`} reason={lockReason||(target?.health===0?'柳娘已经倒下':null)} onClick={()=>act('ask_medicine')}>询问药铺在哪</InteractionButton><InteractionButton className={`${button} mt-2`} reason={lockReason||(target?.health===0?'柳娘已经倒下':s.village.aid.eventId?'柳娘已经受过救助':!med?'需要自有止血药':null)} onClick={()=>act('aid',{lotId:med?.id})}>用自有止血药救助</InteractionButton></>}
    {target?.health===0&&<><InteractionButton className={`${button} mt-2`} reason={lockReason||(!target.wallet?'身上没有铜钱':null)} onClick={()=>act('loot_money',{targetId:target.id})}>取走铜钱 {target.wallet}文</InteractionButton>{lots.filter(l=>l.holderId===target.containerId).map(l=><InteractionButton className={`${button} mt-2 mr-2`} reason={lockReason||(v.bagCount>=6?'背包已满':null)} key={l.id} onClick={()=>act('loot_item',{targetId:target.id,lotId:l.id})}>搜取{item(l.itemType).name} ×1</InteractionButton>)}</>}
    <details className="mt-4" open={reviewOpen} onToggle={e=>setReviewOpen(e.currentTarget.open)}><summary>事后因果回顾</summary>{reviewOpen&&<LivingReview view={v} focusId={reviewFocus} onFocus={setReviewFocus}/>}</details>

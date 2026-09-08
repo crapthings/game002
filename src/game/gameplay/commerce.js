@@ -1,18 +1,20 @@
 import { previewCombat } from './combat.js'
 import { placeStatus } from './places.js'
 import { InventoryError } from './inventory.js'
+import { settledCrimeFact } from './crime.js'
 
 const offensive=new Set(['take','threatened','robbed','damaged','parried','died','loot_item','loot_money'])
 const refusalCache=new WeakMap()
 function knownRefusals(world) {
   const prior=refusalCache.get(world)
-  if(prior?.social===world.social&&prior.settledCount===world.village.settled.length)return prior.value
+  if(prior?.social===world.social&&prior.settledCount===world.village.settled.length&&prior.resolutions===(world.factions?.resolutions?.length??0))return prior.value
   const facts=new Map(world.social.facts.map(f=>[f.id,f])),settled=new Set(world.village.settled),refusals=new Set()
   for(const known of world.social.knowledge) {
     const fact=facts.get(known.factId)
-    if(known.subjectId&&fact?.targetId===known.npcId&&offensive.has(fact.action)&&!settled.has(fact.sourceEventId))refusals.add(`${known.npcId}:${known.subjectId}`)
+    if(known.subjectId&&fact?.targetId===known.npcId&&offensive.has(fact.action)&&!settled.has(fact.sourceEventId)&&
+      (!world.factions?.actionsVersion||!settledCrimeFact(world,fact,{knownBy:known.npcId})))refusals.add(`${known.npcId}:${known.subjectId}`)
   }
-  refusalCache.set(world,{social:world.social,settledCount:world.village.settled.length,value:refusals});return refusals
+  refusalCache.set(world,{social:world.social,settledCount:world.village.settled.length,resolutions:world.factions?.resolutions?.length??0,value:refusals});return refusals
 }
 
 /** UI queries and the coordinator share the same policy; the latter requires a proof. */

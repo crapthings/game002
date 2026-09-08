@@ -1,5 +1,11 @@
 export const eventWords={
   factions_initialized:'登记组织与职责',faction_member_arrived:'组织成员到达',
+  faction_actions_enabled:'开始按职责办事',officer_sought:'准备当面报案',officer_waiting:'未遇接案人，稍后再来',officer_sought_again:'再去接案处',report_presented:'向捕快当面交代',
+  case_settled:'按案交还财物并赔偿',case_resolution_learned:'捕快得知这件案子已处理',
+  bounty_claim_due:'实际拘押已办妥，赏钱待领',warning_request_recorded:'当面登记警告请求',
+  escorts_enabled:'开始商会护送约定',escort_offered:'为这趟采购预留护送报酬',escort_terms_told:'当面说明护送约定',escort_accepted:'答应护送',
+  escort_rendezvous_opened:'承运人在装货处等候',escort_joined:'在装货处接洽同行',escort_route_seen:'确认一段真实随行',escort_arrived:'亲见货物交抵',escort_paid:'结清护送报酬',escort_ended:'护送约定中止',escort_outcome_seen:'确认本次护送未完成',
+  bounties_enabled:'登记悬赏开支',bounty_posted:'备妥赏钱并张贴告示',bounty_waiting_funds:'悬赏经费待补',bounty_notices_read:'读过悬赏告示',bounty_cancelled:'结束悬赏开支',bounty_paid:'凭实际拘押结清赏钱',bounty_closed_by_issuer:'本人办结并收回预留',
   relations_initialized:'记下亲友与邻里',attitude_changed:'心中态度改变',
   exchange_enabled:'开始邻里传话',news_exchanged:'当面交流消息',exchange_meeting_ended:'相互告辞',
   economy_initialized:'登记生计与供货',arrived:'外来人物入城',ate_food:'吃下干粮',food_needed:'尚未吃上饭',stock_shortage_noticed:'发现铺面缺货',restock_need:'新一轮补货需求',cargo_picked_up:'付货款并取货',stock_delivered:'货物运抵药铺',cargo_returned:'交回未送达的货物',

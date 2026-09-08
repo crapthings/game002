@@ -1,4 +1,12 @@
 export const SERVICE_REASONS={
+  NO_NEW_NOTICES:'此处暂时没有未读的悬赏告示。',NO_BOUNTY_CASE:'当前证据或案件状态还不能发布这条悬赏。',
+  BOUNTY_NOT_PAYABLE:'这条悬赏还不能凭这份回执兑现，请与经手捕快核对。',MISSING_CAPTURE_EVIDENCE:'需要本人实际拘押该案当事人的回执。',
+  MISSING_CASE_MEETING:'请收手后与捕快当面处理这件事。',RETURN_ITEMS_REQUIRED:'需要先找回仍应归还的原物。',
+  NO_PERSONAL_REQUEST_EVIDENCE:'需要自己掌握的具名事件，才能提出这个请求。',
+  NO_ESCORT_OFFER:'这趟同行约定已无法承接，请向掌柜核对。',ESCORT_ALREADY_KNOWN:'你已经听过这趟同行的约定。',
+  MISSING_IDENTIFIED_MEETING:'需要收手、露面并与当事人近距离交谈。',MISSED_ESCORT_RENDEZVOUS:'请在装货处与承运人接洽。',
+  NO_ESCORT_JOURNEY:'目前无法开始这趟护送，请与承运人核对，必要时结束这次约定。',
+  ESCORT_NOT_PAYABLE:'尚无可结算的护送送达回执。',ESCORT_ALREADY_DELIVERED:'这趟护送已经送达，请按回执处理报酬。',
   NO_TRADE_SERVICE:'这里没有可用的买卖服务。',APPROACH_TARGET:'请在2米内面向对方，保持中间无遮挡。',
   NO_OPERATOR:'这里暂时无人经营。',OUTSIDE_HOURS:'药铺已经打烊，营业时间为08:00—18:00。',
   OPERATOR_AWAY:'掌柜还没回到药铺，请稍后再来。',OPERATOR_RESTING:'掌柜正在休息，暂时不做买卖。',

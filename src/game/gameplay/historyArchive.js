@@ -9,7 +9,8 @@ export const HISTORY_DOMAINS=['interactions','social','combat','equipment','prop
 // This list is a saved rule: later compaction policies need a new page version.
 const routine=new Set(['activity_changed','activity_arrived','activity_interrupted','activity_resumed','place_status_changed',
   'attack_started','guard_started','guard_released','guard_exhausted','guard_broken','sight','lost','mask',
-  'labor_started','labor_accrued','labor_paused','wage_paid','wage_payment_due','ate_food','exchange_meeting_ended'])
+  'labor_started','labor_accrued','labor_paused','wage_paid','wage_payment_due','ate_food','exchange_meeting_ended',
+  'escort_route_seen'])
 const pages=new Map()
 
 export function historyCanonical(value,depth=0) {

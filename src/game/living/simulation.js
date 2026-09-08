@@ -13,6 +13,12 @@ import { relationFor } from '../gameplay/relations.js'
 import { createSocialController } from './socialController.js'
 import { createEconomyController } from './economyController.js'
 import { createPayrollController } from './payrollController.js'
+import { createFactionController } from './factionController.js'
+import { caseSettlementQuote } from '../gameplay/caseSettlement.js'
+import { warningOptions } from '../gameplay/gangRequests.js'
+import { captureForBounty } from '../gameplay/bounties.js'
+import { createEscortController } from './escortController.js'
+import { escortMemory } from '../gameplay/escorts.js'
 const copy=v=>structuredClone(v)
 export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,save,space,notify=()=>{},effects=()=>{}}) {
   const config=livingConfig(legacy,world)
@@ -41,6 +47,8 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
   const alive=id=>actor(id)?.health>0
   const near=(a,b,r=2)=>distance(space.point(a),space.point(b))<=r && Math.abs(space.point(a).y-space.point(b).y)<1.5 && (space.contactClear??space.clear)(space.point(a),space.point(b))
   const contact=(a,b)=>near(a,b)&&Math.abs(facingAngle(space.point(a),space.point(b)))<=65
+  const nearPlace=(id,placeId)=>{const place=state.places?.definitions.find(p=>p.id===placeId);return !!place&&distance(space.point(id),place.approach)<=3&&
+    Math.abs(space.point(id).y-place.approach.y)<1.5&&(space.contactClear??space.clear)(space.point(id),place.approach)}
   const sees=(a,b,identify=false)=>alive(a)&&alive(b)&&space.visible(a,b,identify)&&!(identify&&b==='player'&&state.village.masked)
   const observers=(actorId,targetId=null)=>npcs().filter(n=>n.id!==actorId&&(sees(n.id,actorId)||n.id===targetId)).map(n=>({npcId:n.id,identified:sees(n.id,actorId,true),position:copy(space.point(actorId)),proofId:`sight-${serial+1}-${n.id}`}))
   // NPC meetings use verified ground geometry even outside rendered chunks.
@@ -54,6 +62,10 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
   const economyController=createEconomyController({state:()=>state,clock:()=>clock,atPlace:space.atPlace,contact:near,point:space.point,
     face:space.face,tradeContext,send,talkingTo:()=>conversation?.speakerId})
   const payrollController=createPayrollController({state:()=>state,clock:()=>clock,atPlace:space.atPlace,send,talkingTo:()=>conversation?.speakerId})
+  const factionController=createFactionController({state:()=>state,clock:()=>clock,point:space.point,notice:noticesPerson,contact:near,
+    face:space.face,move:space.move,atPlace:space.atPlace,interrupt:interruptRoutine,send,talkingTo:()=>conversation?.speakerId})
+  const escortController=createEscortController({state:()=>state,clock:()=>clock,point:space.point,notice:noticesPerson,contact:near,
+    face:space.face,move:space.move,nearPlace,interrupt:interruptRoutine,send,talkingTo:()=>conversation?.speakerId})
   async function send(domain,command,extra={},observe=false,continuation=[]) {
     if(busy||stopped)return {ok:false,code:'BUSY'}
     busy=true
@@ -103,6 +115,11 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
       identified:sees(speakerId,'player',true),
       meetingId:conversation?.id??'meeting-pending',proofId:`meeting-${serial+1}`}
   }
+  function noticePlace() {
+    const p=space.point('player'),law=state.factions?.entries.find(f=>f.kind==='law')
+    return state.places?.definitions.find(place=>law?.servicePlaceIds.includes(place.id)&&distance(p,place.approach)<=2&&
+      Math.abs(p.y-place.approach.y)<1.5&&Math.abs(facingAngle(p,place.approach))<=65&&(space.contactClear??space.clear)(p,place.approach))
+  }
   function refreshConversation() {
     if(!conversation)return
     if(space.conversationOpen?.()===false){conversation=null;return}
@@ -149,6 +166,23 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
     const target=data.targetId
     if(!alive('player'))return
     if(['talk_start','talk_topic'].includes(kind))return talk(kind,data)
+    if(['hear_escort','accept_escort','join_escort','collect_escort','cancel_escort'].includes(kind)) {
+      const row=state.factions?.escorts.find(r=>r.id===data.escortId)
+      if(!row)return
+      if(kind==='cancel_escort')return send('factions',{kind,actorId:'player',escortId:row.id})
+      const recipient=kind==='join_escort'?row.courierId:row.issuerId
+      if(!contact('player',recipient)){notify('请与约定的当事人当面交谈。');return}
+      const context=meetingContext(recipient)
+      if(kind==='join_escort')Object.assign(context,{present:nearPlace(recipient,row.pickupPlaceId),placeId:row.pickupPlaceId,position:copy(space.point(recipient))})
+      return send('factions',{kind,actorId:'player',escortId:row.id},context)
+    }
+    if(kind==='read_bounties') {
+      const place=noticePlace()
+      if(place)return send('factions',{kind,actorId:'player'},{present:true,placeId:place.id,proofId:`notice-read:${serial+1}`})
+    }
+    if(kind==='claim_bounty'&&target&&contact('player',target))return send('factions',{kind,actorId:'player',bountyId:data.bountyId,captureEventId:data.captureEventId},
+      {...meetingContext(target),recipientId:target})
+    if(kind==='request_warning'&&target&&contact('player',target))return send('factions',{kind,actorId:'player',targetId:target,factId:data.factId},meetingContext(target))
     if(kind==='commitment') {
       const row=state.opportunities?.entries.find(r=>r.id===data.opportunityId)
       if(!row){notify('UNKNOWN_OPPORTUNITY');return}
@@ -180,7 +214,12 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
     if(kind==='use')return send('interaction',{kind:'use',actorId:'player',targetId:'player',lotId:data.lotId,quantity:1})
     if(kind==='equip'||kind==='unequip')return send('equipment',{kind,actorId:'player',slot:data.slot,...(kind==='equip'?{lotId:data.lotId}:{})})
     if(kind==='take'&&contact('player','stall'))return send('village',{kind:'take',actorId:'player'},{},true)
-    if(kind==='settle'&&contact('player','guard'))return send('village',{kind:'settle',actorId:'player'})
+    if(kind==='settle') {
+      const officer=data.authorityId??[...indexed().authorities].filter(id=>alive(id)&&contact('player',id)).sort((a,b)=>distance(space.point('player'),space.point(a))-distance(space.point('player'),space.point(b)))[0]
+      if(officer&&contact('player',officer))return send('village',{kind:'settle',actorId:'player',authorityId:officer},{reachable:true})
+    }
+    if(kind==='settle_case'&&target&&contact('player',target))return send('factions',{kind:'settle_case',actorId:'player',targetId:target,caseId:data.caseId},
+      {withinRange:true,clear:true,facing:true,identified:sees(target,'player',true),proofId:`case-meeting:${serial+1}`})
     if(kind==='aid'&&contact('player','resident-1')){space.face('resident-1',space.point('player'));return send('village',{kind:'aid',actorId:'player',lotId:data.lotId},{identified:sees('resident-1','player',true)},true)}
     if(['buy','sell'].includes(kind)) {
       const service=tradeContext('player','merchant'),eligible=tradeEligibility(state,'player','merchant',service)
@@ -190,7 +229,7 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
     }
     if(target&&contact('player',target)) {
       if(kind==='threaten')return send('robbery',{kind,actorId:'player',targetId:target,amount:20},
-        {reachable:true,proofId:`threat-${serial+1}`,guardNearby:config.authorities.some(g=>g!==target&&sees(target,g)&&near(target,g,10)),escapeRoute:space.canEscape(target,'player')},true)
+        {reachable:true,proofId:`threat-${serial+1}`,guardNearby:[...indexed().authorities].some(g=>g!==target&&sees(target,g)&&near(target,g,10)),escapeRoute:space.canEscape(target,'player')},true)
       if(kind==='loot_item'||kind==='loot_money')return send('property',{kind,actorId:'player',targetId:target,...(kind==='loot_item'?{lotId:data.lotId,quantity:1}:{amount:actor(target).wallet})},{reachable:true,proofId:`loot-${serial+1}`},true)
     }
     notify('请靠近目标，保持视线无遮挡。')
@@ -236,6 +275,9 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
     if(state.relations?.exchangeVersion&&!state.economy){send('economy',{kind:'initialize',actorId:'player'});return}
     if(state.economy&&!state.economy.employmentVersion){send('economy',{kind:'enable_employment',actorId:'player'});return}
     if(state.economy?.employmentVersion&&!state.factions){send('factions',{kind:'initialize',actorId:'player'});return}
+    if(state.factions&&!state.factions.actionsVersion){send('factions',{kind:'enable_actions',actorId:'player'});return}
+    if(state.factions?.actionsVersion&&!state.factions.bountyVersion){send('factions',{kind:'enable_bounties',actorId:'player'});return}
+    if(state.factions?.actionsVersion&&!state.factions.escortsVersion){send('factions',{kind:'enable_escorts',actorId:'player'});return}
     if(state.economy&&!state.registry.actors.some(a=>a.actorId==='supplier-1')) {
       const body=space.supplierSetup?.()
       if(body){send('registry',{kind:'arrive',actorId:'supplier-1',templateId:'supplier-1'},{geometryConfirmed:true,proofId:'supplier-site-confirmed',body});return}
@@ -253,6 +295,7 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
     if(refreshServices())return
     if(socialController.closeSeparated())return
     if(payrollController.update())return
+    if(escortController.observe())return
     for(const npc of npcs()) {
       const id=npc.id,f=fighter(id)
       if(!alive(id))continue
@@ -263,12 +306,16 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
         const raised=knowledge.guardRaised
         if(raised&&clock-raised.at>=700){send('combat',{kind:'guard',actorId:id,held:false});return}
       }
-      if(config.authorities.includes(id)) {
+      if(index.authorities.has(id)) {
         const unassessed=knowledge.unassessed
         if(unassessed){send('crime',{kind:'assess',actorId:id,factId:unassessed.factId});return}
         const wanted=knowledge.wanted,track=state.pursuit.tracks.find(t=>t.authorityId===id&&t.subjectId==='player')
         // Reinforcement is another existing guard; it learns via a delivered report.
-        if(wanted.level>=3&&id==='guard'&&alive('guard-2')) {
+        if(state.factions?.actionsVersion===1&&wanted.level>=3) {
+          const response=factionController.report(id,knowledge.reinforcement,'reinforce',dt)
+          if(response==='committed')return
+          if(response==='busy')continue
+        } else if(!state.factions?.actionsVersion&&wanted.level>=3&&id==='guard'&&alive('guard-2')) {
           const unsent=knowledge.reinforcement
           if(unsent){if(interruptRoutine(id,'report',70,unsent.evidenceId))return;if(near(id,'guard-2')){send('knowledge',{kind:'report',actorId:id,targetId:'guard-2',factId:unsent.factId},{delivered:true,proofId:`reinforce-${serial+1}`});return}if(f.phase==='idle')space.move(id,space.point('guard-2'),dt,1.3);continue}
         }
@@ -285,6 +332,11 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
           // Reports provide a fixed last-seen point, never a live player lookup.
           const memory=knowledge.lastCrimePosition
           if(!track&&memory&&clock-memory.at<30000&&f.phase==='idle'){if(interruptRoutine(id,'pursuit',80,memory.id))return;space.move(id,memory.position,dt,1.1);continue}
+        }
+        if(f.phase==='idle') {
+          const response=factionController.officerWork(id,dt)
+          if(response==='committed')return
+          if(response==='busy')continue
         }
       } else {
         const threat=knowledge.lastThreat&&clock-knowledge.lastThreat.at<30000?knowledge.lastThreat:undefined
@@ -304,7 +356,11 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
           continue
         }
         const pending=knowledge.unreported
-        if(pending&&alive('guard')) {
+        if(state.factions?.actionsVersion===1&&pending) {
+          const response=factionController.report(id,pending,'report',dt)
+          if(response==='committed')return
+          if(response==='busy')continue
+        } else if(!state.factions?.actionsVersion&&pending&&alive('guard')) {
           if(interruptRoutine(id,'report',70,pending.evidenceId))return
           if(near(id,'guard')){send('knowledge',{kind:'report',actorId:id,targetId:'guard',factId:pending.factId},{delivered:true,proofId:`report-${serial+1}`});return}
           if(f.phase==='idle')space.move(id,space.point('guard'),dt,1.3)
@@ -321,7 +377,7 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
         if(f.phase==='idle')space.move(id,space.point(destination),dt,1.1)
         continue
       }
-      if(id==='guard'&&parcel.holderId==='guard-bag') {
+      if(index.authorities.has(id)&&parcel.holderId===actor(id).containerId) {
         if(interruptRoutine(id,'delivery',70,state.village.events.findLast(e=>e.kind==='settle')?.id??null))return
         if(near(id,'stall')){send('village',{kind:'return',actorId:id});return}
         if(f.phase==='idle')space.move(id,space.point('stall'),dt,1.1)
@@ -338,10 +394,13 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
       if(f.phase==='idle') {
         if(economyController.updateNpc(id))return
         if(knowledge.relationReactionFactId){send('relations',{kind:'react',actorId:id,factId:knowledge.relationReactionFactId});return}
-        if(!config.authorities.includes(id)&&relationFor(state,id,'player').fear>=25&&sees(id,'player',true)&&near(id,'player',8)) {
+        if(!index.authorities.has(id)&&relationFor(state,id,'player').fear>=25&&sees(id,'player',true)&&near(id,'player',8)) {
           if(interruptRoutine(id,'flee',80,state.relations?.applications.findLast(a=>a.actorId===id)?.eventId??null))return
           space.flee(id,space.point('player'),dt);continue
         }
+        const escort=escortController.updateNpc(id,dt)
+        if(escort==='committed')return
+        if(escort==='busy')continue
         const job=opportunityDirector.updateNpc(id,dt)
         if(job==='committed')return
         if(job==='busy')continue
@@ -379,6 +438,18 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
   return {update,command,checkpoint,release:()=>{guardDesired=false},
     canAdvance:()=>!busy&&!stopped&&!checkpointDepth,view:()=>view,state:()=>state,clock:()=>clock,
     calendar:()=>clockAt(state.calendar.clockOrigin,clock),tradeStatus,
+    factionView:target=>({noticePlaceId:noticePlace()?.id??null,
+      unreadNotices:!!noticePlace()&&(state.factions?.bounties??[]).some(b=>b.postedEventId&&b.placeId===noticePlace().id&&!(state.factions.bountyKnowledge??[]).some(k=>k.actorId==='player'&&k.bountyId===b.id)),
+      bounties:(state.factions?.bountyKnowledge??[]).filter(k=>k.actorId==='player').map(k=>({...copy(k),
+        captureEventId:captureForBounty(state,state.factions.bounties.find(b=>b.id===k.bountyId),'player')?.capturedEventId??null})),
+      warnings:target&&alive(target)&&contact('player',target)&&sees(target,'player',true)?warningOptions(state,'player',target):[],
+      requests:(state.factions?.threatRequests??[]).filter(r=>r.requesterId==='player').map(copy),
+      escorts:(state.factions?.escortKnowledge??[]).filter(k=>k.actorId==='player').map(copy),
+      escortOffers:target&&alive(target)&&contact('player',target)&&sees(target,'player',true)?(state.factions?.escortKnowledge??[])
+        .filter(k=>k.actorId===target&&k.issuerId===target&&k.status==='offered'&&k.courierId!=='player'&&clock<k.deadlineAt)
+        .map(k=>({...copy(k),known:!!escortMemory(state,k.escortId,'player')})):[]}),
+    caseOptions:officer=>!state.factions?.actionsVersion||!indexed().authorities.has(officer)||!alive(officer)||!contact('player',officer)||!sees(officer,'player',true)?[]:
+      state.crime.cases.filter(c=>c.authorityId===officer&&c.subjectId==='player'&&!c.resolved).map(c=>({...caseSettlementQuote(state,officer,'player',c.id),severity:c.severity})),
     conversation:()=>{refreshConversation();return conversation?{...copy(conversation),topics:dialogueTopics(),opportunities:knownOpportunities(state,'player',clock,conversation.speakerId).filter(r=>conversation.opportunityIds.includes(r.id)||r.assigneeId==='player'&&r.status==='accepted'&&[r.issuerId,r.targetActorId].includes(conversation.speakerId))}:null},
     busy:()=>busy||checkpointDepth>0,stopped:()=>stopped,config,
     close:async()=>{await checkpoint(true);return session.close()}}
