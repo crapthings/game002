@@ -10,6 +10,7 @@
 - [旧规则冻结与版本映射](../docs/world-ledger/next/VERSIONING.md)
 - [历史分页、恢复校验与原子保存](../docs/world-ledger/next/ARCHIVE-IMPLEMENTATION.md)
 - [组织接案、逐案处理、悬赏与真实护送](../docs/world-ledger/next/FACTION-ACTIONS.md)
+- [个人认可、租住和一次武艺入门](../docs/world-ledger/next/GROWTH-IMPLEMENTATION.md)
 - [B接手场景接入与验证边界](../docs/world-ledger/SCENE-INTEGRATION.md)
 - [当前状态](CURRENT_STATE.md)
 - [渲染、GPU 骨骼与 Worker 性能优化](../docs/performance.md)

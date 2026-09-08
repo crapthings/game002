@@ -1,4 +1,4 @@
-const factWords={aid:'帮助了受伤的人',reward:'答谢了帮助',take:'拿走了药包',threatened:'威胁索取钱财',robbed:'强取了钱财',damaged:'伤了人',parried:'参与了交手',died:'在交手中造成死亡',loot_item:'取走了遗留物品',loot_money:'取走了遗留钱财',case_settled:'交还财物并赔偿了那件案子'}
+const factWords={opportunity_fulfilled:'办妥委托并结清了约定',escort_paid:'完成同行护送并结清了报酬',aid:'帮助了受伤的人',reward:'答谢了帮助',take:'拿走了药包',threatened:'威胁索取钱财',robbed:'强取了钱财',damaged:'伤了人',parried:'参与了交手',died:'在交手中造成死亡',loot_item:'取走了遗留物品',loot_money:'取走了遗留钱财',case_settled:'交还财物并赔偿了那件案子'}
 export function spokenAnswer(world,answer,names) {
   if(answer.kind==='places')return [answer.text,...answer.placeIds.map(id=>world.places.definitions.find(p=>p.id===id)?.label).filter(Boolean)]
   if(answer.kind==='news') {

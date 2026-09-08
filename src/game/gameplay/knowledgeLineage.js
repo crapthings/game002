@@ -1,4 +1,4 @@
-export const SHAREABLE_ACTIONS=new Set(['aid','reward','take','threatened','robbed','damaged','parried','died','loot_item','loot_money','case_settled'])
+export const SHAREABLE_ACTIONS=new Set(['aid','reward','take','threatened','robbed','damaged','parried','died','loot_item','loot_money','case_settled','opportunity_fulfilled','escort_paid'])
 const indexes=new WeakMap()
 export function evidenceDepth(social,evidenceId) {
   let index=indexes.get(social)

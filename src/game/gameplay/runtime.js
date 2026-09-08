@@ -14,6 +14,8 @@ import { executeFactions,addFactionArrival } from './factions.js'
 import { applyEscortConsequences } from './escorts.js'
 import { reconcileCaseKnowledge } from './caseSettlement.js'
 import { reconcileBounties } from './bounties.js'
+import { executeStanding,reconcileStanding } from './standing.js'
+import { executeGrowth,interruptGrowth } from './growth.js'
 import { executeVillage } from './village.js'
 import { InventoryError } from './inventory.js'
 import { executeInteraction } from './interactions.js'
@@ -83,7 +85,7 @@ export function executeGameplay(state,catalog,request) {
     requireValue(state.journal.length < 4096,'HISTORY_FULL')
     const next = clone(state), events = []
     for (const [i,step] of request.steps.entries()) {
-      requireValue(step && ['interaction','knowledge','combat','property','equipment','robbery','crime','pursuit','village','registry','places','life','dialogue','opportunities','relations','exchange','economy','factions'].includes(step.domain) && step.command && step.context,'INVALID_STEP')
+      requireValue(step && ['interaction','knowledge','combat','property','equipment','robbery','crime','pursuit','village','registry','places','life','dialogue','opportunities','relations','exchange','economy','factions','standing'].includes(step.domain) && step.command && step.context,'INVALID_STEP')
       requireValue(!Object.hasOwn(step.command,'id') && !Object.hasOwn(step.command,'expectedRevision'),'RESERVED_COMMAND_FIELDS')
       requireValue(natural(step.context.at) && step.context.at >= next.at,'INVALID_TIME')
       const firstFact = next.social.facts.length
@@ -121,6 +123,11 @@ export function executeGameplay(state,catalog,request) {
         const emitted=executeRelations(next,{...step.command,id:commandId},step.context)
         events.push(...emitted)
         for(const event of emitted)events.push(...registerFact(next,event,`${commandId}:${event.id}`))
+      } else if(step.domain==='standing') {
+        const handler=['initialize','present_record','review'].includes(step.command.kind)?executeStanding:executeGrowth
+        const emitted=handler(next,{...step.command,id:commandId},step.context)
+        events.push(...emitted)
+        for(const event of emitted)if(event.id.startsWith('standing:')||event.id.startsWith('life:'))events.push(...registerFact(next,event,`${commandId}:${event.id}`))
       } else if(step.domain==='factions') {
         const emitted=executeFactions(next,{...step.command,id:commandId},step.context,catalog)
         events.push(...emitted)
@@ -301,6 +308,12 @@ export function executeGameplay(state,catalog,request) {
       const escortEvents=applyEscortConsequences(next,events.slice(firstEvent),step.context.at,commandId)
       events.push(...escortEvents)
       for(const event of escortEvents)events.push(...registerFact(next,event,`${commandId}:${event.id}`))
+      const standingEvents=reconcileStanding(next,events.slice(firstEvent),step.context.at,commandId)
+      events.push(...standingEvents)
+      for(const event of standingEvents)events.push(...registerFact(next,event,`${commandId}:${event.id}`))
+      const growthEvents=interruptGrowth(next,events.slice(firstEvent),step.context.at,commandId)
+      events.push(...growthEvents)
+      for(const event of growthEvents)events.push(...registerFact(next,event,`${commandId}:${event.id}`))
       const laborEvents=applyLaborInterruptions(next,events.slice(firstEvent),step.context.at,commandId)
       events.push(...laborEvents)
       for(const event of laborEvents)events.push(...registerFact(next,event,`${commandId}:${event.id}`))

@@ -3,14 +3,14 @@ import { InventoryError } from './inventory.js'
 const copy=value=>structuredClone(value)
 const check=(ok,code)=>{if(!ok)throw new InventoryError(code)}
 const natural=n=>Number.isSafeInteger(n)&&n>=0
-export const HISTORY_DOMAINS=['interactions','social','combat','equipment','property','robbery','crime','pursuit','village','registry','places','life','dialogue','opportunities','relations','economy','factions']
+export const HISTORY_DOMAINS=['interactions','social','combat','equipment','property','robbery','crime','pursuit','village','registry','places','life','dialogue','opportunities','relations','economy','factions','standing']
 // Version 1 only evicts routine records which no current rule projection needs.
 // Offences, ownership changes, promises and personal evidence remain indexed.
 // This list is a saved rule: later compaction policies need a new page version.
 const routine=new Set(['activity_changed','activity_arrived','activity_interrupted','activity_resumed','place_status_changed',
   'attack_started','guard_started','guard_released','guard_exhausted','guard_broken','sight','lost','mask',
   'labor_started','labor_accrued','labor_paused','wage_paid','wage_payment_due','ate_food','exchange_meeting_ended',
-  'escort_route_seen'])
+  'escort_route_seen','training_progress'])
 const pages=new Map()
 
 export function historyCanonical(value,depth=0) {

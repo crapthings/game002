@@ -235,7 +235,9 @@ export function createLivingScene(scene,plan,world,player,progress,extras=()=>({
     const addresses=(s.dialogue?.addresses??[]).filter(a=>a.listenerId==='player')
     const escortClues=(s.factions?.escortKnowledge??[]).filter(k=>k.actorId==='player').flatMap(k=>[k.pickupPlaceId,k.returnPlaceId]
       .map(placeId=>({placeId,source:k.evidenceId,at:k.at})))
-    const allClues=[...clues,...addresses.map(a=>({placeId:a.placeId,source:a.eventId,at:a.at})),...escortClues]
+    const growthClues=(s.standing?.acknowledgments??[]).filter(k=>k.holderId==='player'&&k.service==='rent_and_training')
+      .map(k=>({placeId:s.places.bindings.find(b=>b.actorId===k.issuerId)?.homePlaceId,source:k.eventId,at:k.at})).filter(k=>k.placeId)
+    const allClues=[...clues,...addresses.map(a=>({placeId:a.placeId,source:a.eventId,at:a.at})),...escortClues,...growthClues]
     const trade=simulation.tradeStatus(),presentation=presentWorld(s,{at:simulation.clock(),
       knownPlaces:placeClues({...cityLayout,places:registeredPlaces(s,cityLayout)},allClues,useNavigationStore.getState().fog,p,{},temporary,addresses),seenActors,seenPlaceIds,fighters:simulation.view(),targetId:selected,trade})
     const places=presentation.places
@@ -245,6 +247,7 @@ export function createLivingScene(scene,plan,world,player,progress,extras=()=>({
       conversation:simulation.conversation(),
       caseOptions:simulation.caseOptions(selected),
       factionView:simulation.factionView(selected),
+      standingView:simulation.standingView(selected),
       bagCount:s.interactions.inventory.lots.filter(l=>l.holderId==='player-bag').reduce((n,l)=>n+l.quantity,0),clock:simulation.clock(),
       wanted:['guard','guard-2'].map(id=>wantedFor(s.crime,id,'player')).sort((a,b)=>b.level-a.level)[0],pursuit:['guard','guard-2'].map(id=>pursuitFor(s,id,'player',simulation.clock())).sort((a,b)=>({follow:2,search:1,idle:0}[b.mode]-{follow:2,search:1,idle:0}[a.mode]))[0],
       busy:simulation.busy(),stopped:simulation.stopped(),legacyEvents:legacy?.events??[]})

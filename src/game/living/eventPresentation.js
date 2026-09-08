@@ -1,4 +1,7 @@
 export const eventWords={
+  standing_initialized:'开始按履约记录认可',completion_presented:'当面出示结算收条',standing_granted:'本人确认认可与服务',standing_suspended:'本人暂停认可',standing_explained:'当面交代认可变化',
+  growth_enabled:'开放租住和武艺入门',home_rented:'付清本期租金',rest_started:'在租住处歇脚',rest_ended:'结束歇脚',
+  training_started:'预留学费并开始入门',training_resumed:'继续原来的练习',training_progress:'记录实际练习进度',training_paused:'暂停并保留已练时长',training_payment_due:'练习完成，学费待结',training_completed:'结清学费并学会入门',training_cancelled:'取消练习并释放预留',
   factions_initialized:'登记组织与职责',faction_member_arrived:'组织成员到达',
   faction_actions_enabled:'开始按职责办事',officer_sought:'准备当面报案',officer_waiting:'未遇接案人，稍后再来',officer_sought_again:'再去接案处',report_presented:'向捕快当面交代',
   case_settled:'按案交还财物并赔偿',case_resolution_learned:'捕快得知这件案子已处理',
@@ -17,7 +20,7 @@ export const eventWords={
 }
 /** Only invoked by an open review panel, including intermediate evidence nodes. */
 export function createReviewIndex(state,archived=[]) {
-  const current=['combat','interactions','village','robbery','property','equipment','crime','pursuit','registry','life','places','dialogue','opportunities','relations','economy','factions','social'].flatMap(domain=>state[domain]?.events??[])
+  const current=['combat','interactions','village','robbery','property','equipment','crime','pursuit','registry','life','places','dialogue','opportunities','relations','economy','factions','standing','social'].flatMap(domain=>state[domain]?.events??[])
   const events=[...new Map([...archived,...current].map(e=>[e.id,e])).values()]
   for(const need of state.opportunities?.needs??[])events.push({id:need.id,kind:'personal_need',actorId:need.issuerId,targetId:need.targetActorId,at:state.opportunities.events[0].at,cause:null})
   for(const need of state.economy?.needs??[])events.push({id:need.id,kind:'restock_need',actorId:need.issuerId,targetId:need.targetActorId,at:need.at,cause:null})

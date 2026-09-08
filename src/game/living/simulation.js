@@ -19,6 +19,10 @@ import { warningOptions } from '../gameplay/gangRequests.js'
 import { captureForBounty } from '../gameplay/bounties.js'
 import { createEscortController } from './escortController.js'
 import { escortMemory } from '../gameplay/escorts.js'
+import { standingQuote,completionRecords,hasStanding,standingPrice } from '../gameplay/standing.js'
+import { activeLease,trainingFor,growthSafe } from '../gameplay/growth.js'
+import { createGrowthController } from './growthController.js'
+import { GROWTH_V1,STANDING_V1 } from '../gameplay/content/standingV1.js'
 const copy=v=>structuredClone(v)
 export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,save,space,notify=()=>{},effects=()=>{}}) {
   const config=livingConfig(legacy,world)
@@ -66,6 +70,7 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
     face:space.face,move:space.move,atPlace:space.atPlace,interrupt:interruptRoutine,send,talkingTo:()=>conversation?.speakerId})
   const escortController=createEscortController({state:()=>state,clock:()=>clock,point:space.point,notice:noticesPerson,contact:near,
     face:space.face,move:space.move,nearPlace,interrupt:interruptRoutine,send,talkingTo:()=>conversation?.speakerId})
+  const growthController=createGrowthController({state:()=>state,clock:()=>clock,context:growthContext,nearPlace,send})
   async function send(domain,command,extra={},observe=false,continuation=[]) {
     if(busy||stopped)return {ok:false,code:'BUSY'}
     busy=true
@@ -114,6 +119,14 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
       facing:Math.abs(facingAngle(space.point('player'),space.point(speakerId)))<=65,
       identified:sees(speakerId,'player',true),
       meetingId:conversation?.id??'meeting-pending',proofId:`meeting-${serial+1}`}
+  }
+  function growthContext(id='player') {
+    const mentor=GROWTH_V1.mentorId,placeId=state.places?.bindings.find(b=>b.actorId===mentor)?.homePlaceId
+    const p=space.point(id),q=space.point(mentor)
+    return {at:clock,allowed:true,withinRange:near(id,mentor),clear:(space.contactClear??space.clear)(p,q),facing:Math.abs(facingAngle(p,q))<=65,
+      identified:id==='player'?sees(mentor,id,true):noticesPerson(mentor,id),placeId,present:!!placeId&&nearPlace(id,placeId),mentorPresent:!!placeId&&nearPlace(mentor,placeId),
+      dangerFree:!npcs().some(n=>n.id!==id&&alive(n.id)&&near(id,n.id,12)&&['windup','active','recovery','broken'].includes(fighter(n.id)?.phase)),
+      proofId:`practice:${id}:${serial+1}`}
   }
   function noticePlace() {
     const p=space.point('player'),law=state.factions?.entries.find(f=>f.kind==='law')
@@ -166,6 +179,9 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
     const target=data.targetId
     if(!alive('player'))return
     if(['talk_start','talk_topic'].includes(kind))return talk(kind,data)
+    if(['review_standing','present_record'].includes(kind)&&target&&contact('player',target))return send('standing',
+      {kind:kind==='review_standing'?'review':kind,actorId:'player',targetId:target,...(kind==='present_record'?{eventId:data.eventId}:{})},meetingContext(target))
+    if(['rent','start_training','resume_training','pause_training','cancel_training','start_rest','end_rest'].includes(kind))return send('standing',{kind,actorId:'player'},growthContext())
     if(['hear_escort','accept_escort','join_escort','collect_escort','cancel_escort'].includes(kind)) {
       const row=state.factions?.escorts.find(r=>r.id===data.escortId)
       if(!row)return
@@ -225,7 +241,8 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
       const service=tradeContext('player','merchant'),eligible=tradeEligibility(state,'player','merchant',service)
       if(!eligible.available){notify(eligible.reason);return}
       const lot=indexed().lots.get(data.lotId)
-      if(lot&&PRICES[lot.itemType])return send('interaction',{kind,actorId:'player',targetId:'merchant',lotId:lot.id,quantity:1},{unitPrice:PRICES[lot.itemType][kind==='buy'?0:1],service})
+      if(lot&&PRICES[lot.itemType])return send('interaction',{kind,actorId:'player',targetId:'merchant',lotId:lot.id,quantity:1},
+        {unitPrice:kind==='buy'?standingPrice(state,'player','merchant',lot.itemType,PRICES[lot.itemType][0]):PRICES[lot.itemType][1],service})
     }
     if(target&&contact('player',target)) {
       if(kind==='threaten')return send('robbery',{kind,actorId:'player',targetId:target,amount:20},
@@ -278,6 +295,8 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
     if(state.factions&&!state.factions.actionsVersion){send('factions',{kind:'enable_actions',actorId:'player'});return}
     if(state.factions?.actionsVersion&&!state.factions.bountyVersion){send('factions',{kind:'enable_bounties',actorId:'player'});return}
     if(state.factions?.actionsVersion&&!state.factions.escortsVersion){send('factions',{kind:'enable_escorts',actorId:'player'});return}
+    if(state.factions?.actionsVersion&&!state.standing){send('standing',{kind:'initialize',actorId:'player'});return}
+    if(state.standing&&!state.standing.growthVersion){send('standing',{kind:'enable_growth',actorId:'player'});return}
     if(state.economy&&!state.registry.actors.some(a=>a.actorId==='supplier-1')) {
       const body=space.supplierSetup?.()
       if(body){send('registry',{kind:'arrive',actorId:'supplier-1',templateId:'supplier-1'},{geometryConfirmed:true,proofId:'supplier-site-confirmed',body});return}
@@ -295,6 +314,7 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
     if(refreshServices())return
     if(socialController.closeSeparated())return
     if(payrollController.update())return
+    if(growthController.update())return
     if(escortController.observe())return
     for(const npc of npcs()) {
       const id=npc.id,f=fighter(id)
@@ -368,6 +388,7 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
         }
         if((threat?.reaction==='flee'||attack)&&f.phase==='idle'){if(interruptRoutine(id,'flee',80,attack?.id??threat?.id??null))return;const source=knowledge.lastKnownPosition;if(source)space.flee(id,source.position,dt);continue}
       }
+      if(growthController.busyMentor(id)){space.face(id,space.point('player'));continue}
       const parcel=index.lots.get('medicine-parcel')
       if(id==='merchant'&&space.relocationPending?.()&&['stall','merchant-bag'].includes(parcel.holderId)) {
         if(interruptRoutine(id,'delivery',70))return
@@ -427,6 +448,10 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
     try {
     // In-flight commits finish before release and the final clock-only save.
     while(busy)await new Promise(resolve=>setTimeout(resolve,5))
+    if(releaseInput&&!stopped) {
+      const [first,...rest]=growthController.stopSteps()
+      if(first)await send(first.domain,first.command,first.context,false,rest)
+    }
     const hero=previewGameplayCombat(state,clock).find(f=>f.id==='player')
     if(releaseInput&&alive('player')&&(hero.guardHeld||hero.mustRelease)&&!stopped)await send('combat',{kind:'guard',actorId:'player',held:false})
     const result=await session.checkpoint(clock)
@@ -438,6 +463,16 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
   return {update,command,checkpoint,release:()=>{guardDesired=false},
     canAdvance:()=>!busy&&!stopped&&!checkpointDepth,view:()=>view,state:()=>state,clock:()=>clock,
     calendar:()=>clockAt(state.calendar.clockOrigin,clock),tradeStatus,
+    standingView:target=>{
+      const local=!!target&&STANDING_V1.issuers.some(i=>i.actorId===target)&&contact('player',target)&&alive(target)&&sees(target,'player',true)
+      const quote=local?standingQuote(state,target,'player'):null,proof=growthContext()
+      return {quote,issuerId:local?target:null,
+        records:local?completionRecords(state,'player').filter(r=>!state.social.knowledge.some(k=>k.npcId===target&&k.factId===r.factId&&k.subjectId==='player')):[],
+        acknowledgments:copy((state.standing?.acknowledgments??[]).filter(r=>r.holderId==='player')),
+        recognized:local&&hasStanding(state,target,'player'),homePlaceId:proof.placeId,atHome:proof.present,mentorHome:proof.mentorPresent,
+        canPractice:proof.present&&proof.mentorPresent&&proof.withinRange&&proof.facing&&proof.identified&&proof.dangerFree&&growthSafe(state,'player',clock)&&growthSafe(state,GROWTH_V1.mentorId,clock),
+        lease:copy(activeLease(state,'player',clock)),training:copy(trainingFor(state,'player')),resting:!!state.standing?.rests?.some(r=>r.holderId==='player'&&r.active)}
+    },
     factionView:target=>({noticePlaceId:noticePlace()?.id??null,
       unreadNotices:!!noticePlace()&&(state.factions?.bounties??[]).some(b=>b.postedEventId&&b.placeId===noticePlace().id&&!(state.factions.bountyKnowledge??[]).some(k=>k.actorId==='player'&&k.bountyId===b.id)),
       bounties:(state.factions?.bountyKnowledge??[]).filter(k=>k.actorId==='player').map(k=>({...copy(k),

@@ -1,4 +1,9 @@
 export const SERVICE_REASONS={
+  NO_STANDING_SERVICE:'这位街坊暂时不提供这项认可服务。',MORE_KNOWN_COMPLETIONS:'需要让对方知道两次不同需求的具名履约；可以当面出示原结算收条。',
+  PERSONAL_HARM_PENDING:'对方还记得未处理的侵害，需先处理并让对方知道结果。',NO_SIGNED_COMPLETION:'没有符合条件的具名结算收条。',COMPLETION_ALREADY_KNOWN:'对方已经知道这次履约，无需重复出示。',
+  RECOGNITION_REQUIRED:'需要先取得石伯本人的认可。',GO_TO_MENTOR_HOME:'请到石伯住宅门口，与他当面办理。',MENTOR_BUSY:'石伯正在处理别的事务，稍后再来。',
+  NO_SAFE_TRAINING:'请先脱离追逐和交手，在安全处与导师练习。',NO_SAFE_REST:'现在还不适合安心歇脚。',NO_ACTIVE_LEASE:'需要仍在租期内，并实际到达租住点。',
+  SKILL_ALREADY_STARTED:'已有这门入门练习的记录，请继续原来的进度。',SKILL_ALREADY_LEARNED:'已经完成这门入门练习，不能重复增加属性。',NO_ACTIVE_TRAINING:'没有正在进行的练习。',NOT_RESTING:'现在没有在租住点歇脚。',
   NO_NEW_NOTICES:'此处暂时没有未读的悬赏告示。',NO_BOUNTY_CASE:'当前证据或案件状态还不能发布这条悬赏。',
   BOUNTY_NOT_PAYABLE:'这条悬赏还不能凭这份回执兑现，请与经手捕快核对。',MISSING_CAPTURE_EVIDENCE:'需要本人实际拘押该案当事人的回执。',
   MISSING_CASE_MEETING:'请收手后与捕快当面处理这件事。',RETURN_ITEMS_REQUIRED:'需要先找回仍应归还的原物。',
