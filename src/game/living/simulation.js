@@ -1,4 +1,4 @@
-import { createGameplay, createWorldSession, migrateWorldToV2, previewGameplayCombat, pursuitFor } from '../gameplay/index.js'
+import { createGameplay, createWorldSession, migrateWorldToV2, previewGameplayCombat, pursuitFor, tradeEligibility, servicePresence } from '../gameplay/index.js'
 import { createLivingStateIndex } from './createLivingStateIndex.js'
 import { livingConfig, LIVING_NPCS, PRICES } from './config.js'
 import { distance, facingAngle, sweptContact } from './geometry.js'
@@ -26,6 +26,7 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
   for(const f of view)if(f.phase==='active')sweep.set(f.swing.id,(clock-f.swing.activeAt)/180)
   const actor=id=>indexed().actors.get(id)
   const routineDue=new Map()
+  let servicesDue=0
   const fighter=id=>view.find(a=>a.id===id)
   const alive=id=>actor(id)?.health>0
   const near=(a,b,r=2)=>distance(space.point(a),space.point(b))<=r && Math.abs(space.point(a).y-space.point(b).y)<1.5 && (space.contactClear??space.clear)(space.point(a),space.point(b))
@@ -53,6 +54,27 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
     send('life',{kind:'interrupt',actorId,reason,priority},{cause}).then(result=>{if(result.ok)space.suspendRoutine?.(actorId)})
     return true
   }
+  function tradeContext(actorId,targetId) {
+    const entry=state.places?.entries.find(e=>(e.businessActorId??e.operatorId)===targetId&&state.places.definitions.some(p=>p.id===e.placeId&&p.kind==='shop'))
+    const provider=entry?.operatorId
+    return {at:clock,placeId:entry?.placeId??null,operatorId:provider??null,
+      withinRange:!!provider&&near(actorId,provider),clear:!!provider&&space.clear(space.point(actorId),space.point(provider)),
+      facing:!!provider&&Math.abs(facingAngle(space.point(actorId),space.point(provider)))<=65,
+      operatorPresent:!!provider&&space.atPlace(provider,entry.placeId),proofId:`service-${serial+1}`}
+  }
+  const tradeStatus=()=>tradeEligibility(state,'player','merchant',tradeContext('player','merchant'))
+  function refreshServices() {
+    if(state.places?.serviceVersion!==1||clock<servicesDue)return false
+    for(const entry of state.places.entries) {
+      if(!entry.operatorId||!alive(entry.operatorId))continue
+      const status=servicePresence(state,entry,{present:space.atPlace(entry.operatorId,entry.placeId),phase:fighter(entry.operatorId)?.phase})
+      if(status===entry.status)continue
+      send('places',{kind:'presence',actorId:entry.operatorId,placeId:entry.placeId,status},
+        {present:space.atPlace(entry.operatorId,entry.placeId),proofId:`presence-${serial+1}`,cause:state.life.actors.find(a=>a.actorId===entry.operatorId)?.interruption?.sourceEventId??null})
+      return true
+    }
+    servicesDue=clock+1000;return false
+  }
   function command(kind,data={}) {
     if(kind==='guard'){guardDesired=data.held;return}
     if(busy||stopped||checkpointDepth)return
@@ -65,11 +87,11 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
     if(kind==='take'&&near('player','stall'))return send('village',{kind:'take',actorId:'player'},{},true)
     if(kind==='settle'&&near('player','guard'))return send('village',{kind:'settle',actorId:'player'})
     if(kind==='aid'&&near('player','resident-1')){space.face('resident-1',space.point('player'));return send('village',{kind:'aid',actorId:'player',lotId:data.lotId},{identified:sees('resident-1','player',true)},true)}
-    if(['buy','sell'].includes(kind)&&alive('merchant')&&near('player','merchant')) {
-      const refuses=!state.village.masked&&indexed().merchantRefuses
-      if(refuses){notify('陈掌柜认出了冒犯者，拒绝交易；药包纠纷可向捕快交还赔偿。');return}
+    if(['buy','sell'].includes(kind)) {
+      const service=tradeContext('player','merchant'),eligible=tradeEligibility(state,'player','merchant',service)
+      if(!eligible.available){notify(eligible.reason);return}
       const lot=indexed().lots.get(data.lotId)
-      if(lot&&PRICES[lot.itemType])return send('interaction',{kind,actorId:'player',targetId:'merchant',lotId:lot.id,quantity:1},{unitPrice:PRICES[lot.itemType][kind==='buy'?0:1]})
+      if(lot&&PRICES[lot.itemType])return send('interaction',{kind,actorId:'player',targetId:'merchant',lotId:lot.id,quantity:1},{unitPrice:PRICES[lot.itemType][kind==='buy'?0:1],service})
     }
     if(target&&near('player',target)) {
       if(kind==='threaten')return send('robbery',{kind,actorId:'player',targetId:target,amount:20},
@@ -91,6 +113,7 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
       const setup=space.lifeSetup?.()
       if(setup){send('places',{kind:'extend',actorId:'player',...setup},{geometryConfirmed:true},false,[{domain:'life',command:{kind:'initialize',actorId:'player'}}]);return}
     }
+    if(state.life&&!state.places.serviceVersion){send('places',{kind:'enable_services',actorId:'player'});return}
     if(guardDesired && alive('player') && !hero.guardHeld&&!hero.mustRelease&&hero.phase==='idle'&&hero.stamina>=25000){send('combat',{kind:'guard',actorId:'player',held:true});return}
     for(const f of view) {
       if(f.phase!=='active')continue
@@ -105,6 +128,7 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
       sweep.set(f.swing.id,fraction)
     }
     for(const id of sweep.keys())if(!view.some(f=>f.swing?.id===id))sweep.delete(id)
+    if(refreshServices())return
     for(const npc of npcs()) {
       const id=npc.id,f=fighter(id)
       if(!alive(id))continue
@@ -218,7 +242,7 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
   }
   return {update,command,checkpoint,release:()=>{guardDesired=false},
     canAdvance:()=>!busy&&!stopped&&!checkpointDepth,view:()=>view,state:()=>state,clock:()=>clock,
-    calendar:()=>clockAt(state.calendar.clockOrigin,clock),
+    calendar:()=>clockAt(state.calendar.clockOrigin,clock),tradeStatus,
     busy:()=>busy||checkpointDepth>0,stopped:()=>stopped,config,
     close:async()=>{await checkpoint(true);return session.close()}}
 }

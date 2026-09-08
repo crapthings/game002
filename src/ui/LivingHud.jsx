@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { useLivingStore } from '../stores/useLivingStore.js'
 import { LIVING_ITEMS,PRICES } from '../game/living/config.js'
+import { SERVICE_REASONS } from '../game/living/serviceMessages.js'
 const button='rounded border border-white/20 px-2 py-1 text-xs disabled:opacity-35 enabled:hover:bg-white/15'
 const words={relocate_pickup:'物主搬取药包',relocate_deliver:'物主搬回新摊位',attack_started:'出招',guard_started:'招架',guard_released:'松手回气',guard_exhausted:'气力耗尽',guard_broken:'破防',damaged:'受伤',parried:'挡住攻击',died:'死亡',take:'拿走药包',settle:'交还赔偿',return:'送回药包',aid:'救助',reward:'回礼',mask:'改变遮面',buy:'购买',sell:'出售',use:'使用',equip:'装备',unequip:'卸下',threatened:'威胁',robbed:'被迫交钱',loot_item:'搜刮物品',loot_money:'搜刮铜钱',case_assessed:'受理案件',witness:'目击',report:'当面举报',sight:'认出行踪',lost:'失去视线'}
 const errors={HISTORY_FULL:'本轮记录已满，请保存退出后换新种子体验',TARGET_BUSY:'对方正忙，暂时无法交涉',NOT_AVAILABLE:'物品已不在原处',OWN_MEDICINE_REQUIRED:'需要一份自有止血药',REWARD_NOT_DUE:'尚未满足答谢条件',SUBJECT_UNIDENTIFIED:'对方没有确认你的身份',ACTOR_DEAD:'角色已经倒下',TARGET_NOT_DEAD:'对方仍然活着，不能搜刮',INSUFFICIENT_QUANTITY:'物品数量不足',NO_CHANGE:'当前状态无需更改',ACTOR_BUSY:'正在出招或收招',RELEASE_REQUIRED:'先松开招架，再回气至25',INSUFFICIENT_STAMINA:'气力不足',BAG_FULL:'背包已满',INSUFFICIENT_FUNDS:'铜钱不足',NOT_OWNED:'这件物品仍属于别人',ITEM_EQUIPPED:'先卸下装备',THREAT_COOLDOWN:'对方仍在警惕，稍后再试',SAVE_OUTCOME_UNKNOWN:'保存结果未确认，请返回菜单重新读档',RECOVERY_REQUIRED:'请重新读档后继续',ALREADY_HELPED:'柳娘已经接受过救助',HEALTH_FULL:'气血已满',BUSY:'正在保存上一动作'}
@@ -34,7 +35,7 @@ export default function LivingHud(){
    <p className="mt-1 text-stone-400">左键 / J 出招 · 右键 / K 按住招架 · T 威胁 · H 蒙面</p>
    <button className={`${button} mt-2`} onClick={()=>useLivingStore.getState().toggle()}>背包与江湖记录 · Tab</button>
    {v.hero.health===0&&<p className="mt-2 text-red-300">你已倒下。当前种子会保留死亡结果，可从菜单换新种子再试。</p>}
-   {message&&<p aria-live="polite" className="mt-2 text-amber-200">{errors[message]??(/^[A-Z_]+$/.test(message)?'当前条件不满足，暂时无法执行。':message)}</p>}
+   {message&&<p aria-live="polite" className="mt-2 text-amber-200">{SERVICE_REASONS[message]??errors[message]??(/^[A-Z_]+$/.test(message)?'当前条件不满足，暂时无法执行。':message)}</p>}
   </aside>
   {panel&&<section aria-label="背包与交互" className="absolute left-4 top-28 z-20 max-h-[70vh] w-96 max-w-[92vw] overflow-y-auto rounded-xl border border-white/20 bg-stone-950/95 p-4 text-sm text-stone-100">
    <div className="flex justify-between"><h2>行囊 {v.bagCount}/6</h2><button className={button} onClick={()=>useLivingStore.getState().toggle()}>关闭</button></div>
@@ -42,12 +43,12 @@ export default function LivingHud(){
    {own.map(l=><div className="mt-3 border-b border-white/10 pb-2" key={l.id}><p>{item(l.itemType).name} ×{l.quantity} · {l.ownerId==='player'?'自有':`${name(l.ownerId)}所有`}</p>
     {item(l.itemType).consumable&&<button className={button} disabled={actionsDisabled||l.ownerId!=='player'||v.hero.health>=100} onClick={()=>act('use',{lotId:l.id})}>使用</button>}
     {item(l.itemType).equipment&&<button className={button} disabled={actionsDisabled||l.ownerId!=='player'} onClick={()=>act(loadout[item(l.itemType).equipment.slot]===l.id?'unequip':'equip',{lotId:l.id,slot:item(l.itemType).equipment.slot})}>{loadout[item(l.itemType).equipment.slot]===l.id?'卸下':'装备'}</button>}
-    {v.targetId==='merchant'&&PRICES[l.itemType]&&<button className={`${button} ml-2`} disabled={actionsDisabled||l.ownerId!=='player'} onClick={()=>act('sell',{lotId:l.id})}>出售 {PRICES[l.itemType][1]}文</button>}
+    {v.targetId==='merchant'&&PRICES[l.itemType]&&<button className={`${button} ml-2`} disabled={actionsDisabled||l.ownerId!=='player'||!v.trade?.available} title={SERVICE_REASONS[v.trade?.reason]??errors[v.trade?.reason]??''} onClick={()=>act('sell',{lotId:l.id})}>出售 {PRICES[l.itemType][1]}文</button>}
    </div>)}
    <h3 className="mt-4 text-amber-200">{target?`${name(target.id)} · 气血 ${target.health}/${target.maxHealth}`:'面向近处角色以交互'}</h3>
    {target&&<p className="mt-2 text-xs text-stone-400">{target.id.startsWith('guard')?'官府':target.id==='merchant'?'商户':'街坊'} · 攻击 {v.fighters.find(f=>f.id===target.id)?.attack} / 防御 {v.fighters.find(f=>f.id===target.id)?.defense}</p>}
    {target?.health>0&&<button className={`${button} mt-2`} disabled={actionsDisabled} onClick={()=>act('threaten',{targetId:target.id})}>威胁索要20文</button>}
-   {v.targetId==='merchant'&&target?.health>0&&lots.filter(l=>l.holderId==='merchant-bag'&&l.ownerId==='merchant'&&PRICES[l.itemType]).map(l=><button key={l.id} className={`${button} mt-2 mr-2`} disabled={actionsDisabled||v.bagCount>=6||v.hero.wallet<PRICES[l.itemType][0]} onClick={()=>act('buy',{lotId:l.id})}>买{item(l.itemType).name} {PRICES[l.itemType][0]}文 · 余{l.quantity}</button>)}
+   {v.targetId==='merchant'&&target?.health>0&&<><p className="mt-2 text-xs text-amber-200">{v.trade?.available?'药铺正在营业。':SERVICE_REASONS[v.trade?.reason]??errors[v.trade?.reason]??'暂时无法交易。'}</p>{lots.filter(l=>l.holderId==='merchant-bag'&&l.ownerId==='merchant'&&PRICES[l.itemType]).map(l=><button key={l.id} className={`${button} mt-2 mr-2`} disabled={actionsDisabled||!v.trade?.available||v.bagCount>=6||v.hero.wallet<PRICES[l.itemType][0]} title={v.bagCount>=6?'背包已满':v.hero.wallet<PRICES[l.itemType][0]?'铜钱不足':SERVICE_REASONS[v.trade?.reason]??errors[v.trade?.reason]??''} onClick={()=>act('buy',{lotId:l.id})}>买{item(l.itemType).name} {PRICES[l.itemType][0]}文 · 余{l.quantity}</button>)}</>}
    {v.targetId==='guard'&&own.some(l=>l.id==='medicine-parcel')&&<button className={`${button} mt-2`} disabled={actionsDisabled||v.hero.wallet<20} onClick={()=>act('settle')}>交还药包并赔偿20文</button>}
    {v.targetId==='resident-1'&&<><button className={`${button} mt-2 mr-2`} disabled={actionsDisabled||target?.health===0} onClick={()=>act('ask_medicine')}>询问药铺在哪</button><button className={`${button} mt-2`} disabled={actionsDisabled||!med||!!s.village.aid.eventId||target?.health===0} onClick={()=>act('aid',{lotId:med.id})}>用自有止血药救助</button></>}
    {target?.health===0&&<><button className={`${button} mt-2`} disabled={actionsDisabled||!target.wallet} onClick={()=>act('loot_money',{targetId:target.id})}>取走铜钱 {target.wallet}文</button>{lots.filter(l=>l.holderId===target.containerId).map(l=><button className={`${button} mt-2 mr-2`} disabled={actionsDisabled||v.bagCount>=6} key={l.id} onClick={()=>act('loot_item',{targetId:target.id,lotId:l.id})}>搜取{item(l.itemType).name} ×1</button>)}</>}

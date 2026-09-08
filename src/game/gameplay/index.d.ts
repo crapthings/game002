@@ -71,6 +71,7 @@ export interface InteractionCommand {
 export type GameplayStep = (
   | { domain: 'places'; command: {kind:'register'|'extend';actorId:string;definitions:RegisteredPlace[];bindings:RegistryBody['binding'][]}; context:Policy & {geometryConfirmed:true} }
   | { domain: 'places'; command: {kind:'presence';actorId:string;placeId:string;status:'available'|'away'|'resting'|'danger'}; context:Policy & {present:boolean;proofId:string;cause?:string|null} }
+  | { domain: 'places'; command: {kind:'enable_services';actorId:string}; context:Policy }
   | { domain:'life'; command:LifeCommand; context:Policy & {present?:boolean;proofId?:string;cause?:string|null;safe?:boolean} }
   | { domain: 'registry'; command: { kind: 'arrive'; actorId: string; templateId: string };
       context: Policy & { geometryConfirmed: true; proofId: string; body: RegistryBody } }
@@ -95,7 +96,7 @@ export type GameplayStep = (
   | { domain: 'combat'; command: { kind: 'guard'; actorId: string; held: boolean }; context: Policy }
   | { domain: 'combat'; command: { kind: 'hit'; actorId: string; targetId: string; swingId: string };
       context: Policy & { contact: boolean; clear: boolean; angleDegrees: number; proofId: string } }
-  | { domain: 'interaction'; command: InteractionCommand; context: Policy & { unitPrice?: number } }
+  | { domain: 'interaction'; command: InteractionCommand; context: Policy & { unitPrice?: number; service?:TradeContext } }
   | { domain: 'knowledge'; command: { kind: 'fact'; factId: string; actorId: string;
       targetId: string | null; action: string }; context: Policy & { sourceEventId: string } }
   | { domain: 'knowledge'; command: { kind: 'witness'; factId: string; actorId: string };
@@ -125,7 +126,7 @@ export interface GameplayState {
   migration?: { clockOrigin:ClockOrigin; bodyActorIds:string[] };
   calendar?: { version:1; clockOrigin:ClockOrigin };
   registry?: { version:1; actors:RegistryActor[]; events:RegistryEvent[] };
-  places?: {version:1;definitions:RegisteredPlace[];bindings:RegistryBody['binding'][];entries:PlaceEntry[];events:PlaceEvent[]};
+  places?: {version:1;serviceVersion?:1;definitions:RegisteredPlace[];bindings:RegistryBody['binding'][];entries:PlaceEntry[];events:PlaceEvent[]};
   life?: {version:1;actors:LifeActor[];events:LifeEvent[]};
 }
 export type RoutineKind = 'work'|'rest'|'social'|'eat'|'patrol';
@@ -164,7 +165,10 @@ export interface RegistryBody {
 }
 export interface RegistryActor { actorId:string; hasBody:boolean; sourceEventId:string|null; templateId?:string; body?:RegistryBody }
 export interface PlaceEntry {placeId:string;operatorId:string|null;residentIds:string[];status:'unassessed'|'available'|'away'|'resting'|'danger';reasonEventId:string;presenceAt:number|null}
-export interface PlaceEvent {id:string;kind:'places_registered'|'places_extended'|'place_status_changed';actorId:string;targetId:null;at:number;cause:string|null;requestId:string;placeId?:string;status?:PlaceEntry['status'];proofId?:string}
+export interface PlaceEvent {id:string;kind:'places_registered'|'places_extended'|'place_services_enabled'|'place_status_changed';actorId:string;targetId:null;at:number;cause:string|null;requestId:string;placeId?:string;status?:PlaceEntry['status'];proofId?:string}
+export interface TradeContext {at:number;placeId:string|null;operatorId:string|null;withinRange:boolean;clear:boolean;facing:boolean;operatorPresent:boolean;proofId:string}
+export function tradeEligibility(state:GameplayState,actorId:string,targetId:string,context:TradeContext):{available:boolean;reason:string|null;placeId:string|null;operatorId:string|null};
+export function servicePresence(state:GameplayState,entry:PlaceEntry,context:{present:boolean;phase:string}):PlaceEntry['status'];
 export function placeStatus(state:GameplayState,placeId:string,at:number):{placeId:string;status:string;reason:string|null;open:boolean;operatorId?:string|null;residentIds?:string[];reasonEventId?:string;inHours?:boolean;label?:string};
 export function availablePlaceActions(state:GameplayState,actorId:string,placeId:string,context:{at:number;withinRange:boolean;clear:boolean;facing:boolean;targetId:string|null}):{kind:string;available:boolean;reason:string|null;targetId:string|null}[];
 export interface RegistryEvent {

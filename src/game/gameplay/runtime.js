@@ -3,6 +3,7 @@ import { createV2Baseline } from './migrations/v2.js'
 import { executeRegistry } from './registry.js'
 import { executePlaces,addArrivalPlace } from './places.js'
 import { executeLife,addArrivalLife } from './life.js'
+import { assertTradeService } from './commerce.js'
 import { executeVillage } from './village.js'
 import { InventoryError } from './inventory.js'
 import { executeInteraction } from './interactions.js'
@@ -91,6 +92,7 @@ export function executeGameplay(state,catalog,request) {
         events.push(...emitted)
         for(const event of emitted)events.push(...registerFact(next,event,commandId))
       } else if (step.domain === 'interaction') {
+        assertTradeService(next,step.command,step.context)
         if (next.combat) {
           const participants = [step.command.actorId,step.command.targetId]
           requireValue(participants.every(id => next.interactions.actors.some(a => a.id === id && a.health > 0)),'ACTOR_DEAD')

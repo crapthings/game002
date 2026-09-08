@@ -52,6 +52,12 @@ export function executePlaces(world,command,context) {
     for(const entry of world.places.entries)entry.residentIds=command.bindings.filter(b=>b.homePlaceId===entry.placeId).map(b=>b.actorId)
     world.places.events.push(event);return [copy(event)]
   }
+  if(command.kind==='enable_services') {
+    check(world.places&&world.life&&!world.places.serviceVersion,'SERVICE_RULES_ALREADY_ENABLED')
+    check(world.places.events.length<4096,'HISTORY_FULL')
+    const event={id:`places:${world.places.events.length+1}`,kind:'place_services_enabled',actorId:command.actorId,targetId:null,at:context.at,cause:null,requestId:command.id}
+    world.places.serviceVersion=1;world.places.events.push(event);return [copy(event)]
+  }
   check(world.places?.version===1&&command.kind==='presence','INVALID_COMMAND')
   const entry=world.places.entries.find(p=>p.placeId===command.placeId)
   check(entry&&(entry.operatorId===command.actorId||entry.residentIds.includes(command.actorId)),'NOT_PLACE_OPERATOR')
@@ -71,15 +77,29 @@ export function placeStatus(world,placeId,at) {
   const minute=clockAt(world.calendar.clockOrigin,at).minuteOfDay
   const inHours=definition.hours.some(h=>minute>=h.startMinute&&minute<h.endMinute)
   const operator=actorState(world,entry.operatorId)
+  const life=world.places.serviceVersion===1?world.life?.actors.find(a=>a.actorId===entry.operatorId):null
   let reason=null
   if(entry.operatorId&&(!operator||operator.health<=0))reason='NO_OPERATOR'
   else if(!inHours)reason='OUTSIDE_HOURS'
+  else if(life?.interruption)reason=['combat','pursuit','flee'].includes(life.interruption.kind)?'PLACE_DANGER':'OPERATOR_BUSY'
+  else if(life?.intent?.kind==='rest'&&life.intent.phase==='interacting')reason='OPERATOR_RESTING'
+  else if(definition.kind==='shop'&&life&&!(life.intent?.kind==='work'&&life.intent.placeId===placeId&&life.intent.phase==='interacting'))reason='OPERATOR_AWAY'
   else if(entry.status==='away')reason='OPERATOR_AWAY'
   else if(entry.status==='resting')reason='OPERATOR_RESTING'
   else if(entry.status==='danger')reason='PLACE_DANGER'
   else if(entry.status==='unassessed'&&entry.operatorId)reason='PRESENCE_UNCONFIRMED'
   return {placeId,status:reason?'unavailable':'open',reason,open:!reason,operatorId:entry.operatorId,
     residentIds:[...entry.residentIds],reasonEventId:entry.reasonEventId,inHours,label:definition.label}
+}
+
+/** Physical presence is supplied by the live scene; transitions alone are journaled. */
+export function servicePresence(world,entry,{present,phase}) {
+  const life=world.life?.actors.find(a=>a.actorId===entry.operatorId)
+  if(phase!=='idle'||['combat','pursuit','flee'].includes(life?.interruption?.kind))return 'danger'
+  if(life?.interruption)return 'away'
+  if(life?.intent?.kind==='rest'&&life.intent.phase==='interacting')return 'resting'
+  if(life&&!(life.intent?.kind==='work'&&life.intent.placeId===entry.placeId&&life.intent.phase==='interacting'))return 'away'
+  return present?'available':'away'
 }
 /** Action availability is advisory; reducers still re-check each live request. */
 export function availablePlaceActions(world,actorId,placeId,context) {
