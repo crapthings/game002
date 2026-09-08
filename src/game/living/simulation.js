@@ -1,10 +1,11 @@
-import { createGameplay, createWorldSession, migrateWorldToV2, previewGameplayCombat, pursuitFor, tradeEligibility, servicePresence } from '../gameplay/index.js'
+import { createGameplay, createWorldSession, migrateWorldToV2, previewGameplayCombat, pursuitFor, tradeEligibility, servicePresence, meetingEligibility, dialogueTopics, dialogueAnswer } from '../gameplay/index.js'
 import { createLivingStateIndex } from './createLivingStateIndex.js'
 import { livingConfig, LIVING_NPCS, PRICES } from './config.js'
 import { distance, facingAngle, sweptContact } from './geometry.js'
 import { createClockOrigin, clockAt } from './clock.js'
 import { sceneActorDefinitions } from './actorRegistry.js'
 import { nextDailyActivity } from './dailySchedule.js'
+import { spokenAnswer } from './dialoguePresentation.js'
 const copy=v=>structuredClone(v)
 export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,save,space,notify=()=>{},effects=()=>{}}) {
   const config=livingConfig(legacy,world)
@@ -27,6 +28,7 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
   const actor=id=>indexed().actors.get(id)
   const routineDue=new Map()
   let servicesDue=0
+  let conversation=null,meetingSerial=0
   const fighter=id=>view.find(a=>a.id===id)
   const alive=id=>actor(id)?.health>0
   const near=(a,b,r=2)=>distance(space.point(a),space.point(b))<=r && Math.abs(space.point(a).y-space.point(b).y)<1.5 && (space.contactClear??space.clear)(space.point(a),space.point(b))
@@ -76,11 +78,50 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
     }
     servicesDue=clock+1000;return false
   }
+  function meetingContext(speakerId) {
+    return {at:clock,allowed:true,withinRange:near('player',speakerId),clear:space.clear(space.point('player'),space.point(speakerId)),
+      facing:Math.abs(facingAngle(space.point('player'),space.point(speakerId)))<=65,
+      meetingId:conversation?.id??'meeting-pending',proofId:`meeting-${serial+1}`}
+  }
+  function refreshConversation() {
+    if(!conversation)return
+    if(space.conversationOpen?.()===false){conversation=null;return}
+    const eligible=meetingEligibility(state,conversation.speakerId,'player',meetingContext(conversation.speakerId))
+    if(!eligible.available||clock-conversation.touchedAt>=30000) {
+      conversation=null;notify(eligible.available?'对方先去忙了，之后还可以再问。':eligible.reason)
+    }
+  }
+  function talk(kind,data) {
+    if(kind==='talk_end'){conversation=null;return}
+    if(!state.dialogue){notify('对方还在安顿，请稍等片刻。');return}
+    if(kind==='talk_start') {
+      refreshConversation()
+      if(!actor(data.targetId)){notify('请靠近想交谈的人。');return}
+      const eligible=meetingEligibility(state,data.targetId,'player',meetingContext(data.targetId))
+      if(!eligible.available){notify(eligible.reason);return}
+      if(conversation?.speakerId!==data.targetId)conversation={id:`meeting:${serial}:${++meetingSerial}`,speakerId:data.targetId,listenerId:'player',touchedAt:clock,lines:['你想问些什么？'],placeIds:[]}
+      conversation.touchedAt=clock
+      space.face(data.targetId,space.point('player'));return
+    }
+    refreshConversation()
+    if(!conversation||data.meetingId!==conversation.id){notify('MEETING_ENDED');return}
+    const current=conversation,context=meetingContext(current.speakerId),answer=dialogueAnswer(state,current.speakerId,'player',data.topicId,context)
+    if(!answer.ok){notify(answer.code);return}
+    current.touchedAt=clock
+    const knownPlaces=new Set([...(space.knownPlaceIds?.()??[]),...state.dialogue.addresses.filter(a=>a.listenerId==='player').map(a=>a.placeId)])
+    const commands=answer.kind==='places'?answer.placeIds.filter(id=>!knownPlaces.has(id)).map(placeId=>({kind:'tell_place',actorId:current.speakerId,targetId:'player',placeId})):
+      answer.kind==='news'&&!state.social.knowledge.some(k=>k.npcId==='player'&&k.factId===answer.factId&&(k.subjectId!==null||answer.subjectId===null))?[{kind:'share_news',actorId:current.speakerId,targetId:'player',factId:answer.factId}]:[]
+    const display=()=>{if(conversation?.id===current.id){current.lines=spokenAnswer(state,answer,Object.fromEntries(npcs().map(n=>[n.id,n.name])));current.placeIds=answer.placeIds??[]}}
+    if(!commands.length){display();return}
+    send('dialogue',commands[0],context,false,commands.slice(1).map(command=>({domain:'dialogue',command,context}))).then(result=>{if(result.ok)display()})
+  }
   function command(kind,data={}) {
     if(kind==='guard'){guardDesired=data.held;return}
+    if(kind==='talk_end'){conversation=null;return}
     if(busy||stopped||checkpointDepth)return
     const target=data.targetId
     if(!alive('player'))return
+    if(['talk_start','talk_topic'].includes(kind))return talk(kind,data)
     if(kind==='attack')return send('combat',{kind:'attack',actorId:'player'})
     if(kind==='mask')return send('village',{kind:'mask',actorId:'player'})
     if(kind==='use')return send('interaction',{kind:'use',actorId:'player',targetId:'player',lotId:data.lotId,quantity:1})
@@ -105,6 +146,7 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
   function update(dt) {
     if(busy||stopped||checkpointDepth)return
     remainder+=dt*1000;const elapsed=Math.floor(remainder);remainder-=elapsed;clock+=elapsed;view=previewGameplayCombat(state,clock)
+    refreshConversation()
     const hero=fighter('player')
     const index=indexed()
     if(!guardDesired && alive('player') && (hero.guardHeld||hero.mustRelease)) {send('combat',{kind:'guard',actorId:'player',held:false});return}
@@ -115,6 +157,7 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
       if(setup){send('places',{kind:'extend',actorId:'player',...setup},{geometryConfirmed:true},false,[{domain:'life',command:{kind:'initialize',actorId:'player'}}]);return}
     }
     if(state.life&&!state.places.serviceVersion){send('places',{kind:'enable_services',actorId:'player'});return}
+    if(state.places?.serviceVersion&&!state.dialogue){send('dialogue',{kind:'initialize',actorId:'player'});return}
     if(guardDesired && alive('player') && !hero.guardHeld&&!hero.mustRelease&&hero.phase==='idle'&&hero.stamina>=25000){send('combat',{kind:'guard',actorId:'player',held:true});return}
     for(const f of view) {
       if(f.phase!=='active')continue
@@ -211,6 +254,7 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
         if(f.phase==='idle')space.move(id,space.point('player'),dt,1.2)
         continue
       }
+      if(conversation?.speakerId===id){space.face(id,space.point('player'));continue}
       if(f.phase==='idle') {
         if(state.life) {
           const row=state.life.actors.find(a=>a.actorId===id)
@@ -244,6 +288,7 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
   return {update,command,checkpoint,release:()=>{guardDesired=false},
     canAdvance:()=>!busy&&!stopped&&!checkpointDepth,view:()=>view,state:()=>state,clock:()=>clock,
     calendar:()=>clockAt(state.calendar.clockOrigin,clock),tradeStatus,
+    conversation:()=>{refreshConversation();return conversation?{...copy(conversation),topics:dialogueTopics()}:null},
     busy:()=>busy||checkpointDepth>0,stopped:()=>stopped,config,
     close:async()=>{await checkpoint(true);return session.close()}}
 }

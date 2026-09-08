@@ -6,4 +6,8 @@ export const SERVICE_REASONS={
   PRESENCE_UNCONFIRMED:'请稍等掌柜准备营业。',TRADE_REFUSED:'掌柜记得你对他的冒犯，拒绝交易。',
   PLACE_NOT_REGISTERED:'这个场所尚未准备好。',SERVICE_NOT_IMPLEMENTED:'这里暂时没有这项服务。',
   MISSING_SERVICE_EVIDENCE:'交互条件已经变化，请重新靠近对方。',WRONG_SERVICE_PLACE:'请到相应的铺面办理。',
+  MEETING_ENDED:'这次交谈已经结束，请重新靠近对方。',NO_SAFE_MEETING:'正在交手，等安全后再谈。',
+  OFFICIAL_CASE_PENDING:'捕快正在处理与你有关的案件；药包纠纷可用交还赔偿处理。',
+  MISSING_MEETING_EVIDENCE:'请先与对方开始当面交谈。',SPEAKER_UNINFORMED:'对方并不知道这件事。',
+  UNKNOWN_TOPIC:'对方没有这个话题可谈。',ALREADY_KNOWN:'这条消息已经记下了。',
 }

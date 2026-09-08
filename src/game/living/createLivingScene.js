@@ -10,7 +10,7 @@ import { validateLiving } from './persistence.js'
 import { prepareCityLayout } from './prepareCityLayout.js'
 import { resolveRoleHomes } from './cityPlaces.js'
 import { createCityTravel } from './createCityTravel.js'
-import { CITY_NOTICE_TEXT, readCityNotice, learnPlace, placeClues, destinationDirection } from './placeClues.js'
+import { CITY_NOTICE_TEXT, readCityNotice, placeClues, destinationDirection } from './placeClues.js'
 import { clockAt } from './clock.js'
 import { sceneActorDefinitions, actorPlaceBinding, registeredPlaces } from './actorRegistry.js'
 import { createPresentationSelectors } from './presentationSelectors.js'
@@ -128,6 +128,8 @@ export function createLivingScene(scene,plan,world,player,progress,extras=()=>({
     simulation=createLivingSimulation({world:plan,legacy,saved:saved?.checkpoint,initialHour:progress.worldTime??7.5,space:{point,clear,contactClear,visible,move,
       placeSetup:()=>({definitions:registeredPlaces(simulation.state(),cityLayout),bindings:[...cityLayout.bindings,...simulation.state().registry.actors.filter(a=>a.body).map(a=>a.body.binding)]}),
       lifeSetup,atPlace,routine,
+      knownPlaceIds:()=>clues.map(c=>c.placeId),
+      conversationOpen:()=>store().panel,
       suspendRoutine:id=>{const intent=simulation.state().life?.actors.find(a=>a.actorId===id)?.intent;if(intent)travel.cancelTravel(intent.id)},
       relocationPending:()=>distance(spatial.stall,cityLayout.parcelSpot)>.1,
       face:(id,q)=>{point(id).heading=Math.atan2(q.x-point(id).x,q.z-point(id).z)},
@@ -198,12 +200,15 @@ export function createLivingScene(scene,plan,world,player,progress,extras=()=>({
     const p=point('player'),seenPlaceIds=registeredPlaces(s,cityLayout).filter(place=>distance(p,place.approach)<=12&&Math.abs(facingAngle(p,place.approach))<=60&&clear(p,place.approach)).map(place=>place.id)
     const seenActors=npcDefinitions().filter(n=>visible('player',n.id)).map(n=>({id:n.id,point:point(n.id)}))
     const temporary=s.interactions.inventory.lots.some(l=>l.id==='medicine-parcel'&&l.holderId==='stall')?spatial.stall:null
-    const trade=simulation.tradeStatus(),presentation=presentWorld(s,{at:simulation.clock(),player:p,
-      knownPlaces:placeClues(cityLayout,clues,useNavigationStore.getState().fog,p,{},temporary),seenActors,seenPlaceIds,fighters:simulation.view(),targetId:selected,trade})
+    const addresses=(s.dialogue?.addresses??[]).filter(a=>a.listenerId==='player')
+    const allClues=[...clues,...addresses.map(a=>({placeId:a.placeId,source:a.eventId,at:a.at}))]
+    const trade=simulation.tradeStatus(),presentation=presentWorld(s,{at:simulation.clock(),
+      knownPlaces:placeClues({...cityLayout,places:registeredPlaces(s,cityLayout)},allClues,useNavigationStore.getState().fog,p,{},temporary,addresses),seenActors,seenPlaceIds,fighters:simulation.view(),targetId:selected,trade})
     const places=presentation.places
     const tracked=places.find(place=>place.id===store().trackedPlaceId)
     store().publish({state:s,fighters:simulation.view(),hero,targetId:selected,names:Object.fromEntries(npcDefinitions().map(n=>[n.id,n.name])),
       ...presentation,tracked:tracked?{...tracked,direction:destinationDirection(p,tracked)}:null,noticeDistance:Math.round(distance(p,cityLayout.notice)),calendar:simulation.calendar(),trade,
+      conversation:simulation.conversation(),
       bagCount:s.interactions.inventory.lots.filter(l=>l.holderId==='player-bag').reduce((n,l)=>n+l.quantity,0),clock:simulation.clock(),
       wanted:['guard','guard-2'].map(id=>wantedFor(s.crime,id,'player')).sort((a,b)=>b.level-a.level)[0],pursuit:['guard','guard-2'].map(id=>pursuitFor(s,id,'player',simulation.clock())).sort((a,b)=>({follow:2,search:1,idle:0}[b.mode]-{follow:2,search:1,idle:0}[a.mode]))[0],
       busy:simulation.busy(),stopped:simulation.stopped(),legacyEvents:legacy?.events??[]})
@@ -252,9 +257,11 @@ export function createLivingScene(scene,plan,world,player,progress,extras=()=>({
         if(kind==='interact') {
           if(selected==='stall')simulation.command('take')
           else if(selected==='notice')remember(readCityNotice(clues,simulation.clock()),CITY_NOTICE_TEXT)
-          else if(selected)store().open()
+          else if(selected){store().open();if(alive(selected))simulation.command('talk_start',{targetId:selected})}
         } else if(kind==='ask_medicine'&&selected==='resident-1'&&alive('resident-1')) {
-          remember(learnPlace(clues,'place.medicine','conversation:resident-1',simulation.clock()),'柳娘：去商街的陈记药铺买一份止血药，回来找我就好。药铺位置已记在地图上。')
+          simulation.command('talk_start',{targetId:'resident-1'})
+          const meeting=simulation.conversation()
+          if(meeting?.speakerId==='resident-1')simulation.command('talk_topic',{meetingId:meeting.id,topicId:'hours'})
         } else simulation.command(kind,{...data,...(kind==='threaten'?{targetId:selected}:{})})
       }
       prepareHomes();simulation.update(dt);travel.releaseInactive(simulation.clock(),alive);draw(dt)

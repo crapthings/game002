@@ -12,9 +12,13 @@ export function learnPlace(previous,placeId,source,at) {
   return [...previous,{placeId,source,at}]
 }
 /** All markers are fixed places. This projection never receives NPC positions. */
-export function placeClues(layout,known,fog,player,presence={},temporaryStall=null) {
+export function placeClues(layout,known,fog,player,presence={},temporaryStall=null,addresses=[]) {
   const result=[]
-  for(const [id,actorId] of destinations) {
+  const directory=[...destinations,...addresses.filter(a=>!destinations.some(([id])=>id===a.placeId)).map(a=>[a.placeId,a.speakerId])]
+  const shown=new Set()
+  for(const [id,actorId] of directory) {
+    if(shown.has(id))continue
+    shown.add(id)
     const place=layout.places.find(p=>p.id===id),explored=isExplored(fog,place.approach.x,place.approach.z)
     const clue=known.find(c=>c.placeId===id)
     if(!explored&&!clue)continue
