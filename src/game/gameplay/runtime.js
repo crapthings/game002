@@ -9,6 +9,7 @@ import { executeOpportunities,applyOpportunityConsequences } from './opportuniti
 import { executeRelations } from './relations.js'
 import { executeExchange } from './exchange.js'
 import { executeEconomy } from './economy.js'
+import { applyLaborInterruptions } from './employment.js'
 import { executeVillage } from './village.js'
 import { InventoryError } from './inventory.js'
 import { executeInteraction } from './interactions.js'
@@ -272,6 +273,9 @@ export function executeGameplay(state,catalog,request) {
       const consequences=applyOpportunityConsequences(next,events.slice(firstEvent),step.context.at,commandId)
       events.push(...consequences)
       for(const event of consequences)events.push(...registerFact(next,event,`${commandId}:${event.id}`))
+      const laborEvents=applyLaborInterruptions(next,events.slice(firstEvent),step.context.at,commandId)
+      events.push(...laborEvents)
+      for(const event of laborEvents)events.push(...registerFact(next,event,`${commandId}:${event.id}`))
       if (next.equipment) refreshEquipment(next.equipment,next.combat,next.interactions,catalog)
       next.at = step.context.at
     }

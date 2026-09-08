@@ -3,6 +3,7 @@ import { availableQuantity,requireAvailableLot } from './reservations.js'
 import { projectedNeeds } from './life.js'
 import { previewCombat } from './combat.js'
 import { ECONOMY_V1 as rules } from './content/economyV1.js'
+import { executeEmployment } from './employment.js'
 const check=(ok,code)=>{if(!ok)throw new InventoryError(code)}
 export function shopStock(world,itemType) {
   const merchant=world.interactions.actors.find(a=>a.id===rules.shopkeeperId)
@@ -24,6 +25,7 @@ export function shortageProposal(world,at) {
 export function executeEconomy(world,catalog,command,context) {
   check(world.version===2&&context.allowed===true,'INTERACTION_DENIED')
   check(Number.isSafeInteger(context.at)&&context.at>=0,'INVALID_TIME')
+  if(['enable_employment','labor','pay_wage','wage_due'].includes(command.kind))return executeEmployment(world,command,context)
   if(command.kind==='initialize') {
     check(!world.economy&&world.life&&world.opportunities,'ECONOMY_ALREADY_INITIALIZED')
     const event={id:'economy:1',kind:'economy_initialized',actorId:command.actorId,targetId:null,at:context.at,cause:null,requestId:command.id}

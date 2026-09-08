@@ -84,6 +84,7 @@ export type GameplayStep = (
   | { domain:'relations';command:{kind:'initialize';actorId:string}|{kind:'react';actorId:string;factId:string};context:Policy }
   | { domain:'exchange';command:{kind:'enable';actorId:string}|{kind:'leave';actorId:string;relayId:string}|{kind:'share';actorId:string;targetId:string;factId:string};context:Policy & Partial<MeetingContext> & {separated?:boolean;solicited?:boolean} }
   | { domain:'economy';command:{kind:'initialize';actorId:string}|{kind:'eat';actorId:string;lotId:string}|{kind:'notice_shortage';actorId:string}|{kind:'food_unavailable';actorId:string;reason:string};context:Policy & {present?:boolean;placeId?:string;proofId?:string} }
+  | { domain:'economy';command:{kind:'enable_employment';actorId:string}|{kind:'labor'|'wage_due';actorId:string;employmentId:string}|{kind:'pay_wage';actorId:string;employmentId:string;occurrence:number};context:Policy & {present?:boolean;working?:boolean;proofId?:string} }
   | { domain:'dialogue'; command:{kind:'initialize';actorId:string}; context:Policy }
   | { domain:'dialogue'; command:{kind:'tell_place';actorId:string;targetId:string;placeId:string}|{kind:'share_news';actorId:string;targetId:string;factId:string}; context:MeetingContext }
   | { domain:'opportunities'; command:OpportunityCommand; context:Policy & Partial<MeetingContext> & {identified?:boolean;deadActorId?:string;present?:boolean;placeId?:string} }
@@ -144,7 +145,7 @@ export interface GameplayState {
   life?: {version:1;actors:LifeActor[];events:LifeEvent[]};
   dialogue?: {version:1;addresses:KnownAddress[];events:DialogueEvent[]};
   relations?:{version:1;exchangeVersion?:1;relays?:RelationRelay[];applications:{actorId:string;factId:string;eventId:string}[];events:RelationEvent[]};
-  economy?:{version:1;needs:ProcurementNeed[];foodNeeds:{actorId:string;reason:string;sourceEventId:string;resolvedEventId:string|null}[];events:EconomyEvent[]};
+  economy?:{version:1;employmentVersion?:1;employments?:Employment[];needs:ProcurementNeed[];foodNeeds:{actorId:string;reason:string;sourceEventId:string;resolvedEventId:string|null}[];events:EconomyEvent[]};
   opportunities?:{version:1;autonomyVersion?:1;needs:{id:string;templateId:string;issuerId:string;targetActorId:string;source:string}[];entries:Opportunity[];events:OpportunityEvent[]};
 }
 export interface Opportunity {
@@ -160,7 +161,8 @@ export interface Opportunity {
 }
 export interface CargoLot {lotId:string;sourceLotId:string;itemType:string;quantity:number;reservationId:string}
 export interface ProcurementNeed {id:string;templateId:'merchant-restock-v1';issuerId:string;targetActorId:string;sourceEventId:string;key:string;lines:{itemType:'medicine'|'ration';quantity:number}[];at:number}
-export interface EconomyEvent {id:string;kind:string;actorId:string;targetId:string|null;at:number;cause:string|null;requestId:string;sourceLotId?:string;itemType?:string;quantity?:number;hungerRelief?:number;placeId?:string;proofId?:string;reason?:string;rootCauseId?:string;lines?:{itemType:string;quantity:number}[]}
+export interface EconomyEvent {id:string;kind:string;actorId:string;targetId:string|null;at:number;cause:string|null;requestId:string;sourceLotId?:string;itemType?:string;quantity?:number;hungerRelief?:number;placeId?:string;proofId?:string|null;reason?:string;rootCauseId?:string;lines?:{itemType:string;quantity:number}[];employmentId?:string;creditedMs?:number;workedMs?:number;earnedHours?:number;unpaidHours?:number;occurrenceId?:string;occurrence?:number;amount?:number}
+export interface Employment {id:string;workerId:string;employerId:string;placeId:string;wagePerHour:number;sourceEventId:string;lastWorkEventId:string;workedMs:number;activeSince:number|null;lastPaidOccurrence:number;unpaidNoticedHours:number}
 export function shopStock(state:GameplayState,itemType:string):number;
 export function shortageProposal(state:GameplayState,at:number):null|{key:string;sourceEventId:string;lines:{itemType:string;quantity:number}[]};
 export type OpportunityCommand =

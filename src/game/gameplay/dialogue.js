@@ -45,7 +45,13 @@ export function dialogueAnswer(world,speakerId,listenerId,topicId,context) {
     return known?{ok:true,kind:'news',factId:known.factId,subjectId:known.subjectId,evidenceId:known.evidenceId}:
       {ok:true,kind:'text',text:'我没有亲眼见到或听人讲过什么可告诉你的新事。'}
   }
-  if(topicId==='work'||topicId==='requests')return {ok:true,kind:'requests',opportunityIds:(world.opportunities?.entries??[]).filter(r=>r.issuerId===speakerId&&(r.knownBy.includes(listenerId)||r.status==='offered'&&r.deadlineAt>context.at&&!r.declinedBy.includes(listenerId))).map(r=>r.id)}
+  if(topicId==='work'||topicId==='requests') {
+    const job=topicId==='work'?world.economy?.employments?.find(j=>j.workerId===speakerId):null
+    const place=job?world.places.definitions.find(p=>p.id===job.placeId):null
+    const unpaid=job?Math.floor(job.workedMs/60000)-job.lastPaidOccurrence:0
+    return {ok:true,kind:'requests',...(job?{text:`我在${place?.label??'商区'}替陈掌柜搬运，每实际工作一小时${job.wagePerHour}文。${unpaid?`还有${unpaid}小时的工钱待结算。`:'已到期的工钱都结清了。'}`}:{}) ,
+      opportunityIds:(world.opportunities?.entries??[]).filter(r=>r.issuerId===speakerId&&(r.knownBy.includes(listenerId)||r.status==='offered'&&r.deadlineAt>context.at&&!r.declinedBy.includes(listenerId))).map(r=>r.id)}
+  }
   return {ok:false,code:'UNKNOWN_TOPIC'}
 }
 export function executeDialogue(world,command,context) {

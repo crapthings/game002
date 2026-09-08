@@ -11,6 +11,7 @@ import { personalOpportunity,sameKnownProgress } from '../gameplay/opportunityKn
 import { relationFor } from '../gameplay/relations.js'
 import { createSocialController } from './socialController.js'
 import { createEconomyController } from './economyController.js'
+import { createPayrollController } from './payrollController.js'
 const copy=v=>structuredClone(v)
 export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,save,space,notify=()=>{},effects=()=>{}}) {
   const config=livingConfig(legacy,world)
@@ -50,6 +51,7 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
     face:space.face,send,talkingTo:()=>conversation?.speakerId})
   const economyController=createEconomyController({state:()=>state,clock:()=>clock,atPlace:space.atPlace,contact:near,point:space.point,
     face:space.face,tradeContext,send,talkingTo:()=>conversation?.speakerId})
+  const payrollController=createPayrollController({state:()=>state,clock:()=>clock,atPlace:space.atPlace,send,talkingTo:()=>conversation?.speakerId})
   async function send(domain,command,extra={},observe=false,continuation=[]) {
     if(busy||stopped)return {ok:false,code:'BUSY'}
     busy=true
@@ -226,6 +228,7 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
     if(state.opportunities?.autonomyVersion&&!state.relations){send('relations',{kind:'initialize',actorId:'player'});return}
     if(state.relations&&!state.relations.exchangeVersion){send('exchange',{kind:'enable',actorId:'player'});return}
     if(state.relations?.exchangeVersion&&!state.economy){send('economy',{kind:'initialize',actorId:'player'});return}
+    if(state.economy&&!state.economy.employmentVersion){send('economy',{kind:'enable_employment',actorId:'player'});return}
     if(state.economy&&!state.registry.actors.some(a=>a.actorId==='supplier-1')) {
       const body=space.supplierSetup?.()
       if(body){send('registry',{kind:'arrive',actorId:'supplier-1',templateId:'supplier-1'},{geometryConfirmed:true,proofId:'supplier-site-confirmed',body});return}
@@ -238,6 +241,7 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
     }
     if(refreshServices())return
     if(socialController.closeSeparated())return
+    if(payrollController.update())return
     for(const npc of npcs()) {
       const id=npc.id,f=fighter(id)
       if(!alive(id))continue

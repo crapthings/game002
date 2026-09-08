@@ -2,6 +2,7 @@ export const eventWords={
   relations_initialized:'记下亲友与邻里',attitude_changed:'心中态度改变',
   exchange_enabled:'开始邻里传话',news_exchanged:'当面交流消息',exchange_meeting_ended:'相互告辞',
   economy_initialized:'登记生计与供货',arrived:'外来人物入城',ate_food:'吃下干粮',food_needed:'尚未吃上饭',stock_shortage_noticed:'发现铺面缺货',restock_need:'新一轮补货需求',cargo_picked_up:'付货款并取货',stock_delivered:'货物运抵药铺',cargo_returned:'交回未送达的货物',
+  employment_agreed:'约定搬运工作',employment_unavailable:'工作暂时空缺',labor_started:'到岗开始做工',labor_accrued:'记下实际工时',labor_paused:'暂停做工',wage_paid:'支付一小时工钱',wage_payment_due:'工钱暂未付清',
   relocate_pickup:'物主搬取药包',relocate_deliver:'物主搬回新摊位',attack_started:'出招',guard_started:'招架',guard_released:'松手回气',guard_exhausted:'气力耗尽',guard_broken:'破防',damaged:'受伤',parried:'挡住攻击',died:'死亡',take:'拿走药包',settle:'交还赔偿',return:'送回药包',aid:'救助',reward:'回礼',mask:'改变遮面',buy:'购买',sell:'出售',use:'使用',equip:'装备',unequip:'卸下',threatened:'威胁',robbed:'被迫交钱',loot_item:'搜刮物品',loot_money:'搜刮铜钱',case_assessed:'受理案件',witness:'目击',report:'当面传话',relationship:'关系变化',sight:'认出行踪',lost:'失去视线',
   life_initialized:'开始日常生活',activity_changed:'调整活动',activity_arrived:'抵达场所',activity_interrupted:'中断日常',activity_resumed:'恢复日常',places_registered:'登记场所',places_extended:'登记住处',place_services_enabled:'开设场所服务',place_status_changed:'接待状态变化',
   dialogue_initialized:'准备交谈',address_told:'当面告知地址',news_told:'当面转述消息',
