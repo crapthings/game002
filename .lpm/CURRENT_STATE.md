@@ -2,7 +2,7 @@
 
 用户要求取消 A/B 等待与分工，全部 29 张卡片由当前 Goal 连续完成。Goal active；未设置 token 预算。已核对 origin/core 仍为 3027b81，工作分支 feature/b-combat-rules，计划提交 b8c87b1。
 
-首批实现：cityPlaces.js 按实际建筑/道路解析七个场所候选，明确候选尚待几何确认；cityRoles.js 保持原七名 NPC 的稳定身份绑定；cityRouteGraph.js 分割道路交点、共线连接、限制河道/城墙并输出局部航点。未接入当前角色落位，不修改旧药包定义或存档。P0-01 已编写并源码审阅，P0-02 正在接导航数据独立缓存与 Worker。根规则仍不运行测试/build/lint；没有新运行证据。下一步读取 chunk 生成/碰撞数据路径，抽取可供显示与导航共用的几何规则。
+P0 四张卡已完成代码与源码审阅，实际运行仍待授权，详见 [P0 实现记录](../docs/world-ledger/next/P0-IMPLEMENTATION.md)。地点/道路图提交 12e5a20，独立导航缓存提交 b3f9461；场景已接七人分散落位、原事务链跨区行走、物主实际搬药、固定地点地图与便笺。新档 living v2 / document schema 4；旧 gameplay 配置与重放结果保留。根规则仍不运行测试/build/lint，没有新的实机场景或 FPS 证据。下一步 12-A：先形成旧规则冻结、迁移结构与映射说明，再接统一日历和生活领域；整个 Goal 保持 active。
 
 ## 2026-09-08 — B 同步 A 的 core，形成下一阶段执行计划
 

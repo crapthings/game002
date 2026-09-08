@@ -5,7 +5,7 @@ import { distance, facingAngle, sweptContact } from './geometry.js'
 const copy=v=>structuredClone(v)
 export function createLivingSimulation({world,legacy=null,saved,save,space,notify=()=>{},effects=()=>{}}) {
   const config=livingConfig(legacy,world),session=createWorldSession(config,{saved,save})
-  let state=session.snapshot().gameplay,clock=session.status().simulationAt,busy=false,stopped=false,guardDesired=false
+  let state=session.snapshot().gameplay,clock=session.status().simulationAt,busy=false,stopped=false,guardDesired=false,checkpointDepth=0
   const stateIndex=createLivingStateIndex(config),indexed=()=>stateIndex(state)
   let remainder=0
   let serial=Math.max(state.revision,...state.journal.map(r=>/^live-\d+$/.test(r.id)?Number(r.id.slice(5)):0)),sweep=new Map(),view=previewGameplayCombat(state,clock)
@@ -13,7 +13,7 @@ export function createLivingSimulation({world,legacy=null,saved,save,space,notif
   const actor=id=>indexed().actors.get(id)
   const fighter=id=>view.find(a=>a.id===id)
   const alive=id=>actor(id)?.health>0
-  const near=(a,b,r=2)=>distance(space.point(a),space.point(b))<=r && Math.abs(space.point(a).y-space.point(b).y)<1.5 && space.clear(space.point(a),space.point(b))
+  const near=(a,b,r=2)=>distance(space.point(a),space.point(b))<=r && Math.abs(space.point(a).y-space.point(b).y)<1.5 && (space.contactClear??space.clear)(space.point(a),space.point(b))
   const sees=(a,b,identify=false)=>alive(a)&&alive(b)&&space.visible(a,b,identify)&&!(identify&&b==='player'&&state.village.masked)
   const observers=(actorId,targetId=null)=>LIVING_NPCS.filter(n=>n.id!==actorId&&(sees(n.id,actorId)||n.id===targetId)).map(n=>({npcId:n.id,identified:sees(n.id,actorId,true),position:copy(space.point(actorId)),proofId:`sight-${serial+1}-${n.id}`}))
   async function send(domain,command,extra={},observe=false) {
@@ -33,7 +33,7 @@ export function createLivingSimulation({world,legacy=null,saved,save,space,notif
   }
   function command(kind,data={}) {
     if(kind==='guard'){guardDesired=data.held;return}
-    if(busy||stopped)return
+    if(busy||stopped||checkpointDepth)return
     const target=data.targetId
     if(!alive('player'))return
     if(kind==='attack')return send('combat',{kind:'attack',actorId:'player'})
@@ -58,7 +58,7 @@ export function createLivingSimulation({world,legacy=null,saved,save,space,notif
   }
   // Priorities: release, active hits, evidence delivery/assessment, NPC goals.
   function update(dt) {
-    if(busy||stopped)return
+    if(busy||stopped||checkpointDepth)return
     remainder+=dt*1000;const elapsed=Math.floor(remainder);remainder-=elapsed;clock+=elapsed;view=previewGameplayCombat(state,clock)
     const hero=fighter('player')
     const index=indexed()
@@ -129,6 +129,13 @@ export function createLivingSimulation({world,legacy=null,saved,save,space,notif
         if((threat?.reaction==='flee'||attack)&&f.phase==='idle'){const source=knowledge.lastKnownPosition;if(source)space.flee(id,source.position,dt);continue}
       }
       const parcel=index.lots.get('medicine-parcel')
+      if(id==='merchant'&&space.relocationPending?.()&&['stall','merchant-bag'].includes(parcel.holderId)) {
+        const carrying=parcel.holderId==='merchant-bag',destination=carrying?'relocation':'stall'
+        if(near(id,destination)) {send('village',{kind:carrying?'relocate_deliver':'relocate_pickup',actorId:id},
+          {reachable:true,position:copy(space.point(destination)),proofId:`relocate-${serial+1}`});return}
+        if(f.phase==='idle')space.move(id,space.point(destination),dt,1.1)
+        continue
+      }
       if(id==='guard'&&parcel.holderId==='guard-bag') {
         if(near(id,'stall')){send('village',{kind:'return',actorId:id});return}
         if(f.phase==='idle')space.move(id,space.point('stall'),dt,1.1)
@@ -145,6 +152,8 @@ export function createLivingSimulation({world,legacy=null,saved,save,space,notif
   }
   async function checkpoint(releaseInput=false) {
     if(releaseInput)guardDesired=false
+    checkpointDepth++
+    try {
     // In-flight commits finish before release and the final clock-only save.
     while(busy)await new Promise(resolve=>setTimeout(resolve,5))
     const hero=previewGameplayCombat(state,clock).find(f=>f.id==='player')
@@ -152,9 +161,10 @@ export function createLivingSimulation({world,legacy=null,saved,save,space,notif
     const result=await session.checkpoint(clock)
     if(!result.ok){stopped=true;notify(result.code)}
     return result
+    } finally {checkpointDepth--}
   }
   return {update,command,checkpoint,release:()=>{guardDesired=false},
-    canAdvance:()=>!busy&&!stopped,view:()=>view,state:()=>state,clock:()=>clock,
-    busy:()=>busy,stopped:()=>stopped,config,
+    canAdvance:()=>!busy&&!stopped&&!checkpointDepth,view:()=>view,state:()=>state,clock:()=>clock,
+    busy:()=>busy||checkpointDepth>0,stopped:()=>stopped,config,
     close:async()=>{await checkpoint(true);return session.close()}}
 }

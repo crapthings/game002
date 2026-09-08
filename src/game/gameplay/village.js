@@ -11,7 +11,7 @@ export function executeVillage(world,catalog,command,context) {
   check(s && s.events.length<4096,'HISTORY_FULL')
   check(context.allowed===true,'INTERACTION_DENIED')
   check(Number.isSafeInteger(context.at)&&context.at>=0&&Number.isSafeInteger(context.at+100000),'INVALID_TIME')
-  check(['take','settle','return','aid','reward','mask'].includes(command.kind),'INVALID_COMMAND')
+  check(['take','settle','return','aid','reward','mask','relocate_pickup','relocate_deliver'].includes(command.kind),'INVALID_COMMAND')
   const actor=actors.find(a=>a.id===command.actorId)
   check(actor?.health>0,'ACTOR_DEAD')
   const event={id:`village:${s.events.length+1}`,kind:command.kind,at:context.at,
@@ -20,6 +20,23 @@ export function executeVillage(world,catalog,command,context) {
   const parcel=inventory.lots.find(l=>l.id==='medicine-parcel')
   if(command.kind==='mask') {
     check(actor.id==='player','INVALID_ACTOR'); s.masked=!s.masked; event.masked=s.masked
+  } else if(command.kind==='relocate_pickup'||command.kind==='relocate_deliver') {
+    const operationId='city-parcel-layout-v1'
+    const position=context.position
+    check(actor.id==='merchant'&&parcel?.ownerId===actor.id,'INVALID_ACTOR')
+    check(context.reachable===true&&typeof context.proofId==='string'&&context.proofId.length>0,'MISSING_CONTACT')
+    check(position&&['x','y','z'].every(k=>Number.isFinite(position[k])&&Math.abs(position[k])<=(k==='y'?1024:256)),'INVALID_POSITION')
+    check(!s.events.some(e=>e.kind==='relocate_deliver'&&e.operationId===operationId),'ALREADY_RELOCATED')
+    if(command.kind==='relocate_pickup') {
+      check(parcel.holderId==='stall'&&!s.events.some(e=>e.kind==='relocate_pickup'&&e.operationId===operationId),'NOT_AVAILABLE')
+      world.interactions.inventory=transferLot(inventory,catalog,{lotId:parcel.id,quantity:1,toHolderId:actor.containerId})
+    } else {
+      const source=s.events.find(e=>e.kind==='relocate_pickup'&&e.operationId===operationId)
+      check(source&&parcel.holderId===actor.containerId,'NOT_HELD')
+      world.interactions.inventory=transferLot(inventory,catalog,{lotId:parcel.id,quantity:1,toHolderId:'stall'})
+      event.cause=source.id
+    }
+    event.targetId='merchant';event.operationId=operationId;event.position=clone(position);event.proofId=context.proofId
   } else if(command.kind==='take') {
     check(actor.id==='player' && parcel?.holderId==='stall','NOT_AVAILABLE')
     world.interactions.inventory=transferLot(inventory,catalog,{lotId:parcel.id,quantity:1,toHolderId:player.containerId})

@@ -6,11 +6,13 @@ import MapCanvas from './MapCanvas.jsx'
 import { useTeleportStore } from '../../stores/useTeleportStore.js'
 import { insideWorld } from '../../game/world/worldConfig.js'
 import { useDebugStore } from '../../stores/useDebugStore.js'
+import { useLivingStore } from '../../stores/useLivingStore.js'
 
 const buttonClass = 'rounded-lg border border-stone-500/30 bg-stone-900 px-3 py-2 text-sm text-stone-200 hover:bg-stone-800 focus-visible:outline-2 focus-visible:outline-emerald-300'
 
 export default function WorldMap() {
   const navigation = useNavigationStore()
+  const places=useLivingStore(state=>state.view?.places)
   const teleportMode = useDebugStore(state => state.teleportMode)
   const teleport = useTeleportStore()
   const revealMap = useDebugStore(state => state.revealMap)
@@ -80,6 +82,10 @@ export default function WorldMap() {
           {teleport.message || '瞬移模式已开启：点击地图选择落点，拖动仍可平移。'}
           {teleport.request && <><progress className="ml-3 h-2 w-28 accent-emerald-300" max="100" value={teleport.progress} aria-label="落点准备进度" /><button type="button" className="ml-3 underline" onClick={() => teleport.finish('已取消瞬移。')}>取消</button></>}
         </div>}
+        {!!places?.length&&<nav aria-label="已知地点" className="flex flex-wrap gap-2 border-t border-stone-500/20 px-4 py-2">
+          {places.map(place=><button key={place.id} className={buttonClass} onClick={()=>{setCenter(place.point);setSpan(160);useLivingStore.getState().trackPlace(place.id)}}>{place.label} · {place.explored?'到访过':'已获知'}</button>)}
+          <p className="w-full text-xs text-stone-400">空心点为告知的地址，周围仍待探索；人物可能正在外出办事。</p>
+        </nav>}
         <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-stone-500/20 px-4 py-3 text-xs text-stone-400">
           <span>{revealMap ? '开发调试：地图全显 · 真实探索记录不变' : `深黑：未探索 · 暗色：已探索 · 当前视域 ${Math.round(navigation.vision.radius)} m`}</span>
           <span className="font-mono tabular-nums">X {navigation.position.x.toFixed(1)} / Z {navigation.position.z.toFixed(1)}</span>

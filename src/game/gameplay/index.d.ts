@@ -70,6 +70,8 @@ export interface InteractionCommand {
 }
 export type GameplayStep = (
   | { domain: 'village'; command: { kind: 'take' | 'settle' | 'return' | 'aid' | 'reward' | 'mask'; actorId: string; lotId?: string }; context: Policy & { identified?: boolean } }
+  | { domain: 'village'; command: { kind: 'relocate_pickup' | 'relocate_deliver'; actorId: 'merchant' };
+      context: Policy & { reachable: true; position: WorldPoint; proofId: string } }
   | { domain: 'pursuit'; command: { kind: 'sight'; actorId: string; targetId: string };
       context: Policy & { visible: boolean; identified: boolean; position: WorldPoint; proofId: string } }
   | { domain: 'pursuit'; command: { kind: 'lost'; actorId: string; targetId: string };
@@ -270,9 +272,10 @@ export function createWorldSession(config: GameplayConfig, options: {
 }): WorldSession;
 
 export interface VillageEvent {
-  id: string; kind: 'take'|'settle'|'return'|'aid'|'reward'|'mask'; at:number;
+  id: string; kind: 'take'|'settle'|'return'|'aid'|'reward'|'mask'|'relocate_pickup'|'relocate_deliver'; at:number;
   actorId:string; targetId:string|null; cause:string|null; requestId:string;
   amount?:number; masked?:boolean; subjectId?:string|null;
+  operationId?:string; position?:WorldPoint; proofId?:string;
 }
 export interface VillageState {
   version:1; masked:boolean; events:VillageEvent[]; settled:string[];
