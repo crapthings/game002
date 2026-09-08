@@ -30,6 +30,7 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
   const fighter=id=>view.find(a=>a.id===id)
   const alive=id=>actor(id)?.health>0
   const near=(a,b,r=2)=>distance(space.point(a),space.point(b))<=r && Math.abs(space.point(a).y-space.point(b).y)<1.5 && (space.contactClear??space.clear)(space.point(a),space.point(b))
+  const contact=(a,b)=>near(a,b)&&Math.abs(facingAngle(space.point(a),space.point(b)))<=65
   const sees=(a,b,identify=false)=>alive(a)&&alive(b)&&space.visible(a,b,identify)&&!(identify&&b==='player'&&state.village.masked)
   const observers=(actorId,targetId=null)=>npcs().filter(n=>n.id!==actorId&&(sees(n.id,actorId)||n.id===targetId)).map(n=>({npcId:n.id,identified:sees(n.id,actorId,true),position:copy(space.point(actorId)),proofId:`sight-${serial+1}-${n.id}`}))
   async function send(domain,command,extra={},observe=false,continuation=[]) {
@@ -84,16 +85,16 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
     if(kind==='mask')return send('village',{kind:'mask',actorId:'player'})
     if(kind==='use')return send('interaction',{kind:'use',actorId:'player',targetId:'player',lotId:data.lotId,quantity:1})
     if(kind==='equip'||kind==='unequip')return send('equipment',{kind,actorId:'player',slot:data.slot,...(kind==='equip'?{lotId:data.lotId}:{})})
-    if(kind==='take'&&near('player','stall'))return send('village',{kind:'take',actorId:'player'},{},true)
-    if(kind==='settle'&&near('player','guard'))return send('village',{kind:'settle',actorId:'player'})
-    if(kind==='aid'&&near('player','resident-1')){space.face('resident-1',space.point('player'));return send('village',{kind:'aid',actorId:'player',lotId:data.lotId},{identified:sees('resident-1','player',true)},true)}
+    if(kind==='take'&&contact('player','stall'))return send('village',{kind:'take',actorId:'player'},{},true)
+    if(kind==='settle'&&contact('player','guard'))return send('village',{kind:'settle',actorId:'player'})
+    if(kind==='aid'&&contact('player','resident-1')){space.face('resident-1',space.point('player'));return send('village',{kind:'aid',actorId:'player',lotId:data.lotId},{identified:sees('resident-1','player',true)},true)}
     if(['buy','sell'].includes(kind)) {
       const service=tradeContext('player','merchant'),eligible=tradeEligibility(state,'player','merchant',service)
       if(!eligible.available){notify(eligible.reason);return}
       const lot=indexed().lots.get(data.lotId)
       if(lot&&PRICES[lot.itemType])return send('interaction',{kind,actorId:'player',targetId:'merchant',lotId:lot.id,quantity:1},{unitPrice:PRICES[lot.itemType][kind==='buy'?0:1],service})
     }
-    if(target&&near('player',target)) {
+    if(target&&contact('player',target)) {
       if(kind==='threaten')return send('robbery',{kind,actorId:'player',targetId:target,amount:20},
         {reachable:true,proofId:`threat-${serial+1}`,guardNearby:config.authorities.some(g=>g!==target&&sees(target,g)&&near(target,g,10)),escapeRoute:space.canEscape(target,'player')},true)
       if(kind==='loot_item'||kind==='loot_money')return send('property',{kind,actorId:'player',targetId:target,...(kind==='loot_item'?{lotId:data.lotId,quantity:1}:{amount:actor(target).wallet})},{reachable:true,proofId:`loot-${serial+1}`},true)

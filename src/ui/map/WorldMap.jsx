@@ -83,7 +83,7 @@ export default function WorldMap() {
           {teleport.request && <><progress className="ml-3 h-2 w-28 accent-emerald-300" max="100" value={teleport.progress} aria-label="落点准备进度" /><button type="button" className="ml-3 underline" onClick={() => teleport.finish('已取消瞬移。')}>取消</button></>}
         </div>}
         {!!places?.length&&<nav aria-label="已知地点" className="flex flex-wrap gap-2 border-t border-stone-500/20 px-4 py-2">
-          {places.map(place=><button key={place.id} className={buttonClass} onClick={()=>{setCenter(place.point);setSpan(160);useLivingStore.getState().trackPlace(place.id)}}>{place.label} · {place.explored?'到访过':'已获知'}</button>)}
+          {places.map(place=><button key={place.id} className={buttonClass} onClick={()=>{setCenter(place.point);setSpan(160);useLivingStore.getState().trackPlace(place.id)}}>{place.label} · {place.explored?'到访过':'已获知'}<span className="block text-xs text-stone-400">{place.presence}</span></button>)}
           <p className="w-full text-xs text-stone-400">空心点为告知的地址，周围仍待探索；人物可能正在外出办事。</p>
         </nav>}
         <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-stone-500/20 px-4 py-3 text-xs text-stone-400">

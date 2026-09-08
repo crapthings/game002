@@ -13,6 +13,7 @@ import { createCityTravel } from './createCityTravel.js'
 import { CITY_NOTICE_TEXT, readCityNotice, learnPlace, placeClues, destinationDirection } from './placeClues.js'
 import { clockAt } from './clock.js'
 import { sceneActorDefinitions, actorPlaceBinding, registeredPlaces } from './actorRegistry.js'
+import { createPresentationSelectors } from './presentationSelectors.js'
 import { LIVING_NPCS } from './config.js'
 import { distance,facingAngle } from './geometry.js'
 import { wantedFor,pursuitFor } from '../gameplay/index.js'
@@ -25,6 +26,7 @@ export function createLivingScene(scene,plan,world,player,progress,extras=()=>({
   let simulation=null,spatial=null,disposed=false,closing=false,retry=0,selected=null,lastSequence=-1
   let lastPublishedAt=-Infinity,lastPublishedState=null,lastPublishedBusy=null,lastPublishedStopped=null
   const models=new Map(),resources=[],flashes=new Map()
+  const presentWorld=createPresentationSelectors()
   let definitionsState=null,definitionsCache=LIVING_NPCS
   const npcDefinitions=()=>{const state=simulation?.state();if(state&&state!==definitionsState){definitionsState=state;definitionsCache=sceneActorDefinitions(state)}return definitionsCache}
   const canvas=scene.getEngine().getRenderingCanvas(),store=()=>useLivingStore.getState()
@@ -193,16 +195,15 @@ export function createLivingScene(scene,plan,world,player,progress,extras=()=>({
     lastPublishedAt=at;lastPublishedState=s;lastPublishedBusy=busy;lastPublishedStopped=stopped
     selectTarget()
     const hero=s.interactions.actors.find(a=>a.id==='player')
-    const p=point('player'),presence={}
-    for(const place of cityLayout.places)if(distance(p,place.approach)<=12&&Math.abs(facingAngle(p,place.approach))<=60&&clear(p,place.approach)) {
-      const binding=cityLayout.bindings.find(b=>b.idlePlaceId===place.id)
-      if(binding)presence[place.id]=visible('player',binding.actorId)?'已看到本人':'这里暂未看到本人'
-    }
+    const p=point('player'),seenPlaceIds=registeredPlaces(s,cityLayout).filter(place=>distance(p,place.approach)<=12&&Math.abs(facingAngle(p,place.approach))<=60&&clear(p,place.approach)).map(place=>place.id)
+    const seenActors=npcDefinitions().filter(n=>visible('player',n.id)).map(n=>({id:n.id,point:point(n.id)}))
     const temporary=s.interactions.inventory.lots.some(l=>l.id==='medicine-parcel'&&l.holderId==='stall')?spatial.stall:null
-    const places=placeClues(cityLayout,clues,useNavigationStore.getState().fog,p,presence,temporary)
+    const trade=simulation.tradeStatus(),presentation=presentWorld(s,{at:simulation.clock(),player:p,
+      knownPlaces:placeClues(cityLayout,clues,useNavigationStore.getState().fog,p,{},temporary),seenActors,seenPlaceIds,fighters:simulation.view(),targetId:selected,trade})
+    const places=presentation.places
     const tracked=places.find(place=>place.id===store().trackedPlaceId)
     store().publish({state:s,fighters:simulation.view(),hero,targetId:selected,names:Object.fromEntries(npcDefinitions().map(n=>[n.id,n.name])),
-      places,tracked:tracked?{...tracked,direction:destinationDirection(p,tracked)}:null,noticeDistance:Math.round(distance(p,cityLayout.notice)),calendar:simulation.calendar(),trade:simulation.tradeStatus(),
+      ...presentation,tracked:tracked?{...tracked,direction:destinationDirection(p,tracked)}:null,noticeDistance:Math.round(distance(p,cityLayout.notice)),calendar:simulation.calendar(),trade,
       bagCount:s.interactions.inventory.lots.filter(l=>l.holderId==='player-bag').reduce((n,l)=>n+l.quantity,0),clock:simulation.clock(),
       wanted:['guard','guard-2'].map(id=>wantedFor(s.crime,id,'player')).sort((a,b)=>b.level-a.level)[0],pursuit:['guard','guard-2'].map(id=>pursuitFor(s,id,'player',simulation.clock())).sort((a,b)=>({follow:2,search:1,idle:0}[b.mode]-{follow:2,search:1,idle:0}[a.mode]))[0],
       busy:simulation.busy(),stopped:simulation.stopped(),legacyEvents:legacy?.events??[]})

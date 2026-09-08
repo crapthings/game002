@@ -1,9 +1,11 @@
 # Living Project Manual
 
-先读仓库根目录 AGENTS.md。本说明书为用户 B 新增的协作草案，不改变已有规则。
+先读仓库根目录 AGENTS.md。当前持续 Goal 统一推进全部开发；旧 A/B 文件名仅为保留历史链接，不再表示等待另一方。
 
 - [活世界下一阶段：城内分布、12 项能力与 29 张任务卡](../docs/world-ledger/next/README.md)
 - [持续 Goal 执行记录](../docs/world-ledger/next/A-START.md)
+- [生活、营业与现场表达接入](../docs/world-ledger/next/LIFE-IMPLEMENTATION.md)
+- [旧规则冻结与版本映射](../docs/world-ledger/next/VERSIONING.md)
 - [B接手场景接入与验证边界](../docs/world-ledger/SCENE-INTEGRATION.md)
 - [当前状态](CURRENT_STATE.md)
 - [渲染、GPU 骨骼与 Worker 性能优化](../docs/performance.md)
