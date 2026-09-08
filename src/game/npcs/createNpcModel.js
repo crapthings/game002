@@ -5,6 +5,7 @@ import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder'
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial'
 import { Color3 } from '@babylonjs/core/Maths/math.color'
 import { npcDefinitions } from './catalog.js'
+import { createRigidSkin } from '../assets/characters/createRigidSkin.js'
 export function createNpcModel(scene,id) {
   if(id==='npc.porter')return createPorterModel(scene)
   const a=npcDefinitions[id],root=new TransformNode(id,scene),materials=[]
@@ -29,6 +30,31 @@ export function createNpcModel(scene,id) {
     for(const x of [-.86,.86]) {part(.025,.58,.025,x,1.1,0,dark);part(.4,.35,.4,x,.65,0,straw)}
   }
   const blade=part(.06,.8,.04,0,-.9,0,mat('#b9ccd0'),arms[1]);blade.setEnabled(false)
+  const skinMesh=createRigidSkin(root,{exclude:[blade]})
   let phase=0
-  return {root,setEquipment(weapon,armor){blade.setEnabled(!!weapon);cloth.diffuseColor=Color3.FromHexString(armor?'#596473':a.color)},update(dt,moving=false){phase+=dt*(moving?7:1.5);legs.forEach((n,i)=>n.rotation.x=moving?Math.sin(phase+i*Math.PI)*.42:0);arms.forEach((n,i)=>{n.rotation.x=a.role==='porter'?-.65:moving?-Math.sin(phase+i*Math.PI)*.3:Math.sin(phase)*.035});},combatPose(f,at,flash){const pose=combatPose(f,at);root.rotation.z=pose.dead?Math.PI/2:0;root.rotation.x=pose.lean;arms.forEach(n=>n.rotation.z=0);if(f&&!['idle','dead'].includes(f.phase)){arms[1].rotation.x=pose.arm;arms[1].rotation.z=pose.side;if(f.phase==='guard'){arms[0].rotation.x=pose.arm;arms[0].rotation.z=-pose.side}}const active=flash&&at<flash.until;materials.forEach(m=>m.emissiveColor.set(active&&flash.kind!=='parried'?.4:0,active&&flash.kind==='parried'?.4:0,active&&flash.kind==='parried'?.5:0));},dispose(){root.dispose();materials.forEach(m=>m.dispose())}}
+  let weaponVisible=false,armorVisible=false
+  return {
+    root,
+    setEquipment(weapon,armor) {
+      if(!!weapon!==weaponVisible){weaponVisible=!!weapon;blade.setEnabled(weaponVisible)}
+      if(!!armor!==armorVisible){armorVisible=!!armor;cloth.diffuseColor.copyFrom(Color3.FromHexString(armorVisible?'#596473':a.color))}
+    },
+    update(dt,moving=false) {
+      phase+=dt*(moving?7:1.5)
+      legs.forEach((n,i)=>n.rotation.x=moving?Math.sin(phase+i*Math.PI)*.42:0)
+      arms.forEach((n,i)=>{n.rotation.x=moving?-Math.sin(phase+i*Math.PI)*.3:Math.sin(phase)*.035})
+    },
+    combatPose(f,at,flash) {
+      const pose=combatPose(f,at)
+      root.rotation.z=pose.dead?Math.PI/2:0;root.rotation.x=pose.lean
+      arms.forEach(n=>n.rotation.z=0)
+      if(f&&!['idle','dead'].includes(f.phase)) {
+        arms[1].rotation.x=pose.arm;arms[1].rotation.z=pose.side
+        if(f.phase==='guard'){arms[0].rotation.x=pose.arm;arms[0].rotation.z=-pose.side}
+      }
+      const active=flash&&at<flash.until
+      materials.forEach(m=>m.emissiveColor.set(active&&flash.kind!=='parried'?.4:0,active&&flash.kind==='parried'?.4:0,active&&flash.kind==='parried'?.5:0))
+    },
+    dispose(){skinMesh.dispose();root.dispose();materials.forEach(m=>m.dispose())},
+  }
 }

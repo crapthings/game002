@@ -4,6 +4,7 @@
 
 - [B接手场景接入与验证边界](../docs/world-ledger/SCENE-INTEGRATION.md)
 - [当前状态](CURRENT_STATE.md)
+- [渲染、GPU 骨骼与 Worker 性能优化](../docs/performance.md)
 - [战斗与犯罪小循环计划](../docs/world-ledger/COMBAT-PLAN.md)
 - [战斗模块接入审阅](../docs/world-ledger/COMBAT-REVIEW.md)
 - [B侧可复用玩法框架进度](../docs/world-ledger/framework.md)

@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { Engine } from '@babylonjs/core/Engines/engine'
 import { createWorldScene } from '../game/scenes/createWorldScene.js'
+import { useGraphicsStore } from '../stores/useGraphicsStore.js'
+import { createPerformanceMonitor } from '../game/core/createPerformanceMonitor.js'
 
 export default function GameCanvas({ onLoading, onReady, onError }) {
   const canvasRef = useRef(null)
@@ -9,16 +11,29 @@ export default function GameCanvas({ onLoading, onReady, onError }) {
   useEffect(() => {
     let engine
     let resizeObserver
+    let unsubscribeGraphics, performanceMonitor
 
     try {
       const canvas = canvasRef.current
       onLoading?.({ progress: 32, label: '正在启动图形引擎' })
-      engine = new Engine(canvas, true)
-      engine.setHardwareScalingLevel(1 / Math.min(window.devicePixelRatio || 1, 2))
+      engine = new Engine(canvas, true, { powerPreference: 'high-performance' })
+      const resize = () => {
+        engine.setHardwareScalingLevel(1 / useGraphicsStore.getState().renderScale)
+        engine.resize()
+      }
+      resize()
+      unsubscribeGraphics = useGraphicsStore.subscribe((state, previous) => {
+        if (state.renderScale !== previous.renderScale) resize()
+      })
       onLoading?.({ progress: 42, label: '正在创建世界场景' })
       const scene = createWorldScene(engine, canvas, { onLoading, onReady })
+      performanceMonitor = createPerformanceMonitor(engine, scene, canvas)
       engine.runRenderLoop(() => {
-        try { scene.render() }
+        try {
+          const started = performanceMonitor.begin()
+          scene.render()
+          performanceMonitor.end(started)
+        }
         catch (cause) {
           engine.stopRenderLoop()
           const message = `世界加载失败：${cause.message || '未知错误'}`
@@ -34,12 +49,16 @@ export default function GameCanvas({ onLoading, onReady, onError }) {
       setError(message)
       onError?.(message)
       resizeObserver?.disconnect()
+      unsubscribeGraphics?.()
+      performanceMonitor?.dispose()
       engine?.dispose()
       return
     }
 
     return () => {
       resizeObserver?.disconnect()
+      unsubscribeGraphics?.()
+      performanceMonitor?.dispose()
       engine.dispose()
     }
   }, [])

@@ -1,4 +1,5 @@
 import { residenceFacades } from '../../assets/wuxia/residences.js'
+import { fortificationBodies } from './collisionIndex.js'
 
 // 解析碰撞只查询附近建筑，不对美术三角网格逐帧射线检测。
 export function buildingBodies(def, placement) {
@@ -15,7 +16,7 @@ export function buildingBodies(def, placement) {
   }))
 }
 function local(b,x,z) {
-  const c=Math.cos(b.rotation??0),s=Math.sin(b.rotation??0),dx=x-b.x,dz=z-b.z
+  const c=b.cosine??Math.cos(b.rotation??0),s=b.sine??Math.sin(b.rotation??0),dx=x-b.x,dz=z-b.z
   return {x:dx*c-dz*s,z:dx*s+dz*c,c,s}
 }
 function top(b,p) {
@@ -26,9 +27,10 @@ function top(b,p) {
   const lo=Math.min(5,Math.floor(t*6))/6,blend=(t-lo)*6
   return b.roofBase+f(lo)*(1-blend)+f(lo+1/6)*blend+.055*b.scale
 }
-export function createTraversal(loaded,fort,terrain,isLoaded,inside,groundBlocked=()=>false) {
-  const walls=(fort?.colliders??[]).map(b=>({...b,base:fort.elevation,parapet:b.halfDepth===4,top:b.halfDepth===4?fort.elevation+12.35:Infinity}))
+export function createTraversal(loaded,fort,terrain,isLoaded,inside,groundBlocked=()=>false,collisionIndex=null) {
+  const walls=collisionIndex?[]:fortificationBodies(fort)
   function* nearby(x,z,reach=1) {
+    if(collisionIndex){yield* collisionIndex.nearby(x,z,reach);return}
     for(const b of walls)if(Math.abs(x-b.x)<Math.hypot(b.halfWidth,b.halfDepth)+reach&&Math.abs(z-b.z)<Math.hypot(b.halfWidth,b.halfDepth)+reach)yield b
     for(const entry of loaded.values()) {
       const b=entry.bounds

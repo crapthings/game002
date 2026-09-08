@@ -1,10 +1,16 @@
+import { useMemo } from 'react'
 import { useLivingStore } from '../stores/useLivingStore.js'
 import { LIVING_ITEMS,PRICES } from '../game/living/config.js'
 const button='rounded border border-white/20 px-2 py-1 text-xs disabled:opacity-35 enabled:hover:bg-white/15'
 const words={attack_started:'出招',guard_started:'招架',guard_released:'松手回气',guard_exhausted:'气力耗尽',guard_broken:'破防',damaged:'受伤',parried:'挡住攻击',died:'死亡',take:'拿走药包',settle:'交还赔偿',return:'送回药包',aid:'救助',reward:'回礼',mask:'改变遮面',buy:'购买',sell:'出售',use:'使用',equip:'装备',unequip:'卸下',threatened:'威胁',robbed:'被迫交钱',loot_item:'搜刮物品',loot_money:'搜刮铜钱',case_assessed:'受理案件',witness:'目击',report:'当面举报',sight:'认出行踪',lost:'失去视线'}
 const errors={HISTORY_FULL:'本轮记录已满，请保存退出后换新种子体验',TARGET_BUSY:'对方正忙，暂时无法交涉',NOT_AVAILABLE:'物品已不在原处',OWN_MEDICINE_REQUIRED:'需要一份自有止血药',REWARD_NOT_DUE:'尚未满足答谢条件',SUBJECT_UNIDENTIFIED:'对方没有确认你的身份',ACTOR_DEAD:'角色已经倒下',TARGET_NOT_DEAD:'对方仍然活着，不能搜刮',INSUFFICIENT_QUANTITY:'物品数量不足',NO_CHANGE:'当前状态无需更改',ACTOR_BUSY:'正在出招或收招',RELEASE_REQUIRED:'先松开招架，再回气至25',INSUFFICIENT_STAMINA:'气力不足',BAG_FULL:'背包已满',INSUFFICIENT_FUNDS:'铜钱不足',NOT_OWNED:'这件物品仍属于别人',ITEM_EQUIPPED:'先卸下装备',THREAT_COOLDOWN:'对方仍在警惕，稍后再试',SAVE_OUTCOME_UNKNOWN:'保存结果未确认，请返回菜单重新读档',RECOVERY_REQUIRED:'请重新读档后继续',ALREADY_HELPED:'柳娘已经接受过救助',HEALTH_FULL:'气血已满',BUSY:'正在保存上一动作'}
 export default function LivingHud(){
- const {view:v,panel,message}=useLivingStore(),request=useLivingStore.getState().request
+ const v=useLivingStore(s=>s.view),panel=useLivingStore(s=>s.panel),message=useLivingStore(s=>s.message),request=useLivingStore.getState().request
+ const events=useMemo(()=>{
+  if(!panel||!v)return []
+  const s=v.state
+  return [...s.combat.events,...s.interactions.events,...s.village.events,...s.robbery.events,...s.property.events,...s.equipment.events,...s.crime.events,...s.social.events.filter(e=>e.kind==='report'||e.kind==='witness')].sort((a,b)=>a.at-b.at)
+ },[panel,v?.state])
  if(!v)return <p className="absolute bottom-4 left-4 rounded bg-black/80 p-3 text-sm">{message||'正在准备街坊…'}</p>
  const s=v.state,f=v.fighters.find(f=>f.id==='player'),target=s.interactions.actors.find(a=>a.id===v.targetId)
  const name=id=>id==='player'?'你':v.names[id]??id
@@ -12,7 +18,6 @@ export default function LivingHud(){
  const lots=s.interactions.inventory.lots,own=lots.filter(l=>l.holderId==='player-bag'),loadout=s.equipment.loadouts.find(l=>l.actorId==='player')
  const med=own.find(l=>l.ownerId==='player'&&l.itemType==='medicine')
  const actionsDisabled=v.busy||v.stopped||v.hero.health===0
- const events=[...s.combat.events,...s.interactions.events,...s.village.events,...s.robbery.events,...s.property.events,...s.equipment.events,...s.crime.events,...s.social.events.filter(e=>e.kind==='report'||e.kind==='witness')].sort((a,b)=>a.at-b.at)
  const act=(kind,data)=>request(kind,data)
  return <>
   <div className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 text-xl text-white/70">·</div>

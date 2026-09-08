@@ -8,15 +8,16 @@ import { createLivingSimulation } from './simulation.js'
 import { createCombatInput } from './createCombatInput.js'
 import { validateLiving } from './persistence.js'
 import { LIVING_NPCS } from './config.js'
-import { distance,facingAngle,localRoute } from './geometry.js'
+import { distance,facingAngle } from './geometry.js'
 import { wantedFor,pursuitFor } from '../gameplay/index.js'
 import { useLivingStore } from '../../stores/useLivingStore.js'
 import { useGameStore } from '../../stores/useGameStore.js'
 import { useWorldStore } from '../../stores/useWorldStore.js'
 const copy=v=>structuredClone(v)
 export function createLivingScene(scene,plan,world,player,progress,extras=()=>({})) {
-  let simulation=null,spatial=null,disposed=false,retry=0,publishTimer=0,selected=null,lastSequence=-1
-  const models=new Map(),resources=[],routes=new Map(),flashes=new Map()
+  let simulation=null,spatial=null,disposed=false,closing=false,retry=0,selected=null,lastSequence=-1
+  let lastPublishedAt=-Infinity,lastPublishedState=null,lastPublishedBusy=null,lastPublishedStopped=null
+  const models=new Map(),resources=[],routes=new Map(),flashes=new Map(),moveSight=new Map()
   const canvas=scene.getEngine().getRenderingCanvas(),store=()=>useLivingStore.getState()
   store().reset()
   const saved=progress.living,legacy=saved?saved.legacy:progress.ledger??null
@@ -40,11 +41,25 @@ export function createLivingScene(scene,plan,world,player,progress,extras=()=>({
   const walkable=(x,z)=>world.isLoaded(x,z)&&world.canMove(x,z,.36)
   function move(id,target,dt,stop=1.2) {
     const p=point(id);if(!loaded(p)||distance(p,target)<=stop)return
+    if(!Number.isFinite(target.y))target={...target,y:world.terrain.surfaceHeight(target.x,target.z)}
     let goal=target
-    if(!clear(p,target,.36)) {
+    // Cache long movement probes briefly; each actual footstep still checks the
+    // current world and bodies below. Combat contact/visibility is never cached.
+    let sight=moveSight.get(id)
+    if(!sight||simulation.clock()>=sight.until||distance(sight.start,p)>.6||distance(sight.target,target)>.6) {
+      sight={start:{...p},target:{...target},until:simulation.clock()+250,clear:clear(p,target,.36)}
+      moveSight.set(id,sight)
+    }
+    if(!sight.clear) {
       let route=routes.get(id)
       if(!route||simulation.clock()>route.until||distance(route.target,target)>2) {
-        route={target:copy(target),until:simulation.clock()+2000,path:localRoute(p,target,walkable)};routes.set(id,route)
+        route={start:{...p},target:{...target},until:simulation.clock()+2000,path:[]};routes.set(id,route)
+        world.findRoute(route.start,route.target).then(path=>{
+          if(closing||disposed||routes.get(id)!==route)return
+          // The actor/goal may have moved while the worker was searching.
+          if(distance(point(id),route.start)>1.6){routes.delete(id);return}
+          route.path=path
+        })
       }
       while(route.path.length&&distance(p,route.path[0])<.3)route.path.shift()
       if(!route.path.length)return
@@ -115,44 +130,57 @@ export function createLivingScene(scene,plan,world,player,progress,extras=()=>({
     return true
   }
   const input=createCombatInput(canvas,()=>useGameStore.getState().phase==='playing'&&!!simulation,()=>simulation?.release())
-  function publish() {
-    const s=simulation.state(),hero=s.interactions.actors.find(a=>a.id==='player'),p=point('player')
+  function selectTarget() {
+    const p=point('player')
     const candidates=[...spatial.npcs.map(n=>({...n,dead:!alive(n.id)})),{...spatial.stall,id:'stall'}]
     selected=candidates.filter(q=>distance(p,q)<=2&&Math.abs(p.y-q.y)<1.5&&Math.abs(facingAngle(p,q))<65&&clear(p,q)).sort((a,b)=>Math.abs(facingAngle(p,a))-Math.abs(facingAngle(p,b))||distance(p,a)-distance(p,b))[0]?.id??null
+  }
+  function publish() {
+    const at=performance.now(),s=simulation.state(),busy=simulation.busy(),stopped=simulation.stopped()
+    if(at-lastPublishedAt<100&&s===lastPublishedState&&busy===lastPublishedBusy&&stopped===lastPublishedStopped)return
+    lastPublishedAt=at;lastPublishedState=s;lastPublishedBusy=busy;lastPublishedStopped=stopped
+    selectTarget()
+    const hero=s.interactions.actors.find(a=>a.id==='player')
     store().publish({state:s,fighters:simulation.view(),hero,targetId:selected,names:Object.fromEntries(LIVING_NPCS.map(n=>[n.id,n.name])),
       bagCount:s.interactions.inventory.lots.filter(l=>l.holderId==='player-bag').reduce((n,l)=>n+l.quantity,0),clock:simulation.clock(),
       wanted:['guard','guard-2'].map(id=>wantedFor(s.crime,id,'player')).sort((a,b)=>b.level-a.level)[0],pursuit:['guard','guard-2'].map(id=>pursuitFor(s,id,'player',simulation.clock())).sort((a,b)=>({follow:2,search:1,idle:0}[b.mode]-{follow:2,search:1,idle:0}[a.mode]))[0],
       busy:simulation.busy(),stopped:simulation.stopped(),legacyEvents:legacy?.events??[]})
   }
   function draw(dt) {
+    const state=simulation.state(),fighters=simulation.view(),at=simulation.clock()
     for(const [id,entry] of models) {
-      const p=point(id),f=simulation.view().find(f=>f.id===id)
-      entry.model.root.setEnabled(loaded(p));entry.model.root.position.set(p.x,p.y,p.z);entry.model.root.rotation.y=p.heading
-      const gear=simulation.state().equipment.loadouts.find(l=>l.actorId===id)
+      const p=point(id),f=fighters.find(f=>f.id===id),enabled=loaded(p)
+      if(entry.model.root.isEnabled()!==enabled)entry.model.root.setEnabled(enabled)
+      if(!enabled)continue
+      entry.model.root.position.set(p.x,p.y,p.z);entry.model.root.rotation.y=p.heading
+      const gear=state.equipment.loadouts.find(l=>l.actorId===id)
       entry.model.setEquipment?.(gear.weapon,gear.armor)
-      entry.model.update(dt,distance(p,entry.last)>.001);entry.model.combatPose?.(f,simulation.clock(),flashes.get(id));entry.last=copy(p)
+      entry.model.update(dt,distance(p,entry.last)>.001);entry.model.combatPose?.(f,at,flashes.get(id));Object.assign(entry.last,p)
       const caption=`${LIVING_NPCS.find(n=>n.id===id).name} ${f.health}/100${selected===id?' · E':''}`
       if(caption!==entry.caption){entry.texture.clear();entry.texture.drawText(caption,null,64,'bold 30px sans-serif',f.health?'#ffffff':'#aaaaaa','transparent',true);entry.caption=caption}
     }
-    const lot=simulation.state().interactions.inventory.lots.find(l=>l.id==='medicine-parcel')
-    parcel.setEnabled(lot.holderId==='stall'&&loaded(spatial.stall));parcel.position.set(spatial.stall.x,spatial.stall.y+.25,spatial.stall.z)
-    const gear=simulation.state().equipment.loadouts.find(l=>l.actorId==='player')
+    const lot=state.interactions.inventory.lots.find(l=>l.id==='medicine-parcel')
+    const parcelEnabled=lot.holderId==='stall'&&loaded(spatial.stall)
+    if(parcel.isEnabled()!==parcelEnabled)parcel.setEnabled(parcelEnabled)
+    parcel.position.set(spatial.stall.x,spatial.stall.y+.25,spatial.stall.z)
+    const gear=state.equipment.loadouts.find(l=>l.actorId==='player')
     player.setEquipment?.(gear.weapon,gear.armor)
-    player.combatPose?.(simulation.view().find(f=>f.id==='player'),simulation.clock(),flashes.get('player'))
+    player.combatPose?.(fighters.find(f=>f.id==='player'),at,flashes.get('player'))
   }
   return {
     present:()=>{if(simulation){publish();draw(0)}},
     canAdvance:()=>!simulation||simulation.canAdvance(),isAlive:()=>!simulation||alive('player'),
+    fighter:id=>simulation?.view().find(f=>f.id===id),
     bodyClear:(from,to)=>bodyMoveClear(from,to,bodies()),bodySupport:(x,z,ceiling)=>bodySupportHeight(x,z,ceiling,bodies()),
     revision:()=>lastSequence,snapshot:()=>undefined,
     clearCommands(){input.clear();simulation?.release()},
     checkpoint:(release=false)=>simulation?.checkpoint(release),
     update(dt) {
-      if(disposed)return
+      if(disposed||closing)return
       if(!simulation){retry-=dt;if(retry>0)return;retry=1;if(!start()){store().notify('请回到中心街道，等待街坊就位。');return}}
-      publish()
       const request=store().shift()
       if(request) {
+        selectTarget()
         const {kind,data}=request
         if(kind==='interact') {
           if(selected==='stall')simulation.command('take')
@@ -160,8 +188,8 @@ export function createLivingScene(scene,plan,world,player,progress,extras=()=>({
         } else simulation.command(kind,{...data,...(kind==='threaten'?{targetId:selected}:{})})
       }
       simulation.update(dt);draw(dt)
-      publishTimer+=dt;if(publishTimer>=.1){publishTimer=0;publish()}
+      publish()
     },
-    dispose(){input.dispose();simulation?.close().finally(()=>{disposed=true});for(const e of models.values())e.model.dispose();parcel.dispose();resources.forEach(r=>r.dispose());store().reset()},
+    dispose(){closing=true;routes.clear();input.dispose();simulation?.close().finally(()=>{disposed=true});for(const e of models.values())e.model.dispose();parcel.dispose();resources.forEach(r=>r.dispose());store().reset()},
   }
 }

@@ -1,15 +1,16 @@
-import { createWorldSession, previewGameplayCombat, wantedFor, pursuitFor, historyCapacity } from '../gameplay/index.js'
+import { createWorldSession, previewGameplayCombat, pursuitFor } from '../gameplay/index.js'
+import { createLivingStateIndex } from './createLivingStateIndex.js'
 import { livingConfig, LIVING_NPCS, PRICES } from './config.js'
 import { distance, facingAngle, sweptContact } from './geometry.js'
 const copy=v=>structuredClone(v)
-const offensive=new Set(['take','threatened','robbed','damaged','parried','died','loot_item','loot_money'])
 export function createLivingSimulation({world,legacy=null,saved,save,space,notify=()=>{},effects=()=>{}}) {
   const config=livingConfig(legacy,world),session=createWorldSession(config,{saved,save})
   let state=session.snapshot().gameplay,clock=session.status().simulationAt,busy=false,stopped=false,guardDesired=false
+  const stateIndex=createLivingStateIndex(config),indexed=()=>stateIndex(state)
   let remainder=0
   let serial=Math.max(state.revision,...state.journal.map(r=>/^live-\d+$/.test(r.id)?Number(r.id.slice(5)):0)),sweep=new Map(),view=previewGameplayCombat(state,clock)
   for(const f of view)if(f.phase==='active')sweep.set(f.swing.id,(clock-f.swing.activeAt)/180)
-  const actor=id=>state.interactions.actors.find(a=>a.id===id)
+  const actor=id=>indexed().actors.get(id)
   const fighter=id=>view.find(a=>a.id===id)
   const alive=id=>actor(id)?.health>0
   const near=(a,b,r=2)=>distance(space.point(a),space.point(b))<=r && Math.abs(space.point(a).y-space.point(b).y)<1.5 && space.clear(space.point(a),space.point(b))
@@ -43,9 +44,9 @@ export function createLivingSimulation({world,legacy=null,saved,save,space,notif
     if(kind==='settle'&&near('player','guard'))return send('village',{kind:'settle',actorId:'player'})
     if(kind==='aid'&&near('player','resident-1')){space.face('resident-1',space.point('player'));return send('village',{kind:'aid',actorId:'player',lotId:data.lotId},{identified:sees('resident-1','player',true)},true)}
     if(['buy','sell'].includes(kind)&&alive('merchant')&&near('player','merchant')) {
-      const refuses=!state.village.masked&&state.social.knowledge.some(k=>k.npcId==='merchant'&&k.subjectId==='player'&&state.social.facts.some(f=>f.id===k.factId&&f.targetId==='merchant'&&offensive.has(f.action)&&!state.village.settled.includes(f.sourceEventId)))
+      const refuses=!state.village.masked&&indexed().merchantRefuses
       if(refuses){notify('陈掌柜认出了冒犯者，拒绝交易；药包纠纷可向捕快交还赔偿。');return}
-      const lot=state.interactions.inventory.lots.find(l=>l.id===data.lotId)
+      const lot=indexed().lots.get(data.lotId)
       if(lot&&PRICES[lot.itemType])return send('interaction',{kind,actorId:'player',targetId:'merchant',lotId:lot.id,quantity:1},{unitPrice:PRICES[lot.itemType][kind==='buy'?0:1]})
     }
     if(target&&near('player',target)) {
@@ -60,8 +61,9 @@ export function createLivingSimulation({world,legacy=null,saved,save,space,notif
     if(busy||stopped)return
     remainder+=dt*1000;const elapsed=Math.floor(remainder);remainder-=elapsed;clock+=elapsed;view=previewGameplayCombat(state,clock)
     const hero=fighter('player')
+    const index=indexed()
     if(!guardDesired && alive('player') && (hero.guardHeld||hero.mustRelease)) {send('combat',{kind:'guard',actorId:'player',held:false});return}
-    if(historyCapacity(state).status!=='available'){guardDesired=false;if(alive('player')&&(hero.guardHeld||hero.mustRelease)){send('combat',{kind:'guard',actorId:'player',held:false});return}stopped=true;notify('本轮账本接近容量上限，已停止新增行动，请保存退出。');session.checkpoint(clock).then(result=>{if(!result.ok)notify(result.code)});return}
+    if(index.capacityStatus!=='available'){guardDesired=false;if(alive('player')&&(hero.guardHeld||hero.mustRelease)){send('combat',{kind:'guard',actorId:'player',held:false});return}stopped=true;notify('本轮账本接近容量上限，已停止新增行动，请保存退出。');session.checkpoint(clock).then(result=>{if(!result.ok)notify(result.code)});return}
     if(guardDesired && alive('player') && !hero.guardHeld&&!hero.mustRelease&&hero.phase==='idle'&&hero.stamina>=25000){send('combat',{kind:'guard',actorId:'player',held:true});return}
     for(const f of view) {
       if(f.phase!=='active')continue
@@ -75,27 +77,23 @@ export function createLivingSimulation({world,legacy=null,saved,save,space,notif
       }
       sweep.set(f.swing.id,fraction)
     }
-    sweep=new Map([...sweep].filter(([id])=>view.some(f=>f.swing?.id===id)))
+    for(const id of sweep.keys())if(!view.some(f=>f.swing?.id===id))sweep.delete(id)
     for(const npc of LIVING_NPCS) {
       const id=npc.id,f=fighter(id)
       if(!alive(id))continue
-      const gear=state.interactions.inventory.lots.find(l=>l.ownerId===id&&l.holderId===actor(id).containerId&&config.items.find(i=>i.id===l.itemType)?.equipment)
-      if(gear&&f.phase==='idle'){const slot=config.items.find(i=>i.id===gear.itemType).equipment.slot;if(!state.equipment.loadouts.find(l=>l.actorId===id)[slot]){send('equipment',{kind:'equip',actorId:id,slot,lotId:gear.id});return}}
+      const knowledge=index.npcs.get(id),gear=knowledge.gear
+      if(gear&&f.phase==='idle'){const slot=index.items.get(gear.itemType).equipment.slot;if(!index.loadouts.get(id)[slot]){send('equipment',{kind:'equip',actorId:id,slot,lotId:gear.id});return}}
       if(f.guardHeld) {
-        const raised=state.combat.events.findLast(e=>e.kind==='guard_started'&&e.actorId===id)
+        const raised=knowledge.guardRaised
         if(raised&&clock-raised.at>=700){send('combat',{kind:'guard',actorId:id,held:false});return}
       }
-      const known=state.social.knowledge.filter(k=>k.npcId===id)
-      const crimeKnowledge=known.filter(k=>offensive.has(state.social.facts.find(f=>f.id===k.factId)?.action))
       if(config.authorities.includes(id)) {
-        const unassessed=crimeKnowledge.find(k=>!state.crime.events.some(e=>e.authorityId===id&&e.factId===k.factId&&e.evidenceId===k.evidenceId)&&
-          !state.village.settled.includes(state.social.facts.find(f=>f.id===k.factId).sourceEventId)&&
-          !state.combat.events.some(e=>e.id===state.social.facts.find(f=>f.id===k.factId).sourceEventId&&e.justification?.unlawful===false))
+        const unassessed=knowledge.unassessed
         if(unassessed){send('crime',{kind:'assess',actorId:id,factId:unassessed.factId});return}
-        const wanted=wantedFor(state.crime,id,'player'),track=state.pursuit.tracks.find(t=>t.authorityId===id&&t.subjectId==='player')
+        const wanted=knowledge.wanted,track=state.pursuit.tracks.find(t=>t.authorityId===id&&t.subjectId==='player')
         // Reinforcement is another existing guard; it learns via a delivered report.
         if(wanted.level>=3&&id==='guard'&&alive('guard-2')) {
-          const unsent=crimeKnowledge.find(k=>!state.social.knowledge.some(q=>q.npcId==='guard-2'&&q.factId===k.factId))
+          const unsent=knowledge.reinforcement
           if(unsent){if(near(id,'guard-2')){send('knowledge',{kind:'report',actorId:id,targetId:'guard-2',factId:unsent.factId},{delivered:true,proofId:`reinforce-${serial+1}`});return}space.move(id,space.point('guard-2'),dt,1.3);continue}
         }
         if(wanted.level>0&&alive('player')) {
@@ -108,13 +106,13 @@ export function createLivingSimulation({world,legacy=null,saved,save,space,notif
             continue
           }
           // Reports provide a fixed last-seen point, never a live player lookup.
-          const memory=crimeKnowledge.map(k=>state.social.events.find(e=>e.id===k.evidenceId)).findLast(e=>e?.position)
+          const memory=knowledge.lastCrimePosition
           if(!track&&memory&&clock-memory.at<30000&&f.phase==='idle'){space.move(id,memory.position,dt,1.1);continue}
         }
       } else {
-        const threat=state.robbery.events.findLast(e=>e.kind==='threatened'&&e.targetId===id&&clock-e.at<30000)
-        const attack=state.combat.events.findLast(e=>['damaged','parried'].includes(e.kind)&&e.targetId===id&&clock-e.at<10000)
-        const recognized=event=>event&&known.some(k=>k.subjectId==='player'&&state.social.facts.find(f=>f.id===k.factId)?.sourceEventId===event.id)
+        const threat=knowledge.lastThreat&&clock-knowledge.lastThreat.at<30000?knowledge.lastThreat:undefined
+        const attack=knowledge.lastAttack&&clock-knowledge.lastAttack.at<10000?knowledge.lastAttack:undefined
+        const recognized=event=>event&&knowledge.identifiedEvents.has(event.id)
         const fight=recognized(threat)&&threat.reaction==='fight'||recognized(attack)&&actor(id).courage>=70
         if(fight&&alive('player')&&sees(id,'player',true)) {
           space.face(id,space.point('player'))
@@ -122,15 +120,15 @@ export function createLivingSimulation({world,legacy=null,saved,save,space,notif
           if(f.phase==='idle')space.move(id,space.point('player'),dt,1.2)
           continue
         }
-        const pending=crimeKnowledge.find(k=>!state.social.events.some(e=>e.kind==='report'&&e.actorId===id&&e.targetId==='guard'&&e.cause===k.evidenceId))
+        const pending=knowledge.unreported
         if(pending&&alive('guard')) {
           if(near(id,'guard')){send('knowledge',{kind:'report',actorId:id,targetId:'guard',factId:pending.factId},{delivered:true,proofId:`report-${serial+1}`});return}
           if(f.phase==='idle')space.move(id,space.point('guard'),dt,1.3)
           continue
         }
-        if((threat?.reaction==='flee'||attack)&&f.phase==='idle'){const source=known.map(k=>state.social.events.find(e=>e.id===k.evidenceId)).findLast(e=>e?.position);if(source)space.flee(id,source.position,dt);continue}
+        if((threat?.reaction==='flee'||attack)&&f.phase==='idle'){const source=knowledge.lastKnownPosition;if(source)space.flee(id,source.position,dt);continue}
       }
-      const parcel=state.interactions.inventory.lots.find(l=>l.id==='medicine-parcel')
+      const parcel=index.lots.get('medicine-parcel')
       if(id==='guard'&&parcel.holderId==='guard-bag') {
         if(near(id,'stall')){send('village',{kind:'return',actorId:id});return}
         if(f.phase==='idle')space.move(id,space.point('stall'),dt,1.1)

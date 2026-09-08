@@ -6,7 +6,9 @@ import { GROUND_TEXTURE_SIZE } from './groundTexture.js'
 import { inCanal, onBridge } from '../city/createCityPlan.js'
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder'
 import { wuxiaDefinitions } from '../../assets/wuxia/catalog.js'
-import { blocksFortification } from '../fortifications/createFortifications.js'
+import { canMoveInWorld } from './movementQuery.js'
+import { createNavigationWorker } from '../../living/createNavigationWorker.js'
+import { createCollisionIndex, fortificationBodies } from './collisionIndex.js'
 import { Mesh } from '@babylonjs/core/Meshes/mesh'
 import { VertexData } from '@babylonjs/core/Meshes/mesh.vertexData'
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode'
@@ -25,6 +27,9 @@ export function createStreamedWorld(scene, plan, initialViewDistance = 64) {
   const terrain = createTerrain(plan.seed, towns, plan)
   const assets = createAssetRegistry(scene)
   const loaded = new Map()
+  const collisionIndex = createCollisionIndex()
+  collisionIndex.replace('fortifications', fortificationBodies(plan.fortifications))
+  const navigation = createNavigationWorker(plan)
   const material = new StandardMaterial('terrain-material', scene)
   material.diffuseColor = Color3.White()
   material.specularColor = Color3.Black()
@@ -107,6 +112,7 @@ export function createStreamedWorld(scene, plan, initialViewDistance = 64) {
     mesh.material = groundMaterial
     mesh.onDisposeObservable.add(()=>{groundMaterial.dispose();texture.dispose()})
     mesh.receiveShadows = true
+    mesh.isPickable = false
     mesh.metadata = { ground: true, chunkKey: chunk.key }
     yield
     const river=plan.city?.water
@@ -165,6 +171,9 @@ export function createStreamedWorld(scene, plan, initialViewDistance = 64) {
       }
       yield
     }
+    // All chunk geometry is static. Visibility still changes on chunk entry/exit.
+    root.freezeWorldMatrix()
+    for (const mesh of root.getChildMeshes()) { mesh.freezeWorldMatrix(); mesh.doNotSyncBoundingInfo = true }
     root.setEnabled(true)
     const bounds = colliders.reduce((bounds, obstacle) => {
       const reach = obstacle.radius ?? Math.hypot(obstacle.halfWidth, obstacle.halfDepth)
@@ -174,7 +183,10 @@ export function createStreamedWorld(scene, plan, initialViewDistance = 64) {
       bounds.maxZ = Math.max(bounds.maxZ, obstacle.z + reach)
       return bounds
     }, { minX: Infinity, maxX: -Infinity, minZ: Infinity, maxZ: -Infinity })
-    loaded.set(chunk.key, { root, colliders, bounds, landingObstacles })
+    const entry = { root, colliders, bounds, landingObstacles }
+    loaded.set(chunk.key, entry)
+    collisionIndex.replace(chunk.key, colliders)
+    navigation.install(chunk.key, entry)
   }
   function update(x, z, budgetMs = 3) {
     if (failure) throw failure
@@ -188,6 +200,19 @@ export function createStreamedWorld(scene, plan, initialViewDistance = 64) {
       const inBounds = chunk => insideWorld(plan.bounds, (chunk.x + 0.5) * CHUNK_SIZE, (chunk.z + 0.5) * CHUNK_SIZE)
       required = requiredChunks(center, radius).filter(inBounds)
       wanted = new Map(required.map(chunk => [chunk.key, chunk]))
+      // Only scan retained chunks when crossing a boundary or changing view
+      // distance; standing still does not need another visibility/eviction pass.
+      for (const [key, entry] of loaded) {
+        const enabled = wanted.has(key)
+        if (entry.root.isEnabled() !== enabled) entry.root.setEnabled(enabled)
+        const [cx, cz] = key.split(',').map(Number)
+        if (Math.abs(cx - center.x) > radius + 1 || Math.abs(cz - center.z) > radius + 1) {
+          retired.push(entry.root)
+          loaded.delete(key)
+          collisionIndex.remove(key)
+          navigation.remove(key)
+        }
+      }
     }
     queue = [...wanted.values()].filter((chunk) => !loaded.has(chunk.key) && chunk.key !== pending?.key && chunk.key !== prepared?.key && chunk.key !== assembling?.key)
     if (prepared && !wanted.has(prepared.key)) prepared = null
@@ -195,15 +220,6 @@ export function createStreamedWorld(scene, plan, initialViewDistance = 64) {
       assembling.iterator.return()
       retired.push(assembling.root)
       assembling = null
-    }
-    for (const [key, entry] of loaded) {
-      entry.root.setEnabled(wanted.has(key))
-      const [cx, cz] = key.split(',').map(Number)
-      if (Math.abs(cx - center.x) > radius + 1 || Math.abs(cz - center.z) > radius + 1) {
-        entry.root.setEnabled(false)
-        retired.push(entry.root)
-        loaded.delete(key)
-      }
     }
     // 最多一个计算任务和一个待安装结果，防止 Worker 消息与 GPU 上传堆积。
     if (!pending && !prepared && queue.length) {
@@ -234,7 +250,8 @@ export function createStreamedWorld(scene, plan, initialViewDistance = 64) {
     update,
     setViewDistance(value) { viewDistance = value },
     getViewDistance: () => viewDistance,
-    getStats: () => ({ loaded: loaded.size, queued: required.filter((chunk) => !loaded.has(chunk.key)).length, required: required.length, ready: required.filter((chunk) => loaded.has(chunk.key)).length, templatesReady: templateCount - warmup.length, templatesTotal: templateCount, pending: Boolean(pending), assembling: Boolean(assembling), center }),
+    findRoute: (start, target) => navigation.findRoute(start, target),
+    getStats: () => ({ loaded: loaded.size, queued: required.filter((chunk) => !loaded.has(chunk.key)).length, required: required.length, ready: required.filter((chunk) => loaded.has(chunk.key)).length, templatesReady: templateCount - warmup.length, templatesTotal: templateCount, pending: Boolean(pending), assembling: Boolean(assembling), center, ...navigation.stats(), ...collisionIndex.stats(), ...assets.stats() }),
     // 所有导航与移动共用这层检查，不依赖美术模型的三角面。
     isLoaded(x,z) { const at=chunkAt(x,z); return loaded.has(chunkKey(at.x,at.z)) },
     isClearLanding(x, z) {
@@ -251,28 +268,13 @@ export function createStreamedWorld(scene, plan, initialViewDistance = 64) {
       return [[1.5,0],[-1.5,0],[0,1.5],[0,-1.5]].every(([dx,dz]) => Math.abs(terrain.surfaceHeight(x + dx,z + dz) - floor) < 0.45)
     },
     canMove(x, z, radius = HUMAN_SCALE.collisionRadius) {
-      if (!insideWorld(plan.bounds, x, z, 1) || blocksFortification(plan.fortifications, x, z, radius)) return false
-      if (plan.city?.bridges.some(b=>Math.abs(z-b.z)<b.length/2 && Math.abs(Math.abs(x-b.x)-b.width/2-.12)<radius+.12)) return false
-      if (inCanal(plan.city,x,z,radius) && !onBridge(plan.city,x,z,radius)) return false
-      const at = chunkAt(x, z)
-      if (!loaded.has(chunkKey(at.x, at.z))) return false
-      for (const entry of loaded.values()) {
-        const b = entry.bounds
-        if (x + radius < b.minX || x - radius > b.maxX || z + radius < b.minZ || z - radius > b.maxZ) continue
-        if (entry.colliders.some((obstacle) => {
-          const dx = x - obstacle.x, dz = z - obstacle.z
-          if (obstacle.radius !== undefined) return Math.hypot(dx, dz) < obstacle.radius + radius
-          const cosine = Math.cos(obstacle.rotation), sine = Math.sin(obstacle.rotation)
-          const localX = dx * cosine - dz * sine, localZ = dx * sine + dz * cosine
-          return Math.abs(localX) < obstacle.halfWidth + radius && Math.abs(localZ) < obstacle.halfDepth + radius
-        })) return false
-      }
-      return true
+      return canMoveInWorld(plan, loaded, x, z, radius, collisionIndex)
     },
     dispose() {
       crowd?.dispose()
       disposed = true
       worker.terminate()
+      navigation.dispose()
       assembling?.iterator.return()
       assembling?.root.dispose()
       for (const root of retired) root.dispose()
@@ -280,13 +282,14 @@ export function createStreamedWorld(scene, plan, initialViewDistance = 64) {
       queue = []
       for (const entry of loaded.values()) entry.root.dispose()
       loaded.clear()
+      collisionIndex.clear()
       assets.dispose()
       material.dispose()
       waterMaterial.dispose()
       bankMaterial.dispose()
     },
   }
-  Object.assign(api,createTraversal(loaded,plan.fortifications,terrain,(x,z)=>api.isLoaded(x,z),(x,z)=>insideWorld(plan.bounds,x,z,1),(x,z,r)=>(inCanal(plan.city,x,z,r)&&!onBridge(plan.city,x,z,r))||plan.city?.bridges.some(b=>Math.abs(z-b.z)<b.length/2&&Math.abs(Math.abs(x-b.x)-b.width/2-.12)<r+.12)))
+  Object.assign(api,createTraversal(loaded,plan.fortifications,terrain,(x,z)=>api.isLoaded(x,z),(x,z)=>insideWorld(plan.bounds,x,z,1),(x,z,r)=>(inCanal(plan.city,x,z,r)&&!onBridge(plan.city,x,z,r))||plan.city?.bridges.some(b=>Math.abs(z-b.z)<b.length/2&&Math.abs(Math.abs(x-b.x)-b.width/2-.12)<r+.12),collisionIndex))
   crowd=createNpcCrowd(scene,plan,api)
   return api
 }

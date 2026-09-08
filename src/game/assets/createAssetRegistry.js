@@ -12,17 +12,21 @@ import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial'
 import { Color3 } from '@babylonjs/core/Maths/math.color'
 import { environmentCatalog } from './environment/catalog.js'
 import { createEnvironmentModel } from './environment/createEnvironmentModel.js'
+import { createStaticMaterialBatches } from './createStaticMaterialBatches.js'
 
 // 外观仅由 assetId 解析。未来替换工厂或 glTF 模型，不改变布局、对象 ID、进度。
 export function createAssetRegistry(scene) {
   const templates = new Map()
   const materials = new Map()
+  const plainMaterials = new Set()
+  const batches = createStaticMaterialBatches(scene, entry => plainMaterials.has(entry))
   function material(color) {
     if (!materials.has(color)) {
       const result = new StandardMaterial(`asset:${color}`, scene)
       result.diffuseColor = Color3.FromHexString(color)
       result.specularColor = Color3.Black()
       materials.set(color, result)
+      plainMaterials.add(result)
     }
     return materials.get(color)
   }
@@ -56,13 +60,16 @@ export function createAssetRegistry(scene) {
       throw new Error(`未知自然资产：${assetId}`)
     }
     mesh.name = `template:${assetId}`
+    batches.apply(mesh)
     mesh.isVisible = false
     mesh.isPickable = false
+    mesh.freezeWorldMatrix()
     templates.set(assetId, mesh)
     return mesh
   }
   return {
     prepare: (assetId) => template(assetId),
+    stats: () => batches.stats(),
     create(placement, parent, regionId) {
       const instance = template(placement.assetId).createInstance(placement.id)
       instance.isVisible = true
@@ -72,6 +79,8 @@ export function createAssetRegistry(scene) {
       instance.rotation.y = placement.rotation
       instance.scaling.setAll(placement.scale)
       instance.metadata = { objectId: placement.id, regionId, assetId: placement.assetId }
+      instance.freezeWorldMatrix()
+      instance.doNotSyncBoundingInfo = true
       return instance
     },
     dispose() {
@@ -80,9 +89,11 @@ export function createAssetRegistry(scene) {
         mesh.dispose()
       }
       for (const entry of materials.values()) entry.dispose()
+      batches.dispose()
       fortMaterials.dispose()
       templates.clear()
       materials.clear()
+      plainMaterials.clear()
     },
   }
 }

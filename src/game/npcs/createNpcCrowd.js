@@ -15,12 +15,15 @@ export function createNpcCrowd(scene,plan,world) {
     let created=false
     for(const e of entries) {
       const distance=Math.hypot(e.x-px,e.z-pz)
-      if(distance>viewDistance+8){active.get(e.id)?.dispose();active.delete(e.id);continue}
+      // At most 32 ambient actors: keep a bounded pool instead of rebuilding
+      // procedural geometry and GPU buffers whenever a street enters view.
+      if(distance>viewDistance+8||!world.isLoaded(e.x,e.z)){active.get(e.id)?.root.setEnabled(false);continue}
       if(!active.has(e.id)) {
-        if(created || !world.isLoaded(e.x,e.z) || !world.canMove(e.x,e.z,.22))continue
+        if(created || !world.canMove(e.x,e.z,.22))continue
         active.set(e.id,createNpcModel(scene,e.assetId));created=true
       }
       const model=active.get(e.id)
+      model.root.setEnabled(true)
       let moving=false
       if(e.route) {
         const target=e.route[e.direction===1?1:0],dx=target[0]-e.x,dz=target[1]-e.z,length=Math.hypot(dx,dz)

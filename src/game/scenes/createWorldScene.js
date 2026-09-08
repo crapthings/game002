@@ -28,6 +28,10 @@ import { useLivingStore } from '../../stores/useLivingStore.js'
 
 export function createWorldScene(engine, canvas, { onLoading, onReady } = {}) {
   const scene = new Scene(engine)
+  // Movement/combat use analytical collision, never Babylon pointer picking.
+  scene.skipPointerMovePicking = true
+  scene.skipPointerDownPicking = true
+  scene.skipPointerUpPicking = true
   scene.clearColor = new Color4(0.105, 0.14, 0.13, 1)
   scene.fogMode = Scene.FOGMODE_LINEAR
   scene.fogColor = new Color3(0.105, 0.14, 0.13)
@@ -47,6 +51,7 @@ export function createWorldScene(engine, canvas, { onLoading, onReady } = {}) {
   audio.setActive(useGameStore.getState().phase==='playing')
   const input = createMovementInput(scene, () => useGameStore.getState().phase === 'playing' && !useLivingStore.getState().panel && (ledger?.isAlive()??true))
   let world = null, activePlan = null, lastSaved = null, lastSavedFog = null
+  scene.metadata = { readPerformanceStats: () => world?.getStats() ?? null }
   let ledger = null, lastSavedLedgerRevision = -1
   let stamina = createStamina(), lastSavedStamina = null
   let dayNight = createDayNightCycle(), lastSavedWorldTime = null
@@ -131,7 +136,8 @@ export function createWorldScene(engine, canvas, { onLoading, onReady } = {}) {
     }
   }
   syncWorld(useWorldStore.getState().document)
-  const unsubscribeGraphics = useGraphicsStore.subscribe(state => {
+  const unsubscribeGraphics = useGraphicsStore.subscribe((state, previous) => {
+    if (state.viewDistance === previous.viewDistance) return
     world?.setViewDistance(state.viewDistance)
     applyLighting()
   })
@@ -245,7 +251,7 @@ export function createWorldScene(engine, canvas, { onLoading, onReady } = {}) {
       lightingTimer = 0
       applyLighting()
     }
-    const combat=useLivingStore.getState().view?.fighters.find(f=>f.id==='player')
+    const combat=ledger?.fighter('player')
     const immobilized=useLivingStore.getState().panel || ledger && !ledger.isAlive() || combat&&['windup','active','recovery','broken','guard'].includes(combat.phase)
     if(immobilized){input.clear();locomotion.clearInput()}
     if(document.pointerLockElement===canvas && (!combat||combat.phase==='idle'||combat.phase==='guard')) player.root.rotation.y=Math.atan2(-Math.cos(camera.alpha),-Math.sin(camera.alpha))

@@ -3,6 +3,7 @@ import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder'
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial'
 import { Color3 } from '@babylonjs/core/Maths/math.color'
 import { Vector3 } from '@babylonjs/core/Maths/math.vector'
+import { createRigidSkin } from '../assets/characters/createRigidSkin.js'
 
 // 扁担沿行进方向落在右肩，货物前后分担，避免横担占满窄巷。
 export function createPorterModel(scene) {
@@ -51,6 +52,7 @@ export function createPorterModel(scene) {
     if(side===1)for(let i=0;i<6;i++){const t=i*2.4;sphere(.17,.15,.17,Math.cos(t)*.15,-.47+(i%2)*.035,Math.sin(t)*.15,i%2?'#c7a35d':'#8fa76b',basket)}
     else {sphere(.36,.27,.3,0,-.47,0,'#b4b69b',basket);tube('bundle-tie',[[-.15,-.45,0],[0,-.32,0],[.15,-.45,0]],.015,C.rope,basket);box(.13,.23,.22,.16,-.43,.06,'#a78c76',basket)}
   }
+  const skinMesh=createRigidSkin(root)
   let time=0,stride=0
   return {root,update(dt,moving=false){
     time+=dt*(moving?6:1.6);stride+=(Number(moving)-stride)*(1-Math.exp(-dt*10))
@@ -60,5 +62,5 @@ export function createPorterModel(scene) {
     load.rotation.z=Math.sin(time)*.022*stride
     load.rotation.x=Math.sin(time+.5)*(.005+.018*stride)
     baskets.forEach((b,i)=>{b.rotation.x=Math.sin(time+.7+i*.6)*(.007+.03*stride);b.rotation.z=-load.rotation.z*.7})
-  },dispose(){root.dispose();for(const m of materials.values())m.dispose()}}
+  },dispose(){skinMesh.dispose();root.dispose();for(const m of materials.values())m.dispose()}}
 }

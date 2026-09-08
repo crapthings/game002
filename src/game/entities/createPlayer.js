@@ -6,6 +6,7 @@ import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial'
 import { Color3 } from '@babylonjs/core/Maths/math.color'
 import { Vector3 } from '@babylonjs/core/Maths/math.vector'
 import { HUMAN_SCALE } from '../world/worldMetrics.js'
+import { createRigidSkin } from '../assets/characters/createRigidSkin.js'
 
 // 面向 +Z、脚底为根原点；空手侠客，身体翻滚与物理根节点分离。
 export function createPlayer(scene) {
@@ -164,6 +165,7 @@ export function createPlayer(scene) {
   })
   const blade=box('equipped-blade',[.065,.85,.035],[0,-.78,.018],material('steel-blade','#b9ccd0'),arms[1].elbow)
   blade.setEnabled(false)
+  const skinMesh = createRigidSkin(root, { exclude: [blade] })
   const shadow = MeshBuilder.CreateDisc('player-contact-shadow', { radius: 0.43, tessellation: 24 }, scene)
   shadow.rotation.x = Math.PI / 2
   shadow.material = material('contact-shadow', '#0c1514')
@@ -171,6 +173,7 @@ export function createPlayer(scene) {
   shadow.material.backFaceCulling = false
   shadow.isPickable = false
   let time = 0, gait = 0, stride = 0, landing = 0
+  let weaponVisible = false, armorVisible = false
   return {
     root,
     update(dt, moving, height, running = false, motion = {}) {
@@ -218,7 +221,10 @@ export function createPlayer(scene) {
       shadow.scaling.setAll(1 + Math.min(altitude, 4) * 0.12)
       shadow.material.alpha = 0.3 / (1 + altitude * 0.65)
     },
-    setEquipment(weapon,armor) {blade.setEnabled(!!weapon);cloth.diffuseColor=Color3.FromHexString(armor?'#596473':'#293e3e')},
+    setEquipment(weapon,armor) {
+      if (!!weapon !== weaponVisible) { weaponVisible = !!weapon; blade.setEnabled(weaponVisible) }
+      if (!!armor !== armorVisible) { armorVisible = !!armor; cloth.diffuseColor.copyFrom(Color3.FromHexString(armorVisible ? '#596473' : '#293e3e')) }
+    },
     combatPose(f,at,flash) {
       const pose=combatPose(f,at)
       rig.rotation.z=pose.dead?Math.PI/2:0
@@ -231,6 +237,7 @@ export function createPlayer(scene) {
       for(const m of materials)m.emissiveColor?.set(active&&flash.kind!=='parried'?.35:0,active&&flash.kind==='parried'?.3:0,active&&flash.kind==='parried'?.35:0)
     },
     dispose() {
+      skinMesh.dispose()
       root.dispose(); shadow.dispose()
       materials.forEach(mat => mat.dispose())
     },

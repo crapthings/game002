@@ -12,6 +12,7 @@ import DebugMenu from './DebugMenu.jsx'
 import { useDebugStore } from '../stores/useDebugStore.js'
 import GraphicsSettings from './GraphicsSettings.jsx'
 import LivingHud from './LivingHud.jsx'
+import PerformanceHud from './PerformanceHud.jsx'
 
 const buttonClass = 'rounded-xl border border-white/15 bg-slate-800 px-5 py-3 text-sm font-medium transition hover:bg-slate-700 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-emerald-300'
 
@@ -30,6 +31,7 @@ export default function GameOverlay() {
     return (
       <>
         <RadarHud />
+        <PerformanceHud />
         <PlayerStatusHud />
         <WorldTimeHud />
         {phase === 'playing' && <><LivingHud /><MouseLookHint /></>}
