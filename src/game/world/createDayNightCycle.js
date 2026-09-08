@@ -15,6 +15,7 @@ export function validWorldTime(value) {
 export function createDayNightCycle(savedTime = START_TIME) {
   let time = validWorldTime(savedTime) ? savedTime : START_TIME
   return {
+    setTime(value) { if(!validWorldTime(value))throw new Error('INVALID_WORLD_TIME');time=value },
     update(dt) {
       time = (time + dt * 24 / DAY_LENGTH_SECONDS) % 24
     },

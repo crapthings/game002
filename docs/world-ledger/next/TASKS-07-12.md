@@ -1,6 +1,6 @@
 # 任务 07—12：玩家参与、后果表达与长期运行
 
-状态均为 TODO。执行顺序见 [README](README.md)，规则/存档入口见 [CONTRACTS](CONTRACTS.md)。验收场景说明不等于已获运行测试授权。
+最新逐卡状态见 [执行记录](A-START.md)。执行顺序见 [README](README.md)，规则/存档入口见 [CONTRACTS](CONTRACTS.md)。验收场景说明不等于已获运行测试授权。
 
 ## 07 玩家参与生活的方法
 

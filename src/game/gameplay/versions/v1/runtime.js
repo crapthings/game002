@@ -1,16 +1,13 @@
-import * as v1 from './versions/v1/runtime.js'
-import { createV2Baseline } from './migrations/v2.js'
-import { executeRegistry } from './registry.js'
-import { executeVillage } from './village.js'
-import { InventoryError } from './inventory.js'
-import { executeInteraction } from './interactions.js'
-import { executeKnowledge } from './knowledge.js'
-import { executeCombat, previewCombat } from './combat.js'
-import { executeProperty } from './property.js'
-import { executeEquipment, equippedLot, refreshEquipment } from './equipment.js'
-import { executeRobbery } from './robbery.js'
-import { executeCrime } from './crime.js'
-import { executePursuit } from './pursuit.js'
+import { createVillageState, executeVillage } from './village.js'
+import { createCatalog, createInventory, InventoryError } from './inventory.js'
+import { createInteractionState, executeInteraction } from './interactions.js'
+import { createKnowledgeState, executeKnowledge } from './knowledge.js'
+import { createCombatState, executeCombat, previewCombat } from './combat.js'
+import { createPropertyState, executeProperty } from './property.js'
+import { createEquipmentState, executeEquipment, equippedLot, refreshEquipment } from './equipment.js'
+import { createRobberyState, executeRobbery } from './robbery.js'
+import { createCrimeState, executeCrime } from './crime.js'
+import { createPursuitState, executePursuit } from './pursuit.js'
 import { classifyForce } from './forcePolicy.js'
 
 const clone = value => structuredClone(value)
@@ -32,7 +29,35 @@ function canonical(value, depth = 0) {
 }
 
 export function createGameplay(config) {
-  return v1.createGameplay(config)
+  requireValue(config && id(config.id),'INVALID_CONFIG')
+  const catalog = createCatalog(config.items)
+  const inventory = createInventory(catalog,{containers:config.containers,lots:config.lots ?? []})
+  const interactions = createInteractionState(catalog,inventory,config.actors)
+  const social = createKnowledgeState(config.actors.map(actor => actor.id))
+  requireValue(config.combat === undefined || config.combat === true,'INVALID_COMBAT_CONFIG')
+  const combat = config.combat ? {combat:createCombatState(config.actors),property:createPropertyState(),equipment:createEquipmentState(config.actors),robbery:createRobberyState(config.actors),crime:createCrimeState(config.actors.map(a => a.id),config.authorities),pursuit:createPursuitState()} : {}
+  const state={version:1,configId:config.id,configSignature:canonical(config),catalogSignature:canonical(catalog),revision:0,at:0,interactions,social,...combat,journal:[]}
+  if(config.village) {
+    requireValue(config.combat,'COMBAT_DISABLED')
+    state.village=createVillageState(config.village)
+    for(const e of state.village.events) registerFact(state,e,`seed:${e.id}`)
+    for(const [i,k] of config.village.knowledge.entries()) {
+      const fact=state.social.facts.find(f=>f.sourceEventId===k.sourceId)
+      requireValue(fact,'INVALID_LEGACY_KNOWLEDGE')
+      const result=executeKnowledge(state.social,{id:`seed:knowledge:${i}`,expectedRevision:state.social.revision,
+        kind:k.kind,actorId:k.actorId,...(k.kind==='report'?{targetId:'guard'}:{}),factId:fact.id},
+        {allowed:true,at:config.village.at,observed:true,observedAt:fact.at,identified:k.subjectId!==null,delivered:true,proofId:k.proofId,position:k.position})
+      requireValue(result.ok,result.code); state.social=result.state
+    }
+    if(config.village.trust) state.social.relationships.push({fromId:'resident-1',toId:'player',trust:config.village.trust})
+    for(const k of state.social.knowledge.filter(k=>k.npcId==='guard')) {
+      const result=executeCrime(state.crime,state,{id:`seed:case:${state.crime.revision}`,kind:'assess',actorId:'guard',factId:k.factId,expectedRevision:state.crime.revision},{allowed:true,at:config.village.at})
+      if(result.ok)state.crime=result.state
+      else requireValue(['NOT_CRIME_FACT','INCIDENT_RESOLVED'].includes(result.code),result.code)
+    }
+    state.at=config.village.at
+  }
+  return {catalog,state}
 }
 
 
@@ -45,7 +70,6 @@ function registerFact(state,event,requestId) {
 }
 
 export function previewGameplayCombat(state,at) {
-  if(state?.version===1)return v1.previewGameplayCombat(state,at)
   requireValue(state.combat,'COMBAT_DISABLED')
   requireValue(natural(at) && at >= state.at,'INVALID_TIME')
   return previewCombat(state.combat,state.interactions.actors,at)
@@ -54,13 +78,12 @@ export function previewGameplayCombat(state,at) {
 // request.steps is assembled by a trusted adapter, not accepted directly from UI.
 // The coordinator assigns subcommand IDs/revisions and registers interaction facts.
 export function executeGameplay(state,catalog,request) {
-  if(state?.version===1)return v1.executeGameplay(state,catalog,request)
   try {
-    requireValue(state?.version === 2 && natural(state.revision) && Array.isArray(state.journal),'INVALID_STATE')
+    requireValue(state?.version === 1 && natural(state.revision) && Array.isArray(state.journal),'INVALID_STATE')
     requireValue(canonical(catalog) === state.catalogSignature,'CATALOG_MISMATCH')
     requireValue(request && id(request.id) && natural(request.expectedRevision) && Array.isArray(request.steps) && request.steps.length > 0 && request.steps.length <= 32,'INVALID_REQUEST')
     const key = canonical(request)
-    const prior = state.journal.find(entry => entry.id === request.id) ?? state.archive?.legacyCheckpoint.gameplay.journal.find(entry=>entry.id===request.id)
+    const prior = state.journal.find(entry => entry.id === request.id)
     if (prior) {
       requireValue(canonical(prior) === key,'REQUEST_ID_CONFLICT')
       return {ok:true,code:'ALREADY_APPLIED',duplicate:true,state:clone(state),events:[]}
@@ -69,16 +92,12 @@ export function executeGameplay(state,catalog,request) {
     requireValue(state.journal.length < 4096,'HISTORY_FULL')
     const next = clone(state), events = []
     for (const [i,step] of request.steps.entries()) {
-      requireValue(step && ['interaction','knowledge','combat','property','equipment','robbery','crime','pursuit','village','registry'].includes(step.domain) && step.command && step.context,'INVALID_STEP')
+      requireValue(step && ['interaction','knowledge','combat','property','equipment','robbery','crime','pursuit','village'].includes(step.domain) && step.command && step.context,'INVALID_STEP')
       requireValue(!Object.hasOwn(step.command,'id') && !Object.hasOwn(step.command,'expectedRevision'),'RESERVED_COMMAND_FIELDS')
       requireValue(natural(step.context.at) && step.context.at >= next.at,'INVALID_TIME')
       const firstFact = next.social.facts.length
       const commandId = `${request.id}:${i}`
-      if(step.domain==='registry') {
-        const emitted=executeRegistry(next,catalog,{...step.command,id:commandId},step.context)
-        events.push(...emitted)
-        for(const event of emitted)events.push(...registerFact(next,event,commandId))
-      } else if (step.domain === 'interaction') {
+      if (step.domain === 'interaction') {
         if (next.combat) {
           const participants = [step.command.actorId,step.command.targetId]
           requireValue(participants.every(id => next.interactions.actors.some(a => a.id === id && a.health > 0)),'ACTOR_DEAD')
@@ -235,10 +254,9 @@ export function executeGameplay(state,catalog,request) {
 // credits an external wallet. It detects inconsistent snapshots, not forgery of
 // an entire local history and its claimed spatial evidence.
 export function restoreGameplay(config,saved) {
-  if(saved?.version===1)return v1.restoreGameplay(config,saved)
   try {
-    requireValue(saved?.version === 2 && saved.configId === config.id && Array.isArray(saved.journal) && saved.journal.length <= 4096,'INVALID_SAVE')
-    const initial = createV2Baseline(config,saved.archive?.legacyCheckpoint,saved.migration)
+    requireValue(saved?.version === 1 && saved.configId === config.id && Array.isArray(saved.journal) && saved.journal.length <= 4096,'INVALID_SAVE')
+    const initial = createGameplay(config)
     let state = initial.state
     for (const request of saved.journal) {
       const result = executeGameplay(state,initial.catalog,request)
@@ -248,6 +266,6 @@ export function restoreGameplay(config,saved) {
     requireValue(canonical(state) === canonical(saved),'PROJECTION_MISMATCH')
     return {ok:true,code:'RESTORED',catalog:initial.catalog,state,events:[]}
   } catch (error) {
-    return {ok:false,code:error instanceof GameplayError || error instanceof InventoryError ? error.code : 'INVALID_SAVE',events:[]}
+    return {ok:false,code:error instanceof GameplayError ? error.code : 'INVALID_SAVE',events:[]}
   }
 }

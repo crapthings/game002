@@ -10,6 +10,8 @@ import { validateLiving } from './persistence.js'
 import { prepareCityLayout } from './prepareCityLayout.js'
 import { createCityTravel } from './createCityTravel.js'
 import { CITY_NOTICE_TEXT, readCityNotice, learnPlace, placeClues, destinationDirection } from './placeClues.js'
+import { clockAt } from './clock.js'
+import { sceneActorDefinitions, actorPlaceBinding, registeredPlaces } from './actorRegistry.js'
 import { LIVING_NPCS } from './config.js'
 import { distance,facingAngle } from './geometry.js'
 import { wantedFor,pursuitFor } from '../gameplay/index.js'
@@ -22,11 +24,13 @@ export function createLivingScene(scene,plan,world,player,progress,extras=()=>({
   let simulation=null,spatial=null,disposed=false,closing=false,retry=0,selected=null,lastSequence=-1
   let lastPublishedAt=-Infinity,lastPublishedState=null,lastPublishedBusy=null,lastPublishedStopped=null
   const models=new Map(),resources=[],flashes=new Map()
+  let definitionsState=null,definitionsCache=LIVING_NPCS
+  const npcDefinitions=()=>{const state=simulation?.state();if(state&&state!==definitionsState){definitionsState=state;definitionsCache=sceneActorDefinitions(state)}return definitionsCache}
   const canvas=scene.getEngine().getRenderingCanvas(),store=()=>useLivingStore.getState()
   store().reset()
   const saved=progress.living,legacy=saved?saved.legacy:progress.ledger??null
   if(saved){validateLiving(saved,plan);spatial=copy(saved.spatial)}
-  let cityLayout=saved?.version===2?copy(saved.layout):null
+  let cityLayout=saved?.version>=2?copy(saved.layout):null
   const preparing=cityLayout?null:prepareCityLayout(plan,world),patrols=copy(saved?.patrols??{})
   const migration=copy(saved?.migration??{fromVersion:saved?1:0})
   let clues=copy(saved?.clues??[]),pendingClues=null
@@ -60,9 +64,9 @@ export function createLivingScene(scene,plan,world,player,progress,extras=()=>({
     return {player:point('player'),stall:legacy?ground(legacy.item.position):copy(cityLayout.parcelSpot),npcs}
   }
   function idle(id,dt,at) {
-    const binding=cityLayout.bindings.find(b=>b.actorId===id),patrol=binding.patrolPlaceIds
+    const binding=actorPlaceBinding(simulation.state(),cityLayout,id),patrol=binding.patrolPlaceIds
     const state=patrols[id]??{index:0,until:0}
-    const place=cityLayout.places.find(p=>p.id===(patrol.length?patrol[state.index%patrol.length]:binding.idlePlaceId))
+    const place=registeredPlaces(simulation.state(),cityLayout).find(p=>p.id===(patrol.length?patrol[state.index%patrol.length]:binding.idlePlaceId))
     if(distance(point(id),place.approach)>1)move(id,place.approach,dt,.8)
     else {
       travel.cancelTravel(`move:${id}`)
@@ -71,7 +75,7 @@ export function createLivingScene(scene,plan,world,player,progress,extras=()=>({
         else if(at>=state.until){state.index=(state.index+1)%patrol.length;state.until=0}
         patrols[id]=state
       }
-      point(id).heading+=dt*.25*Math.sin(at/2200+LIVING_NPCS.findIndex(n=>n.id===id))
+      point(id).heading+=dt*.25*Math.sin(at/2200+npcDefinitions().findIndex(n=>n.id===id))
     }
   }
   function label(root,text,color) {
@@ -88,14 +92,14 @@ export function createLivingScene(scene,plan,world,player,progress,extras=()=>({
   function start() {
     if(!cityLayout){preparing.update();cityLayout=preparing.result();if(!cityLayout)return false}
     if(!spatial)spatial=initialSpatial()
-    simulation=createLivingSimulation({world:plan,legacy,saved:saved?.checkpoint,space:{point,clear,contactClear,visible,move,
+    simulation=createLivingSimulation({world:plan,legacy,saved:saved?.checkpoint,initialHour:progress.worldTime??7.5,space:{point,clear,contactClear,visible,move,
       relocationPending:()=>distance(spatial.stall,cityLayout.parcelSpot)>.1,
       face:(id,q)=>{point(id).heading=Math.atan2(q.x-point(id).x,q.z-point(id).z)},
       canEscape:(id,other)=>{const p=point(id),q=point(other),h=Math.atan2(p.x-q.x,p.z-q.z);return walkable(p.x+Math.sin(h)*2,p.z+Math.cos(h)*2)},
       flee:(id,other,dt)=>{const p=point(id),q=other,h=Math.atan2(p.x-q.x,p.z-q.z);move(id,{x:p.x+Math.sin(h)*4,y:p.y,z:p.z+Math.cos(h)*4},dt,.2)},
       idle},
       notify:message=>store().notify(message),effects:events=>{for(const e of events){
-        const name=e.targetId==='player'?'你':LIVING_NPCS.find(n=>n.id===e.targetId)?.name??'对方'
+        const name=e.targetId==='player'?'你':npcDefinitions().find(n=>n.id===e.targetId)?.name??'对方'
         if(['damaged','parried','guard_broken','died'].includes(e.kind))flashes.set(e.targetId,{kind:e.kind,until:simulation.clock()+350})
         if(e.kind==='damaged')store().notify(`${name}受到${e.damage}点伤害。`)
         if(e.kind==='parried')store().notify(`${name}挡住了这次攻击。`)
@@ -107,14 +111,19 @@ export function createLivingScene(scene,plan,world,player,progress,extras=()=>({
       save:async(checkpoint,meta)=>{
         if(disposed||useWorldStore.getState().document?.world!==plan)throw new Error('场景已关闭')
         const nextSpatial={...copy(spatial),player:point('player')},parcelLot=checkpoint.gameplay.interactions.inventory.lots.find(l=>l.id==='medicine-parcel')
+        for(const actor of checkpoint.gameplay.registry.actors)if(actor.hasBody&&actor.actorId!=='player'&&!nextSpatial.npcs.some(n=>n.id===actor.actorId)) {
+          if(!actor.body?.spawn)throw new Error('新人物缺少已确认的落位依据。')
+          nextSpatial.npcs.push({...copy(actor.body.spawn),id:actor.actorId})
+        }
         // Moving an empty stall changes no custody. A held parcel moves only
         // through the owner's recorded pickup/delivery transaction.
         if(!['stall','merchant-bag'].includes(parcelLot.holderId)||checkpoint.gameplay.village.events.some(e=>e.kind==='relocate_deliver'))nextSpatial.stall=copy(cityLayout.parcelSpot)
         const nextClues=copy(pendingClues??clues)
-        const living={version:2,legacy:copy(legacy),checkpoint,spatial:nextSpatial,layout:copy(cityLayout),migration:copy(migration),travels:travel.snapshot(),patrols:copy(patrols),clues:nextClues}
-        const ok=await useWorldStore.getState().dispatch({type:'living-checkpoint',living,expectedSequence:meta.expectedSequence,...extras()})
+        const living={version:3,legacy:copy(legacy),checkpoint,spatial:nextSpatial,layout:copy(cityLayout),migration:copy(migration),travels:travel.snapshot(),patrols:copy(patrols),clues:nextClues}
+        const worldTime=clockAt(checkpoint.gameplay.calendar.clockOrigin,checkpoint.simulationAt).hour
+        const ok=await useWorldStore.getState().dispatch({type:'living-checkpoint',living,expectedSequence:meta.expectedSequence,...extras(),worldTime})
         if(!ok)throw new Error('保存结果未确认，请重新读档。')
-        spatial.stall=nextSpatial.stall
+        spatial=nextSpatial
         clues=nextClues;pendingClues=null
         lastSequence=checkpoint.sequence;return {status:'committed',sequence:checkpoint.sequence}
       }})
@@ -122,11 +131,14 @@ export function createLivingScene(scene,plan,world,player,progress,extras=()=>({
     notice.position.set(cityLayout.notice.x,cityLayout.notice.y+.6,cityLayout.notice.z)
     label(notice,'街坊便笺 · E 阅读','#ffe3a6')
     store().setFlush(async()=>{const result=await simulation.checkpoint(true);return result?.ok===true})
-    for(const n of LIVING_NPCS) {
-      const model=createNpcModel(scene,n.id.startsWith('guard')?'npc.guard':n.id==='merchant'?'npc.vendor':n.id==='resident-1'?'npc.citizen-woman':'npc.citizen')
+    syncModels()
+    return true
+  }
+  function syncModels() {
+    for(const n of npcDefinitions())if(!models.has(n.id)) {
+      const model=createNpcModel(scene,n.model??(n.id.startsWith('guard')?'npc.guard':n.id==='merchant'?'npc.vendor':n.id==='resident-1'?'npc.citizen-woman':'npc.citizen'))
       const texture=label(model.root,n.name,n.color);models.set(n.id,{model,texture,caption:'',last:copy(point(n.id))})
     }
-    return true
   }
   const input=createCombatInput(canvas,()=>useGameStore.getState().phase==='playing'&&!!simulation,()=>simulation?.release())
   function remember(next,message) {
@@ -155,14 +167,15 @@ export function createLivingScene(scene,plan,world,player,progress,extras=()=>({
     const temporary=s.interactions.inventory.lots.some(l=>l.id==='medicine-parcel'&&l.holderId==='stall')?spatial.stall:null
     const places=placeClues(cityLayout,clues,useNavigationStore.getState().fog,p,presence,temporary)
     const tracked=places.find(place=>place.id===store().trackedPlaceId)
-    store().publish({state:s,fighters:simulation.view(),hero,targetId:selected,names:Object.fromEntries(LIVING_NPCS.map(n=>[n.id,n.name])),
-      places,tracked:tracked?{...tracked,direction:destinationDirection(p,tracked)}:null,noticeDistance:Math.round(distance(p,cityLayout.notice)),
+    store().publish({state:s,fighters:simulation.view(),hero,targetId:selected,names:Object.fromEntries(npcDefinitions().map(n=>[n.id,n.name])),
+      places,tracked:tracked?{...tracked,direction:destinationDirection(p,tracked)}:null,noticeDistance:Math.round(distance(p,cityLayout.notice)),calendar:simulation.calendar(),
       bagCount:s.interactions.inventory.lots.filter(l=>l.holderId==='player-bag').reduce((n,l)=>n+l.quantity,0),clock:simulation.clock(),
       wanted:['guard','guard-2'].map(id=>wantedFor(s.crime,id,'player')).sort((a,b)=>b.level-a.level)[0],pursuit:['guard','guard-2'].map(id=>pursuitFor(s,id,'player',simulation.clock())).sort((a,b)=>({follow:2,search:1,idle:0}[b.mode]-{follow:2,search:1,idle:0}[a.mode]))[0],
       busy:simulation.busy(),stopped:simulation.stopped(),legacyEvents:legacy?.events??[]})
   }
   function draw(dt) {
     const state=simulation.state(),fighters=simulation.view(),at=simulation.clock()
+    syncModels()
     const noticeEnabled=loaded(cityLayout.notice)
     if(notice.isEnabled()!==noticeEnabled)notice.setEnabled(noticeEnabled)
     for(const [id,entry] of models) {
@@ -173,7 +186,7 @@ export function createLivingScene(scene,plan,world,player,progress,extras=()=>({
       const gear=state.equipment.loadouts.find(l=>l.actorId===id)
       entry.model.setEquipment?.(gear.weapon,gear.armor)
       entry.model.update(dt,distance(p,entry.last)>.001);entry.model.combatPose?.(f,at,flashes.get(id));Object.assign(entry.last,p)
-      const caption=`${LIVING_NPCS.find(n=>n.id===id).name} ${f.health}/100${selected===id?' · E':''}`
+      const caption=`${npcDefinitions().find(n=>n.id===id).name} ${f.health}/100${selected===id?' · E':''}`
       if(caption!==entry.caption){entry.texture.clear();entry.texture.drawText(caption,null,64,'bold 30px sans-serif',f.health?'#ffffff':'#aaaaaa','transparent',true);entry.caption=caption}
     }
     const lot=state.interactions.inventory.lots.find(l=>l.id==='medicine-parcel')
@@ -190,6 +203,7 @@ export function createLivingScene(scene,plan,world,player,progress,extras=()=>({
     fighter:id=>simulation?.view().find(f=>f.id===id),
     bodyClear:(from,to)=>bodyMoveClear(from,to,bodies()),bodySupport:(x,z,ceiling)=>bodySupportHeight(x,z,ceiling,bodies()),
     revision:()=>lastSequence,snapshot:()=>undefined,
+    worldHour:()=>simulation?.calendar().hour??null,
     clearCommands(){input.clear();simulation?.release()},
     checkpoint:(release=false)=>simulation?.checkpoint(release),
     update(dt) {

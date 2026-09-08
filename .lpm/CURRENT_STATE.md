@@ -1,5 +1,7 @@
 ## 2026-09-08 — 统一完成活世界的持续 Goal 已启动
 
+续进：P0 已由 12e5a20、b3f9461、78cf8df 提交并推送原功能分支。12-A 已实现并源码审阅：十二份旧 reducer 冻结且 Git 内容与 78cf8df 一致；新玩法 v2 基线由完整恢复的旧检查点推导；单一日历、旧 ID 去重、registry 身体登记与模板化到达接口接通。新写 living v3 / document schema 5，保留读取 living v1/v2。供货商模板已登记但没有自动出生。详见 [版本映射](../docs/world-ledger/next/VERSIONING.md)。尚未运行任何新增验证；下一卡为 02-A 场所登记，Goal active。
+
 用户要求取消 A/B 等待与分工，全部 29 张卡片由当前 Goal 连续完成。Goal active；未设置 token 预算。已核对 origin/core 仍为 3027b81，工作分支 feature/b-combat-rules，计划提交 b8c87b1。
 
 P0 四张卡已完成代码与源码审阅，实际运行仍待授权，详见 [P0 实现记录](../docs/world-ledger/next/P0-IMPLEMENTATION.md)。地点/道路图提交 12e5a20，独立导航缓存提交 b3f9461；场景已接七人分散落位、原事务链跨区行走、物主实际搬药、固定地点地图与便笺。新档 living v2 / document schema 4；旧 gameplay 配置与重放结果保留。根规则仍不运行测试/build/lint，没有新的实机场景或 FPS 证据。下一步 12-A：先形成旧规则冻结、迁移结构与映射说明，再接统一日历和生活领域；整个 Goal 保持 active。

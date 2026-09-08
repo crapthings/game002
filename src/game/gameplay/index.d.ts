@@ -69,6 +69,8 @@ export interface InteractionCommand {
   lotId: string; quantity: number;
 }
 export type GameplayStep = (
+  | { domain: 'registry'; command: { kind: 'arrive'; actorId: string; templateId: string };
+      context: Policy & { geometryConfirmed: true; proofId: string; body: RegistryBody } }
   | { domain: 'village'; command: { kind: 'take' | 'settle' | 'return' | 'aid' | 'reward' | 'mask'; actorId: string; lotId?: string }; context: Policy & { identified?: boolean } }
   | { domain: 'village'; command: { kind: 'relocate_pickup' | 'relocate_deliver'; actorId: 'merchant' };
       context: Policy & { reachable: true; position: WorldPoint; proofId: string } }
@@ -106,7 +108,7 @@ export function prepareGameplayRequest(state: GameplayState, catalog: Catalog, i
 }): Failure | { ok: true; code: 'PREPARED'; request: GameplayRequest };
 /** Treat as one snapshot; do not mutate projections or journal independently. */
 export interface GameplayState {
-  version: 1; configId: string; configSignature: string; catalogSignature: string;
+  version: 1 | 2; configId: string; configSignature: string; catalogSignature: string;
   revision: number; at: number; interactions: InteractionState; social: KnowledgeState;
   journal: GameplayRequest[];
   combat?: CombatState;
@@ -116,7 +118,31 @@ export interface GameplayState {
   crime?: CrimeState;
   pursuit?: PursuitState;
   village?: VillageState;
+  archive?: { version:1; legacyCheckpoint:WorldCheckpoint };
+  migration?: { clockOrigin:ClockOrigin; bodyActorIds:string[] };
+  calendar?: { version:1; clockOrigin:ClockOrigin };
+  registry?: { version:1; actors:RegistryActor[]; events:RegistryEvent[] };
 }
+export interface ClockOrigin { simulationAt:number; absoluteMinute:number }
+export interface RegisteredPlace {
+  id:string; label:string; kind:string; roadId:string; heading:number;
+  approach:WorldPoint; entrance:WorldPoint; access:WorldPoint;
+  public:boolean; hours:{startMinute:number;endMinute:number}[];
+  status:'confirmed'; geometryConfirmed:true;
+}
+export interface RegistryBody {
+  spawn:WorldPoint & {heading:number}; place:RegisteredPlace;
+  binding:{actorId:string;homePlaceId:string|null;workPlaceId:string|null;idlePlaceId:string;patrolPlaceIds:string[]};
+}
+export interface RegistryActor { actorId:string; hasBody:boolean; sourceEventId:string|null; templateId?:string; body?:RegistryBody }
+export interface RegistryEvent {
+  id:string; kind:'arrived'; actorId:string; targetId:null; cause:null; at:number;
+  templateId:string; source:string; initialWallet:number; initialLots:{itemType:string;quantity:number}[]; proofId:string; requestId:string;
+}
+export function physicalActorIds(state:GameplayState):string[];
+/** Validates source with frozen v1 rules; sequence is not incremented until a save. */
+export function migrateWorldToV2(config:GameplayConfig,source:WorldCheckpoint,migration:{clockOrigin:ClockOrigin;bodyActorIds:string[]}):
+  Failure | {ok:true;code:'MIGRATED';catalog:Catalog;checkpoint:WorldCheckpoint;events:[]};
 export interface Fighter {
   id: string; attack: number; defense: number; stamina: number;
   guardHeld: boolean; guarding: boolean; mustRelease: boolean; regenAt: number; brokenUntil: number;
@@ -208,7 +234,7 @@ export function pursuitFor(world: GameplayState, authorityId: string, subjectId:
   response: 'none' | 'question' | 'arrest' | 'reinforce';
   mode: 'idle' | 'follow' | 'search'; destination: WorldPoint | null; mayEngage: boolean;
 };
-export type GameplayEvent = VillageEvent | InteractionEvent | SocialEvent | CombatEvent | PropertyEvent | EquipmentEvent | RobberyEvent | CrimeEvent | PursuitEvent;
+export type GameplayEvent = RegistryEvent | VillageEvent | InteractionEvent | SocialEvent | CombatEvent | PropertyEvent | EquipmentEvent | RobberyEvent | CrimeEvent | PursuitEvent;
 export type Failure = { ok: false; code: string; events: [] };
 export type ExecuteResult = Failure | {
   ok: true; code: 'APPLIED' | 'ALREADY_APPLIED'; duplicate: boolean;

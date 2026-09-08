@@ -18,42 +18,46 @@ export function validateCityLayout(layout) {
 }
 function validateCityEnvelope(saved) {
   validateCityLayout(saved.layout)
+  const bodyIds=saved.checkpoint.gameplay.registry?.actors.filter(a=>a.hasBody&&a.actorId!=='player').map(a=>a.actorId)??LIVING_NPCS.map(n=>n.id)
   if(!Array.isArray(saved.clues)||saved.clues.length>placeIds.length||new Set(saved.clues.map(c=>c.placeId)).size!==saved.clues.length||
     !saved.clues.every(c=>placeIds.includes(c.placeId)&&['notice:city-v1','conversation:resident-1'].includes(c.source)&&Number.isSafeInteger(c.at)&&c.at>=0)||
-    ![0,1].includes(saved.migration?.fromVersion)||!Array.isArray(saved.travels)||saved.travels.length>LIVING_NPCS.length||
-    !saved.travels.every(t=>LIVING_NPCS.some(n=>n.id===t.actorId)&&typeof t.intentId==='string'&&t.intentId.length<=100&&
+    ![0,1].includes(saved.migration?.fromVersion)||!Array.isArray(saved.travels)||saved.travels.length>bodyIds.length||
+    !saved.travels.every(t=>bodyIds.includes(t.actorId)&&typeof t.intentId==='string'&&t.intentId.length<=100&&
       finitePoint({...t.destination,y:t.destination?.y??0})&&Number.isFinite(t.stop)&&t.stop>=0&&t.stop<=3)||
     new Set(saved.travels.map(t=>t.actorId)).size!==saved.travels.length||
     !saved.patrols||typeof saved.patrols!=='object'||Array.isArray(saved.patrols)||
-    !Object.entries(saved.patrols).every(([id,p])=>LIVING_NPCS.some(n=>n.id===id)&&Number.isSafeInteger(p.index)&&p.index>=0&&p.index<4&&Number.isSafeInteger(p.until)&&p.until>=0))throw new Error('城内行动记录无效，保留原档。')
+    !Object.entries(saved.patrols).every(([id,p])=>bodyIds.includes(id)&&Number.isSafeInteger(p.index)&&p.index>=0&&p.index<4&&Number.isSafeInteger(p.until)&&p.until>=0))throw new Error('城内行动记录无效，保留原档。')
 }
-export function validateLivingSpatial(s) {
-  if(!s || !finitePoint(s.player) || !Array.isArray(s.npcs) || s.npcs.length!==LIVING_NPCS.length ||
-    !LIVING_NPCS.every(n=>s.npcs.filter(p=>p.id===n.id).length===1) ||
+export function validateLivingSpatial(s,bodyActorIds=LIVING_NPCS.map(n=>n.id)) {
+  if(!s || !finitePoint(s.player) || !Array.isArray(s.npcs) || s.npcs.length!==bodyActorIds.length ||
+    !bodyActorIds.every(id=>s.npcs.filter(p=>p.id===id).length===1) ||
     !s.npcs.every(n=>finitePoint(n)&&Number.isFinite(n.heading)) || !finitePoint(s.stall)) throw new Error('江湖角色位置无效。')
   return s
 }
 export function validateLiving(saved,world) {
-  if(![1,2].includes(saved?.version) || !Object.hasOwn(saved,'legacy')) throw new Error('江湖新存档版本无效。')
+  if(![1,2,3].includes(saved?.version) || !Object.hasOwn(saved,'legacy') ||
+    (saved.version===3?saved.checkpoint?.gameplay.version!==2:saved.checkpoint?.gameplay.version!==1)) throw new Error('江湖新存档版本无效。')
   const config=livingConfig(saved.legacy,world)
   const restored=restoreWorldCheckpoint(config,saved.checkpoint)
   if(!restored.ok) throw new Error(`江湖记录校验失败：${restored.code}，保留原档。`)
-  validateLivingSpatial(saved.spatial)
-  if(saved.version===2)validateCityEnvelope(saved)
+  const bodyIds=restored.checkpoint.gameplay.registry?.actors.filter(a=>a.hasBody&&a.actorId!=='player').map(a=>a.actorId)
+  validateLivingSpatial(saved.spatial,bodyIds)
+  if(saved.version>=2)validateCityEnvelope(saved)
   return {config,checkpoint:restored.checkpoint}
 }
 // Cheap per-commit checks; full replay belongs to load. The scene session is the
 // only command writer and the repository additionally CAS-checks world revision.
 export function applyLivingCheckpoint(progress,event) {
   const current=progress.living, next=event.living
-  if(![1,2].includes(next?.version) || (current?.version===2&&next.version!==2) || !Number.isSafeInteger(event.expectedSequence) ||
+  if(![1,2,3].includes(next?.version) || (current&&next.version<current.version) || !Number.isSafeInteger(event.expectedSequence) ||
     (current?.checkpoint.sequence??0)!==event.expectedSequence ||
     next.checkpoint?.sequence!==event.expectedSequence+1 ||
     (current && JSON.stringify(current.legacy)!==JSON.stringify(next.legacy))) throw new Error('江湖检查点冲突，请重新读档。')
-  validateLivingSpatial(next.spatial)
-  if(next.version===2) {
+  const bodyIds=next.checkpoint.gameplay.registry?.actors.filter(a=>a.hasBody&&a.actorId!=='player').map(a=>a.actorId)
+  validateLivingSpatial(next.spatial,bodyIds)
+  if(next.version>=2) {
     validateCityEnvelope(next)
-    if(current?.version===2&&(JSON.stringify(current.layout)!==JSON.stringify(next.layout)||JSON.stringify(current.migration)!==JSON.stringify(next.migration)))throw new Error('城内布局发生冲突，请重新读档。')
+    if(current?.version>=2&&(JSON.stringify(current.layout)!==JSON.stringify(next.layout)||JSON.stringify(current.migration)!==JSON.stringify(next.migration)))throw new Error('城内布局发生冲突，请重新读档。')
   }
   if(event.fog!==undefined&&!validFog(event.fog)||event.stamina!==undefined&&!validStamina(event.stamina)||event.worldTime!==undefined&&!validWorldTime(event.worldTime))throw new Error('世界检查点无效。')
   const extras={}

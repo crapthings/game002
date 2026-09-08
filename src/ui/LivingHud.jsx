@@ -23,13 +23,14 @@ export default function LivingHud(){
   <div className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 text-xl text-white/70">·</div>
   <aside className="absolute bottom-4 left-1/2 w-80 max-w-[90vw] -translate-x-1/2 rounded-xl border border-white/20 bg-stone-950/90 p-3 text-xs text-stone-100" aria-label="战斗状态">
    <p>气血 {v.hero.health}/100 · 铜钱 {v.hero.wallet} 文 · 攻击 {f.attack} / 防御 {f.defense}</p>
+   {v.calendar&&<p className="mt-1 text-stone-400">{v.calendar.label}</p>}
    <div className="my-2 h-2 rounded bg-red-950"><div className="h-full rounded bg-red-400" style={{width:`${v.hero.health}%`}} /></div>
    <p>气力 {Math.floor(f.stamina/1000)}/100 · {f.phase==='guard'?'招架中':f.mustRelease?'松开招架后回气':f.phase==='broken'?'破防':f.phase==='dead'?'已死亡':({windup:'起手',active:'挥击',recovery:'收招'}[f.phase]??'就绪')}</p>
    <div role="progressbar" aria-label="招架气力" aria-valuenow={Math.floor(f.stamina/1000)} aria-valuemin={0} aria-valuemax={100} className="my-2 h-2 rounded bg-stone-700"><div className="h-full rounded bg-cyan-300" style={{width:`${f.stamina/1000}%`}} /></div>
    <p>{s.village.masked?'已蒙面':'未蒙面'} · 通缉 {v.wanted.level} · {v.pursuit.mode==='follow'?'捕快追踪中':v.pursuit.mode==='search'?'搜查最后位置':'暂无可见追踪'}</p>
    <p className="mt-2 text-amber-200">{v.targetId?`${v.targetId==='notice'?'街坊便笺':v.targetId==='stall'?'陈掌柜的药包':name(v.targetId)} · E ${v.targetId==='notice'?'阅读':v.targetId==='stall'?'拿取':'交互'}`:'靠近并面向角色，2米内 E 交互'}</p>
    {v.tracked?<p className="mt-2 text-emerald-200">前往{v.tracked.label} · {v.tracked.direction}<br/><span className="text-stone-400">{v.tracked.presence}；过河请走桥。</span></p>:v.noticeDistance<16&&<p className="mt-2 text-stone-300">入口便笺 {v.noticeDistance}米：靠近按 E，可记下药铺、府衙和街坊住处。M 打开地图。</p>}
-   <p className="mt-1 text-stone-500">本轮七名具名角色参与战斗与江湖事件</p>
+   <p className="mt-1 text-stone-500">城内 {Object.keys(v.names).length} 名具名角色参与战斗与江湖事件</p>
    <p className="mt-1 text-stone-400">左键 / J 出招 · 右键 / K 按住招架 · T 威胁 · H 蒙面</p>
    <button className={`${button} mt-2`} onClick={()=>useLivingStore.getState().toggle()}>背包与江湖记录 · Tab</button>
    {v.hero.health===0&&<p className="mt-2 text-red-300">你已倒下。当前种子会保留死亡结果，可从菜单换新种子再试。</p>}

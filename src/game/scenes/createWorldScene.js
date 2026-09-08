@@ -245,7 +245,8 @@ export function createWorldScene(engine, canvas, { onLoading, onReady } = {}) {
     if (useGameStore.getState().phase !== 'playing') return
     if (ledger && !ledger.canAdvance()) { ledger.present(); return }
     const dt = Math.min(engine.getDeltaTime() / 1000, 0.05)
-    dayNight.update(dt)
+    const worldHour=ledger?.worldHour()
+    if(Number.isFinite(worldHour))dayNight.setTime(worldHour)
     lightingTimer += dt
     if (lightingTimer >= 0.1) {
       lightingTimer = 0
@@ -284,6 +285,8 @@ export function createWorldScene(engine, canvas, { onLoading, onReady } = {}) {
     })
     world.updateNpcs(dt,position.x,position.z)
     ledger?.update(dt)
+    const updatedHour=ledger?.worldHour()
+    if(Number.isFinite(updatedHour))dayNight.setTime(updatedHour)
     thirdPerson.follow(player.root, world.terrain, dt)
     navigationTimer += dt
     if (navigationTimer >= 0.1) {

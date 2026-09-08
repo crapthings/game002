@@ -1,21 +1,34 @@
-import { createWorldSession, previewGameplayCombat, pursuitFor } from '../gameplay/index.js'
+import { createGameplay, createWorldSession, migrateWorldToV2, previewGameplayCombat, pursuitFor } from '../gameplay/index.js'
 import { createLivingStateIndex } from './createLivingStateIndex.js'
 import { livingConfig, LIVING_NPCS, PRICES } from './config.js'
 import { distance, facingAngle, sweptContact } from './geometry.js'
+import { createClockOrigin, clockAt } from './clock.js'
+import { sceneActorDefinitions } from './actorRegistry.js'
 const copy=v=>structuredClone(v)
-export function createLivingSimulation({world,legacy=null,saved,save,space,notify=()=>{},effects=()=>{}}) {
-  const config=livingConfig(legacy,world),session=createWorldSession(config,{saved,save})
+export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,save,space,notify=()=>{},effects=()=>{}}) {
+  const config=livingConfig(legacy,world)
+  let checkpoint=saved
+  if(checkpoint?.gameplay.version!==2) {
+    if(!checkpoint){const initial=createGameplay(config);checkpoint={version:1,sequence:0,simulationAt:initial.state.at,gameplay:initial.state}}
+    const migrated=migrateWorldToV2(config,checkpoint,{clockOrigin:createClockOrigin(checkpoint.simulationAt,initialHour),bodyActorIds:config.actors.map(a=>a.id)})
+    if(!migrated.ok)throw new Error(`江湖版本迁移失败：${migrated.code}，保留原档。`)
+    checkpoint=migrated.checkpoint
+  }
+  const session=createWorldSession(config,{saved:checkpoint,save})
   let state=session.snapshot().gameplay,clock=session.status().simulationAt,busy=false,stopped=false,guardDesired=false,checkpointDepth=0
   const stateIndex=createLivingStateIndex(config),indexed=()=>stateIndex(state)
+  let npcState=null,npcCache=LIVING_NPCS
+  const npcs=()=>{if(npcState!==state){npcState=state;npcCache=sceneActorDefinitions(state)}return npcCache}
   let remainder=0
-  let serial=Math.max(state.revision,...state.journal.map(r=>/^live-\d+$/.test(r.id)?Number(r.id.slice(5)):0)),sweep=new Map(),view=previewGameplayCombat(state,clock)
+  const priorRequests=[...(state.archive?.legacyCheckpoint.gameplay.journal??[]),...state.journal]
+  let serial=Math.max(state.revision,...priorRequests.map(r=>/^live-\d+$/.test(r.id)?Number(r.id.slice(5)):0)),sweep=new Map(),view=previewGameplayCombat(state,clock)
   for(const f of view)if(f.phase==='active')sweep.set(f.swing.id,(clock-f.swing.activeAt)/180)
   const actor=id=>indexed().actors.get(id)
   const fighter=id=>view.find(a=>a.id===id)
   const alive=id=>actor(id)?.health>0
   const near=(a,b,r=2)=>distance(space.point(a),space.point(b))<=r && Math.abs(space.point(a).y-space.point(b).y)<1.5 && (space.contactClear??space.clear)(space.point(a),space.point(b))
   const sees=(a,b,identify=false)=>alive(a)&&alive(b)&&space.visible(a,b,identify)&&!(identify&&b==='player'&&state.village.masked)
-  const observers=(actorId,targetId=null)=>LIVING_NPCS.filter(n=>n.id!==actorId&&(sees(n.id,actorId)||n.id===targetId)).map(n=>({npcId:n.id,identified:sees(n.id,actorId,true),position:copy(space.point(actorId)),proofId:`sight-${serial+1}-${n.id}`}))
+  const observers=(actorId,targetId=null)=>npcs().filter(n=>n.id!==actorId&&(sees(n.id,actorId)||n.id===targetId)).map(n=>({npcId:n.id,identified:sees(n.id,actorId,true),position:copy(space.point(actorId)),proofId:`sight-${serial+1}-${n.id}`}))
   async function send(domain,command,extra={},observe=false) {
     if(busy||stopped)return {ok:false,code:'BUSY'}
     busy=true
@@ -78,7 +91,7 @@ export function createLivingSimulation({world,legacy=null,saved,save,space,notif
       sweep.set(f.swing.id,fraction)
     }
     for(const id of sweep.keys())if(!view.some(f=>f.swing?.id===id))sweep.delete(id)
-    for(const npc of LIVING_NPCS) {
+    for(const npc of npcs()) {
       const id=npc.id,f=fighter(id)
       if(!alive(id))continue
       const knowledge=index.npcs.get(id),gear=knowledge.gear
@@ -165,6 +178,7 @@ export function createLivingSimulation({world,legacy=null,saved,save,space,notif
   }
   return {update,command,checkpoint,release:()=>{guardDesired=false},
     canAdvance:()=>!busy&&!stopped&&!checkpointDepth,view:()=>view,state:()=>state,clock:()=>clock,
+    calendar:()=>clockAt(state.calendar.clockOrigin,clock),
     busy:()=>busy||checkpointDepth>0,stopped:()=>stopped,config,
     close:async()=>{await checkpoint(true);return session.close()}}
 }
