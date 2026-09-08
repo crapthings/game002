@@ -1,3 +1,4 @@
+import { activeEventCount,findReceipt } from './historyArchive.js'
 // Social facts are not shared knowledge. This module has no NPC names, engine,
 // timers or pathfinding; the adapter supplies observed/delivered evidence.
 const clone = value => structuredClone(value)
@@ -35,13 +36,13 @@ export function executeKnowledge(state,command,context) {
   try {
     requireValue(state?.version === 1 && natural(state.revision) && Array.isArray(state.actorIds) && Array.isArray(state.events) && Array.isArray(state.receipts),'INVALID_STATE')
     requireValue(command && id(command.id) && kinds.includes(command.kind) && natural(command.expectedRevision),'INVALID_COMMAND')
-    const key = fingerprint(command), previous = state.receipts.find(r => r.requestId === command.id)
+    const key = fingerprint(command), previous = findReceipt(state,command.id)
     if (previous) {
       requireValue(previous.fingerprint === key,'REQUEST_ID_CONFLICT')
       return {ok:true,code:'ALREADY_APPLIED',duplicate:true,state:clone(state),events:[],appliedEventId:previous.eventId}
     }
     requireValue(state.revision === command.expectedRevision,'STALE_REVISION')
-    requireValue(state.events.length < 4096,'HISTORY_FULL')
+    requireValue(activeEventCount(state)<4096,'HISTORY_FULL')
     requireValue(context?.allowed === true,'INTERACTION_DENIED')
     requireValue(natural(context.at) && (!state.events.length || context.at >= state.events.at(-1).at),'INVALID_TIME')
     requireValue(state.actorIds.includes(command.actorId),'UNKNOWN_ACTOR')

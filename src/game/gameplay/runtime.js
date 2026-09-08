@@ -21,6 +21,7 @@ import { executeRobbery } from './robbery.js'
 import { executeCrime } from './crime.js'
 import { executePursuit } from './pursuit.js'
 import { classifyForce } from './forcePolicy.js'
+import { archivedRequest,compactGameplay,historyPage,historyCanonical } from './historyArchive.js'
 
 const clone = value => structuredClone(value)
 const natural = value => Number.isSafeInteger(value) && value >= 0
@@ -69,7 +70,7 @@ export function executeGameplay(state,catalog,request) {
     requireValue(canonical(catalog) === state.catalogSignature,'CATALOG_MISMATCH')
     requireValue(request && id(request.id) && natural(request.expectedRevision) && Array.isArray(request.steps) && request.steps.length > 0 && request.steps.length <= 32,'INVALID_REQUEST')
     const key = canonical(request)
-    const prior = state.journal.find(entry => entry.id === request.id) ?? state.archive?.legacyCheckpoint.gameplay.journal.find(entry=>entry.id===request.id)
+    const prior = state.journal.find(entry => entry.id === request.id) ?? state.archive?.legacyCheckpoint.gameplay.journal.find(entry=>entry.id===request.id) ?? archivedRequest(state,request.id)
     if (prior) {
       requireValue(canonical(prior) === key,'REQUEST_ID_CONFLICT')
       return {ok:true,code:'ALREADY_APPLIED',duplicate:true,state:clone(state),events:[]}
@@ -293,12 +294,29 @@ export function executeGameplay(state,catalog,request) {
 // Replay derives state, but never runs scene callbacks, sends notifications or
 // credits an external wallet. It detects inconsistent snapshots, not forgery of
 // an entire local history and its claimed spatial evidence.
-export function restoreGameplay(config,saved) {
+export function restoreGameplay(config,saved,{pages=[]}={}) {
   if(saved?.version===1)return v1.restoreGameplay(config,saved)
   try {
     requireValue(saved?.version === 2 && saved.configId === config.id && Array.isArray(saved.journal) && saved.journal.length <= 4096,'INVALID_SAVE')
     const initial = createV2Baseline(config,saved.archive?.legacyCheckpoint,saved.migration)
     let state = initial.state
+    const history=saved.archive?.history
+    if(history) {
+      requireValue(saved.archive.version===2&&history.version===1&&Array.isArray(history.pages),'INVALID_ARCHIVE')
+      for(const [index,descriptor] of history.pages.entries()) {
+        requireValue(descriptor.index===index,'INVALID_ARCHIVE_ORDER')
+        const page=historyPage(history.id,index,pages)
+        requireValue(Array.isArray(page.journal)&&page.journal.length>0&&page.journal.length<=4096,'INVALID_ARCHIVE_PAGE')
+        for(const request of page.journal) {
+          const result=executeGameplay(state,initial.catalog,request)
+          requireValue(result.ok&&!result.duplicate,'INVALID_HISTORY');state=result.state
+        }
+        const compacted=compactGameplay(state,history.id)
+        requireValue(historyCanonical(compacted.page)===historyCanonical(page),'ARCHIVE_PROJECTION_MISMATCH')
+        requireValue(historyCanonical(compacted.state.archive.history.pages[index])===historyCanonical(descriptor),'INVALID_ARCHIVE_DESCRIPTOR')
+        state=compacted.state
+      }
+    }
     for (const request of saved.journal) {
       const result = executeGameplay(state,initial.catalog,request)
       requireValue(result.ok && !result.duplicate,'INVALID_HISTORY')
@@ -309,4 +327,34 @@ export function restoreGameplay(config,saved) {
   } catch (error) {
     return {ok:false,code:error instanceof GameplayError || error instanceof InventoryError ? error.code : 'INVALID_SAVE',events:[]}
   }
+}
+
+// `previous` is a private copy derived by repository load/replay or its last
+// verified commit. Never call this on an arbitrary imported snapshot baseline.
+export function verifyGameplayAdvance(previous,catalog,saved,{pages=[]}={}) {
+  try {
+    requireValue(previous.version===2&&saved?.version===2,'INVALID_SAVE')
+    let state=clone(previous)
+    const oldPages=previous.archive.history?.pages??[],newPages=saved.archive.history?.pages??[]
+    requireValue(newPages.length>=oldPages.length&&newPages.length<=oldPages.length+1&&
+      historyCanonical(newPages.slice(0,oldPages.length))===historyCanonical(oldPages),'INVALID_ARCHIVE_ORDER')
+    const replay=requests=>{
+      requireValue(Array.isArray(requests)&&requests.length>=state.journal.length&&requests.length<=4096&&
+        historyCanonical(requests.slice(0,state.journal.length))===historyCanonical(state.journal),'INVALID_HISTORY')
+      for(const request of requests.slice(state.journal.length)) {
+        const result=executeGameplay(state,catalog,request)
+        requireValue(result.ok&&!result.duplicate,'INVALID_HISTORY');state=result.state
+      }
+    }
+    if(newPages.length>oldPages.length) {
+      const history=saved.archive.history,page=historyPage(history.id,oldPages.length,pages)
+      replay(page.journal)
+      const compacted=compactGameplay(state,history.id)
+      requireValue(historyCanonical(compacted.page)===historyCanonical(page),'ARCHIVE_PROJECTION_MISMATCH')
+      state=compacted.state
+    }
+    replay(saved.journal)
+    requireValue(historyCanonical(state)===historyCanonical(saved),'PROJECTION_MISMATCH')
+    return {ok:true,state,catalog}
+  } catch(error){return {ok:false,code:error.code??'INVALID_SAVE'}}
 }

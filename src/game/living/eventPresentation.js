@@ -9,8 +9,9 @@ export const eventWords={
   opportunities_initialized:'登记生活请求',opportunity_autonomy_enabled:'开始自主办事',personal_need:'生活请求的起因',opportunity_offered:'提出委托',opportunity_disclosed:'告知请求',opportunity_accepted:'答应帮忙',opportunity_declined:'婉拒请求',opportunity_cancelled:'取消委托',opportunity_expired:'委托到期',opportunity_failed:'委托未能完成',opportunity_funds_lost:'报酬资金受损',message_delivered:'口信送达',message_acknowledged:'收信人答复',opportunity_payment_due:'约定报酬待付',opportunity_fulfilled:'办妥并结清',opportunity_outcome_learned:'得知委托后续',opportunity_status_told:'当面交代进展',
 }
 /** Only invoked by an open review panel, including intermediate evidence nodes. */
-export function createReviewIndex(state) {
-  const events=[...['combat','interactions','village','robbery','property','equipment','crime','pursuit','registry','life','places','dialogue','opportunities','relations','economy','social'].flatMap(domain=>state[domain]?.events??[])]
+export function createReviewIndex(state,archived=[]) {
+  const current=['combat','interactions','village','robbery','property','equipment','crime','pursuit','registry','life','places','dialogue','opportunities','relations','economy','social'].flatMap(domain=>state[domain]?.events??[])
+  const events=[...new Map([...archived,...current].map(e=>[e.id,e])).values()]
   for(const need of state.opportunities?.needs??[])events.push({id:need.id,kind:'personal_need',actorId:need.issuerId,targetId:need.targetActorId,at:state.opportunities.events[0].at,cause:null})
   for(const need of state.economy?.needs??[])events.push({id:need.id,kind:'restock_need',actorId:need.issuerId,targetId:need.targetActorId,at:need.at,cause:null})
   const byId=new Map(events.map(e=>[e.id,e])),roots=new Map()

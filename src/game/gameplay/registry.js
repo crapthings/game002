@@ -1,3 +1,4 @@
+import { activeEventCount,nextEventNumber } from './historyArchive.js'
 import { ARRIVAL_TEMPLATES_V1 } from './content/arrivalTemplatesV1.js'
 import { InventoryError,assertInventory } from './inventory.js'
 import { createCombatState } from './combat.js'
@@ -26,10 +27,10 @@ export function executeRegistry(world,catalog,command,context) {
     body.binding?.actorId===definition.id&&body.binding.idlePlaceId===body.place.id&&
     [body.binding.homePlaceId,body.binding.workPlaceId].every(id=>id===null||id===body.place.id)&&
     Array.isArray(body.binding.patrolPlaceIds)&&body.binding.patrolPlaceIds.every(id=>id===body.place.id),'INVALID_ARRIVAL_BODY')
-  check(world.registry.events.length<4096,'HISTORY_FULL')
+  check(activeEventCount(world.registry)<4096,'HISTORY_FULL')
   const actor={id:definition.id,containerId:`${definition.id}-bag`,wallet:definition.wallet,health:definition.health,maxHealth:definition.maxHealth,
     attack:definition.attack,defense:definition.defense,courage:definition.courage}
-  const event={id:`registry:${world.registry.events.length+1}`,kind:'arrived',actorId:actor.id,targetId:null,cause:null,at:context.at,
+  const event={id:`registry:${nextEventNumber(world.registry)}`,kind:'arrived',actorId:actor.id,targetId:null,cause:null,at:context.at,
     templateId:command.templateId,source:definition.source,initialWallet:actor.wallet,initialLots:clone(definition.lots),proofId:context.proofId,requestId:command.id}
   world.interactions.actors.push(actor)
   world.interactions.inventory.containers.push({id:actor.containerId,capacity:null})

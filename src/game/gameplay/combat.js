@@ -1,3 +1,4 @@
+import { nextEventNumber,findReceipt } from './historyArchive.js'
 // Pure combat rules. Milliseconds and milli-stamina avoid frame-rate rounding.
 // A supplies swept hit/occlusion evidence and incoming angle, never damage.
 const clone = value => structuredClone(value)
@@ -28,7 +29,7 @@ export function createCombatState(actors) {
 }
 
 function emit(state,kind,at,data) {
-  const event = {id:`combat:${state.events.length+1}`,kind,at,...data}
+  const event = {id:`combat:${nextEventNumber(state)}`,kind,at,...data}
   state.events.push(event)
   return event.id
 }
@@ -85,7 +86,7 @@ export function executeCombat(state,actors,command,context) {
       command.targetId ?? null,command.held ?? null,command.swingId ?? null,
       context.at,context.allowed === true,context.contact === true,context.clear === true,
       context.angleDegrees ?? null,context.proofId ?? null])
-    const prior = state.receipts.find(r => r.requestId === command.id)
+    const prior = findReceipt(state,command.id)
     if (prior) {
       check(prior.fingerprint === fingerprint,'REQUEST_ID_CONFLICT')
       return {ok:true,code:'ALREADY_APPLIED',duplicate:true,state:clone(state),actors:clone(actors),events:[]}

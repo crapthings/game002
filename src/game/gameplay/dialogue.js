@@ -1,3 +1,4 @@
+import { activeEventCount,nextEventNumber } from './historyArchive.js'
 import { InventoryError } from './inventory.js'
 import { executeKnowledge } from './knowledge.js'
 import { placeStatus } from './places.js'
@@ -62,11 +63,11 @@ export function executeDialogue(world,command,context) {
     const event={id:'dialogue:1',kind:'dialogue_initialized',actorId:command.actorId,targetId:null,at:context.at,cause:null,requestId:command.id}
     world.dialogue={version:1,addresses:[],events:[event]};return [copy(event)]
   }
-  check(world.dialogue&&world.dialogue.events.length<4096,'HISTORY_FULL')
+  check(world.dialogue&&activeEventCount(world.dialogue)<4096,'HISTORY_FULL')
   const eligibility=meetingEligibility(world,command.actorId,command.targetId,context)
   check(eligibility.available,eligibility.reason)
   check(typeof context.meetingId==='string'&&context.meetingId.length>0&&typeof context.proofId==='string'&&context.proofId.length>0,'MISSING_MEETING_EVIDENCE')
-  const event={id:`dialogue:${world.dialogue.events.length+1}`,kind:null,actorId:command.actorId,targetId:command.targetId,
+  const event={id:`dialogue:${nextEventNumber(world.dialogue)}`,kind:null,actorId:command.actorId,targetId:command.targetId,
     at:context.at,cause:null,requestId:command.id,meetingId:context.meetingId,proofId:context.proofId}
   let socialEvents=[]
   if(command.kind==='tell_place') {

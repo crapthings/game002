@@ -8,6 +8,7 @@
 - [当面对话、委托与报酬接入](../docs/world-ledger/next/DIALOGUE-IMPLEMENTATION.md)
 - [关系、传播与经济接入](../docs/world-ledger/next/SOCIETY-IMPLEMENTATION.md)
 - [旧规则冻结与版本映射](../docs/world-ledger/next/VERSIONING.md)
+- [历史分页、恢复校验与原子保存](../docs/world-ledger/next/ARCHIVE-IMPLEMENTATION.md)
 - [B接手场景接入与验证边界](../docs/world-ledger/SCENE-INTEGRATION.md)
 - [当前状态](CURRENT_STATE.md)
 - [渲染、GPU 骨骼与 Worker 性能优化](../docs/performance.md)

@@ -172,9 +172,9 @@ export function createLivingScene(scene,plan,world,player,progress,extras=()=>({
         // through the owner's recorded pickup/delivery transaction.
         if(!['stall','merchant-bag'].includes(parcelLot.holderId)||checkpoint.gameplay.village.events.some(e=>e.kind==='relocate_deliver'))nextSpatial.stall=copy(cityLayout.parcelSpot)
         const nextClues=copy(pendingClues??clues)
-        const living={version:3,legacy:copy(legacy),checkpoint,spatial:nextSpatial,layout:copy(cityLayout),migration:copy(migration),travels:travel.snapshot(),patrols:copy(patrols),clues:nextClues}
+        const living={version:checkpoint.gameplay.archive.history?4:3,legacy:copy(legacy),checkpoint,spatial:nextSpatial,layout:copy(cityLayout),migration:copy(migration),travels:travel.snapshot(),patrols:copy(patrols),clues:nextClues}
         const worldTime=clockAt(checkpoint.gameplay.calendar.clockOrigin,checkpoint.simulationAt).hour
-        const ok=await useWorldStore.getState().dispatch({type:'living-checkpoint',living,expectedSequence:meta.expectedSequence,...extras(),worldTime})
+        const ok=await useWorldStore.getState().dispatch({type:'living-checkpoint',living,expectedSequence:meta.expectedSequence,archivePages:meta.archivePages,...extras(),worldTime})
         if(!ok)throw new Error('保存结果未确认，请重新读档。')
         spatial=nextSpatial
         clues=nextClues;pendingClues=null

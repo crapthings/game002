@@ -1,3 +1,4 @@
+import { activeEventCount,nextEventNumber,findReceipt } from './historyArchive.js'
 import { InventoryError } from './inventory.js'
 import { previewCombat } from './combat.js'
 
@@ -24,13 +25,13 @@ export function executeRobbery(state,interactions,combat,property,command,contex
     const fingerprint = JSON.stringify([command.kind,command.expectedRevision,command.actorId,command.targetId,
       command.amount,context?.at,context?.allowed === true,context?.reachable === true,
       context?.guardNearby,context?.escapeRoute,context?.proofId])
-    const prior = state.receipts.find(r => r.requestId === command.id)
+    const prior = findReceipt(state,command.id)
     if (prior) {
       check(prior.fingerprint === fingerprint,'REQUEST_ID_CONFLICT')
       return {ok:true,code:'ALREADY_APPLIED',duplicate:true,state:clone(state),interactions:clone(interactions),property:clone(property),events:[]}
     }
     check(command.expectedRevision === state.revision,'STALE_REVISION')
-    check(state.events.length <= 4094,'HISTORY_FULL')
+    check(activeEventCount(state) <= 4094,'HISTORY_FULL')
     check(context?.allowed === true && context.reachable === true && id(context.proofId) &&
       typeof context.guardNearby === 'boolean' && typeof context.escapeRoute === 'boolean','MISSING_THREAT_EVIDENCE')
     check(natural(context.at) && Number.isSafeInteger(context.at+30000) && context.at >= combat.at &&
@@ -56,7 +57,7 @@ export function executeRobbery(state,interactions,combat,property,command,contex
     else if (pressure >= courage) reaction = 'surrender'
     else reaction = 'fight'
     const next = clone(state), items = clone(interactions), claims = clone(property)
-    const threat = {id:`robbery:${next.events.length+1}`,kind:'threatened',at:context.at,
+    const threat = {id:`robbery:${nextEventNumber(next)}`,kind:'threatened',at:context.at,
       actorId:actor.id,targetId:target.id,demand:command.amount,reaction,
       cause:null,proofId:context.proofId,requestId:command.id}
     next.events.push(threat)
@@ -65,7 +66,7 @@ export function executeRobbery(state,interactions,combat,property,command,contex
       check(natural(actor.wallet+amount),'AMOUNT_OVERFLOW')
       items.actors.find(a => a.id === target.id).wallet -= amount
       items.actors.find(a => a.id === actor.id).wallet += amount
-      const event = {id:`robbery:${next.events.length+1}`,kind:'robbed',at:context.at,
+      const event = {id:`robbery:${nextEventNumber(next)}`,kind:'robbed',at:context.at,
         actorId:actor.id,targetId:target.id,amount,cause:threat.id,
         proofId:context.proofId,requestId:command.id}
       claims.moneyClaims.push({id:`claim:${event.id}`,sourceEventId:event.id,

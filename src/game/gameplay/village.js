@@ -1,3 +1,4 @@
+import { activeEventCount,nextEventNumber } from './historyArchive.js'
 import { InventoryError, transferLot, consumeLot } from './inventory.js'
 import { requireAvailableFunds,requireAvailableLot } from './reservations.js'
 const clone = value => structuredClone(value)
@@ -9,13 +10,13 @@ export function createVillageState(setup) {
 // Called only on the coordinator's transaction candidate; failure discards it.
 export function executeVillage(world,catalog,command,context) {
   const s=world.village, actors=world.interactions.actors, inventory=world.interactions.inventory
-  check(s && s.events.length<4096,'HISTORY_FULL')
+  check(s && activeEventCount(s)<4096,'HISTORY_FULL')
   check(context.allowed===true,'INTERACTION_DENIED')
   check(Number.isSafeInteger(context.at)&&context.at>=0&&Number.isSafeInteger(context.at+100000),'INVALID_TIME')
   check(['take','settle','return','aid','reward','mask','relocate_pickup','relocate_deliver'].includes(command.kind),'INVALID_COMMAND')
   const actor=actors.find(a=>a.id===command.actorId)
   check(actor?.health>0,'ACTOR_DEAD')
-  const event={id:`village:${s.events.length+1}`,kind:command.kind,at:context.at,
+  const event={id:`village:${nextEventNumber(s)}`,kind:command.kind,at:context.at,
     actorId:actor.id,targetId:null,cause:null,requestId:command.id}
   const player=actors.find(a=>a.id==='player'),merchant=actors.find(a=>a.id==='merchant')
   const parcel=inventory.lots.find(l=>l.id==='medicine-parcel')

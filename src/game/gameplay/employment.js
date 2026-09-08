@@ -1,11 +1,12 @@
+import { activeEventCount,nextEventNumber } from './historyArchive.js'
 import { InventoryError } from './inventory.js'
 import { availableWallet,requireAvailableFunds } from './reservations.js'
 import { previewCombat } from './combat.js'
 const check=(ok,code)=>{if(!ok)throw new InventoryError(code)}
 const actor=(world,id)=>world.interactions.actors.find(a=>a.id===id)
 const emit=(world,command,at,kind,actorId,targetId,extra={})=>{
-  check(world.economy.events.length<4096,'HISTORY_FULL')
-  const event={id:`economy:${world.economy.events.length+1}`,kind,actorId,targetId,at,cause:null,requestId:command.id,...extra}
+  check(activeEventCount(world.economy)<4096,'HISTORY_FULL')
+  const event={id:`economy:${nextEventNumber(world.economy)}`,kind,actorId,targetId,at,cause:null,requestId:command.id,...extra}
   world.economy.events.push(event);return structuredClone(event)
 }
 export function laborEligible(world,job,at) {

@@ -1,3 +1,4 @@
+import { activeEventCount,findReceipt } from './historyArchive.js'
 import { InventoryError } from './inventory.js'
 const clone = value => structuredClone(value)
 const natural = n => Number.isSafeInteger(n) && n >= 0
@@ -41,13 +42,13 @@ export function executeCrime(state,world,command,context) {
       id(command.factId) && natural(command.expectedRevision),'INVALID_COMMAND')
     const fingerprint = JSON.stringify([command.kind,command.expectedRevision,command.actorId,command.factId,
       context?.at,context?.allowed === true])
-    const prior = state.receipts.find(r => r.requestId === command.id)
+    const prior = findReceipt(state,command.id)
     if (prior) {
       check(prior.fingerprint === fingerprint,'REQUEST_ID_CONFLICT')
       return {ok:true,code:'ALREADY_APPLIED',duplicate:true,state:clone(state),events:[]}
     }
     check(command.expectedRevision === state.revision,'STALE_REVISION')
-    check(state.events.length < 4096,'HISTORY_FULL')
+    check(activeEventCount(state)<4096,'HISTORY_FULL')
     check(context?.allowed === true,'INTERACTION_DENIED')
     check(natural(context.at) && (!state.events.length || context.at >= state.events.at(-1).at),'INVALID_TIME')
     check(state.authorities.includes(command.actorId),'NOT_AUTHORITY')

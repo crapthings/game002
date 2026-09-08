@@ -1,4 +1,5 @@
 import { createGameplay, createWorldSession, migrateWorldToV2, previewGameplayCombat, pursuitFor, tradeEligibility, servicePresence, meetingEligibility, dialogueTopics, dialogueAnswer, availableWallet, knownOpportunities, prepareCommitment } from '../gameplay/index.js'
+import { shouldArchive } from '../gameplay/historyArchive.js'
 import { createLivingStateIndex } from './createLivingStateIndex.js'
 import { livingConfig, LIVING_NPCS, PRICES } from './config.js'
 import { distance, facingAngle, sweptContact } from './geometry.js'
@@ -22,14 +23,15 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
     if(!migrated.ok)throw new Error(`江湖版本迁移失败：${migrated.code}，保留原档。`)
     checkpoint=migrated.checkpoint
   }
-  const session=createWorldSession(config,{saved:checkpoint,save})
+  const session=createWorldSession(config,{saved:checkpoint,save,archive:true})
   let state=session.snapshot().gameplay,clock=session.status().simulationAt,busy=false,stopped=false,guardDesired=false,checkpointDepth=0
   const stateIndex=createLivingStateIndex(config),indexed=()=>stateIndex(state)
   let npcState=null,npcCache=LIVING_NPCS
   const npcs=()=>{if(npcState!==state){npcState=state;npcCache=sceneActorDefinitions(state)}return npcCache}
   let remainder=0
   const priorRequests=[...(state.archive?.legacyCheckpoint.gameplay.journal??[]),...state.journal]
-  let serial=Math.max(state.revision,...priorRequests.map(r=>/^live-\d+$/.test(r.id)?Number(r.id.slice(5)):0)),sweep=new Map(),view=previewGameplayCombat(state,clock)
+  let serial=[...priorRequests.map(r=>r.id),...Object.keys(state.archive.history?.requestIndex??{})]
+    .reduce((n,id)=>/^live-\d+$/.test(id)?Math.max(n,Number(id.slice(5))):n,state.revision),sweep=new Map(),view=previewGameplayCombat(state,clock)
   for(const f of view)if(f.phase==='active')sweep.set(f.swing.id,(clock-f.swing.activeAt)/180)
   const actor=id=>indexed().actors.get(id)
   const routineDue=new Map()
@@ -201,7 +203,11 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
     const hero=fighter('player')
     const index=indexed()
     if(!guardDesired && alive('player') && (hero.guardHeld||hero.mustRelease)) {send('combat',{kind:'guard',actorId:'player',held:false});return}
-    if(index.capacityStatus!=='available'){guardDesired=false;if(alive('player')&&(hero.guardHeld||hero.mustRelease)){send('combat',{kind:'guard',actorId:'player',held:false});return}stopped=true;notify('本轮账本接近容量上限，已停止新增行动，请保存退出。');session.checkpoint(clock).then(result=>{if(!result.ok)notify(result.code)});return}
+    if(index.capacityStatus!=='available'){
+      if(shouldArchive(state)){checkpoint();return}
+      guardDesired=false;if(alive('player')&&(hero.guardHeld||hero.mustRelease)){send('combat',{kind:'guard',actorId:'player',held:false});return}
+      stopped=true;notify('保留记录接近容量上限，已停止新增行动，请保存退出。');checkpoint();return
+    }
     if(guardDesired && alive('player') && !hero.guardHeld&&!hero.mustRelease&&hero.phase==='idle'&&hero.stamina>=25000){send('combat',{kind:'guard',actorId:'player',held:true});return}
     for(const f of view) {
       if(f.phase!=='active')continue
@@ -361,6 +367,7 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
     if(releaseInput&&alive('player')&&(hero.guardHeld||hero.mustRelease)&&!stopped)await send('combat',{kind:'guard',actorId:'player',held:false})
     const result=await session.checkpoint(clock)
     if(!result.ok){stopped=true;notify(result.code)}
+    else {state=result.checkpoint.gameplay;view=previewGameplayCombat(state,clock)}
     return result
     } finally {checkpointDepth--}
   }

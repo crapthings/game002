@@ -34,22 +34,29 @@ export function validateLivingSpatial(s,bodyActorIds=LIVING_NPCS.map(n=>n.id)) {
     !s.npcs.every(n=>finitePoint(n)&&Number.isFinite(n.heading)) || !finitePoint(s.stall)) throw new Error('江湖角色位置无效。')
   return s
 }
+export function validateLivingEnvelope(saved) {
+  if(![1,2,3,4].includes(saved?.version) || !Object.hasOwn(saved,'legacy') ||
+    (saved.version>=3?saved.checkpoint?.gameplay.version!==2:saved.checkpoint?.gameplay.version!==1)||
+    (saved.version===4)!==!!saved.checkpoint?.gameplay.archive?.history) throw new Error('江湖新存档版本无效。')
+  const bodyIds=saved.checkpoint.gameplay.registry?.actors.filter(a=>a.hasBody&&a.actorId!=='player').map(a=>a.actorId)
+  validateLivingSpatial(saved.spatial,bodyIds)
+  if(saved.version>=2)validateCityEnvelope(saved)
+}
 export function validateLiving(saved,world) {
-  if(![1,2,3].includes(saved?.version) || !Object.hasOwn(saved,'legacy') ||
-    (saved.version===3?saved.checkpoint?.gameplay.version!==2:saved.checkpoint?.gameplay.version!==1)) throw new Error('江湖新存档版本无效。')
+  validateLivingEnvelope(saved)
   const config=livingConfig(saved.legacy,world)
   const restored=restoreWorldCheckpoint(config,saved.checkpoint)
   if(!restored.ok) throw new Error(`江湖记录校验失败：${restored.code}，保留原档。`)
   const bodyIds=restored.checkpoint.gameplay.registry?.actors.filter(a=>a.hasBody&&a.actorId!=='player').map(a=>a.actorId)
   validateLivingSpatial(saved.spatial,bodyIds)
   if(saved.version>=2)validateCityEnvelope(saved)
-  return {config,checkpoint:restored.checkpoint}
+  return {config,catalog:restored.catalog,checkpoint:restored.checkpoint}
 }
 // Cheap per-commit checks; full replay belongs to load. The scene session is the
 // only command writer and the repository additionally CAS-checks world revision.
 export function applyLivingCheckpoint(progress,event) {
   const current=progress.living, next=event.living
-  if(![1,2,3].includes(next?.version) || (current&&next.version<current.version) || !Number.isSafeInteger(event.expectedSequence) ||
+  if(![1,2,3,4].includes(next?.version) || (current&&next.version<current.version) || !Number.isSafeInteger(event.expectedSequence) ||
     (current?.checkpoint.sequence??0)!==event.expectedSequence ||
     next.checkpoint?.sequence!==event.expectedSequence+1 ||
     (current && JSON.stringify(current.legacy)!==JSON.stringify(next.legacy))) throw new Error('江湖检查点冲突，请重新读档。')

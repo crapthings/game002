@@ -1,3 +1,4 @@
+import { activeEventCount,nextEventNumber } from './historyArchive.js'
 import { InventoryError } from './inventory.js'
 import { clockAt } from '../living/clock.js'
 
@@ -44,8 +45,8 @@ export function executePlaces(world,command,context) {
     check(world.places?.version===1&&context.geometryConfirmed===true,'MISSING_PLACE_EVIDENCE')
     check(Array.isArray(command.definitions)&&command.definitions.every(p=>!world.places.definitions.some(old=>old.id===p.id)),'PLACE_ALREADY_EXISTS')
     validateDefinitions(world,[...world.places.definitions,...command.definitions],command.bindings)
-    check(world.places.events.length<4096,'HISTORY_FULL')
-    const event={id:`places:${world.places.events.length+1}`,kind:'places_extended',actorId:command.actorId,targetId:null,at:context.at,cause:null,requestId:command.id}
+    check(activeEventCount(world.places)<4096,'HISTORY_FULL')
+    const event={id:`places:${nextEventNumber(world.places)}`,kind:'places_extended',actorId:command.actorId,targetId:null,at:context.at,cause:null,requestId:command.id}
     world.places.definitions.push(...copy(command.definitions));world.places.bindings=copy(command.bindings)
     for(const definition of command.definitions)world.places.entries.push(entryFor(definition,command.bindings,event.id))
     // Residents/roles can acquire a new home without resetting an existing shop.
@@ -54,8 +55,8 @@ export function executePlaces(world,command,context) {
   }
   if(command.kind==='enable_services') {
     check(world.places&&world.life&&!world.places.serviceVersion,'SERVICE_RULES_ALREADY_ENABLED')
-    check(world.places.events.length<4096,'HISTORY_FULL')
-    const event={id:`places:${world.places.events.length+1}`,kind:'place_services_enabled',actorId:command.actorId,targetId:null,at:context.at,cause:null,requestId:command.id}
+    check(activeEventCount(world.places)<4096,'HISTORY_FULL')
+    const event={id:`places:${nextEventNumber(world.places)}`,kind:'place_services_enabled',actorId:command.actorId,targetId:null,at:context.at,cause:null,requestId:command.id}
     world.places.serviceVersion=1;world.places.events.push(event);return [copy(event)]
   }
   check(world.places?.version===1&&command.kind==='presence','INVALID_COMMAND')
@@ -65,8 +66,8 @@ export function executePlaces(world,command,context) {
   check(['available','away','resting','danger'].includes(command.status)&&typeof context.present==='boolean'&&
     (command.status!=='available'||context.present===true)&&typeof context.proofId==='string'&&context.proofId.length>0,'MISSING_PLACE_EVIDENCE')
   check(entry.status!==command.status,'NO_CHANGE')
-  check(world.places.events.length<4096,'HISTORY_FULL')
-  const event={id:`places:${world.places.events.length+1}`,kind:'place_status_changed',actorId:command.actorId,targetId:null,
+  check(activeEventCount(world.places)<4096,'HISTORY_FULL')
+  const event={id:`places:${nextEventNumber(world.places)}`,kind:'place_status_changed',actorId:command.actorId,targetId:null,
     placeId:entry.placeId,status:command.status,at:context.at,cause:context.cause??null,proofId:context.proofId,requestId:command.id}
   entry.status=command.status;entry.presenceAt=context.at;entry.reasonEventId=event.id;world.places.events.push(event)
   return [copy(event)]

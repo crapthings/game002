@@ -1,3 +1,4 @@
+import { activeEventCount } from './historyArchive.js'
 // Diagnostics only. Actual admission still happens atomically in the reducers.
 // All counts are persisted entries, not seconds of gameplay or free NPC slots.
 export function historyCapacity(state) {
@@ -23,8 +24,10 @@ export function historyCapacity(state) {
     ['item-reservations',state.interactions.itemReservations,1],
   ].filter(([,entries]) => entries !== undefined)
   const channels = rows.map(([domain,entries,cost]) => {
-    const remaining = Math.max(0,4096-entries.length)
-    return {domain,used:entries.length,limit:4096,remaining,
+    const key={interaction:'interactions',knowledge:'social'}[domain]??domain
+    const used=state[key]?.events===entries?activeEventCount(state[key]):entries.length
+    const remaining = Math.max(0,4096-used)
+    return {domain,used,retained:entries.length-used,limit:4096,remaining,
       standaloneOperations:Math.floor(remaining/cost),
       status:remaining < cost ? 'full' : remaining <= 128 ? 'low' : 'available'}
   })

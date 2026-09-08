@@ -1,3 +1,4 @@
+import { activeEventCount,findReceipt } from './historyArchive.js'
 import { transferLot, assertInventory, InventoryError } from './inventory.js'
 
 const clone = value => structuredClone(value)
@@ -19,13 +20,13 @@ export function executeProperty(state,interactions,combat,catalog,command,contex
     const fingerprint = JSON.stringify([command.kind,command.expectedRevision,command.actorId,
       command.targetId,command.lotId ?? null,command.quantity ?? null,command.amount ?? null,
       context?.at,context?.allowed === true,context?.reachable === true,context?.proofId])
-    const prior = state.receipts.find(r => r.requestId === command.id)
+    const prior = findReceipt(state,command.id)
     if (prior) {
       check(prior.fingerprint === fingerprint,'REQUEST_ID_CONFLICT')
       return {ok:true,code:'ALREADY_APPLIED',duplicate:true,state:clone(state),interactions:clone(interactions),events:[]}
     }
     check(command.expectedRevision === state.revision,'STALE_REVISION')
-    check(state.events.length < 4096,'HISTORY_FULL')
+    check(activeEventCount(state)<4096,'HISTORY_FULL')
     check(context?.allowed === true && context.reachable === true && id(context.proofId),'MISSING_LOOT_EVIDENCE')
     check(natural(context.at) && (!state.events.length || context.at >= state.events.at(-1).at),'INVALID_TIME')
     const actor = interactions.actors.find(a => a.id === command.actorId)

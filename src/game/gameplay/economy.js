@@ -1,3 +1,4 @@
+import { activeEventCount,nextEventNumber } from './historyArchive.js'
 import { InventoryError,consumeLot } from './inventory.js'
 import { availableQuantity,requireAvailableLot } from './reservations.js'
 import { projectedNeeds } from './life.js'
@@ -31,11 +32,11 @@ export function executeEconomy(world,catalog,command,context) {
     const event={id:'economy:1',kind:'economy_initialized',actorId:command.actorId,targetId:null,at:context.at,cause:null,requestId:command.id}
     world.economy={version:1,needs:[],foodNeeds:[],events:[event]};return [structuredClone(event)]
   }
-  check(world.economy&&world.economy.events.length<4096,'HISTORY_FULL')
+  check(world.economy&&activeEventCount(world.economy)<4096,'HISTORY_FULL')
   const actor=world.interactions.actors.find(a=>a.id===command.actorId),life=world.life.actors.find(a=>a.actorId===command.actorId)
   check(actor?.health>0&&life,'ACTOR_DEAD')
   check(previewCombat(world.combat,world.interactions.actors,context.at).find(f=>f.id===actor.id)?.phase==='idle'&&!life.interruption,'TARGET_BUSY')
-  const event={id:`economy:${world.economy.events.length+1}`,kind:null,actorId:actor.id,targetId:null,at:context.at,cause:life.intent?.sourceEventId??null,requestId:command.id}
+  const event={id:`economy:${nextEventNumber(world.economy)}`,kind:null,actorId:actor.id,targetId:null,at:context.at,cause:life.intent?.sourceEventId??null,requestId:command.id}
   if(command.kind==='eat') {
     const needs=projectedNeeds(life,context.at),lot=world.interactions.inventory.lots.find(l=>l.id===command.lotId)
     check(needs.hunger>=rules.foodThreshold&&life.intent?.kind==='eat'&&life.intent.phase==='interacting','NOT_HUNGRY')

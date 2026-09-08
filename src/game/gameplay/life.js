@@ -1,3 +1,4 @@
+import { activeEventCount,nextEventNumber } from './historyArchive.js'
 import { InventoryError } from './inventory.js'
 const copy=value=>structuredClone(value)
 const check=(ok,code)=>{if(!ok)throw new InventoryError(code)}
@@ -31,8 +32,8 @@ export function executeLife(world,command,context) {
   }
   const row=world.life?.actors.find(a=>a.actorId===command.actorId),actor=world.interactions.actors.find(a=>a.id===command.actorId)
   check(row&&actor?.health>0,'ACTOR_DEAD')
-  check(world.life.events.length<4096,'HISTORY_FULL')
-  const event={id:`life:${world.life.events.length+1}`,kind:null,actorId:actor.id,targetId:null,at:context.at,cause:context.cause??null,requestId:command.id}
+  check(activeEventCount(world.life)<4096,'HISTORY_FULL')
+  const event={id:`life:${nextEventNumber(world.life)}`,kind:null,actorId:actor.id,targetId:null,at:context.at,cause:context.cause??null,requestId:command.id}
   if(command.kind==='activity') {
     check(kinds.includes(command.activity)&&world.places.definitions.some(p=>p.id===command.placeId)&&[10,40,50].includes(command.priority),'INVALID_ACTIVITY')
     const activityId=`${command.activity}:${command.placeId}`

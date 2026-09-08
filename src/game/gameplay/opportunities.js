@@ -1,3 +1,4 @@
+import { activeEventCount,nextEventNumber } from './historyArchive.js'
 import { InventoryError } from './inventory.js'
 import { meetingEligibility } from './dialogue.js'
 import { availableWallet,reserveMoney,releaseReservation,reconcileReservations,requireAvailableFunds } from './reservations.js'
@@ -12,8 +13,8 @@ const actor=(world,id)=>world.interactions.actors.find(a=>a.id===id)
 const alive=(world,id)=>actor(world,id)?.health>0
 const lookup=(world,id)=>world.opportunities.entries.find(row=>row.id===id)
 function emit(world,kind,actorId,targetId,at,requestId,extra={}) {
-  check(world.opportunities.events.length<4096,'HISTORY_FULL')
-  const event={id:`opportunity:${world.opportunities.events.length+1}`,kind,actorId,targetId,at,cause:null,requestId,...extra}
+  check(activeEventCount(world.opportunities)<4096,'HISTORY_FULL')
+  const event={id:`opportunity:${nextEventNumber(world.opportunities)}`,kind,actorId,targetId,at,cause:null,requestId,...extra}
   world.opportunities.events.push(event);return copy(event)
 }
 function meeting(world,speakerId,listenerId,context) {

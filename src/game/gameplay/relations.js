@@ -1,3 +1,4 @@
+import { activeEventCount,nextEventNumber } from './historyArchive.js'
 import { InventoryError } from './inventory.js'
 import { RELATION_PAIRS_V1 } from './content/relationsV1.js'
 const check=(ok,code)=>{if(!ok)throw new InventoryError(code)}
@@ -39,7 +40,7 @@ export function executeRelations(world,command,context) {
     const event={id:'relations:1',kind:'relations_initialized',actorId:command.actorId,targetId:null,at:context.at,cause:null,requestId:command.id}
     world.relations={version:1,applications:[],events:[event]};return [copy(event)]
   }
-  check(world.relations&&world.relations.events.length<4096,'HISTORY_FULL')
+  check(world.relations&&activeEventCount(world.relations)<4096,'HISTORY_FULL')
   check(command.kind==='react','INVALID_COMMAND')
   check(world.interactions.actors.some(a=>a.id===command.actorId&&a.health>0),'ACTOR_DEAD')
   const reaction=relationReaction(world,command.actorId,command.factId)
@@ -49,7 +50,7 @@ export function executeRelations(world,command,context) {
   const trustAlready=world.social.events.some(e=>e.kind==='relationship'&&e.actorId===command.actorId&&e.factId===command.factId)
   row.trust=clamp(row.trust+(trustAlready?0:reaction.trust),-100,100)
   row.fear=clamp(row.fear+reaction.fear,0,100);row.gratitude=clamp(row.gratitude+reaction.gratitude,0,100)
-  const event={id:`relations:${world.relations.events.length+1}`,kind:'attitude_changed',actorId:command.actorId,targetId:reaction.targetId,
+  const event={id:`relations:${nextEventNumber(world.relations)}`,kind:'attitude_changed',actorId:command.actorId,targetId:reaction.targetId,
     at:context.at,cause:reaction.evidenceId,factId:command.factId,ruleId:reaction.ruleId,requestId:command.id,
     delta:{trust:row.trust-before.trust,fear:row.fear-before.fear,gratitude:row.gratitude-before.gratitude}}
   world.relations.applications.push({actorId:command.actorId,factId:command.factId,eventId:event.id})

@@ -1,3 +1,4 @@
+import { activeEventCount,nextEventNumber } from './historyArchive.js'
 import { InventoryError } from './inventory.js'
 import { executeKnowledge } from './knowledge.js'
 import { meetingEligibility } from './meeting.js'
@@ -15,8 +16,8 @@ export function exchangeLimit(world,speakerId,listenerId,at) {
 export function executeExchange(world,command,context) {
   check(world.version===2&&world.relations&&context.allowed===true,'INTERACTION_DENIED')
   check(Number.isSafeInteger(context.at)&&context.at>=0,'INVALID_TIME')
-  check(world.relations.events.length<4096,'HISTORY_FULL')
-  const event={id:`relations:${world.relations.events.length+1}`,kind:null,actorId:command.actorId,targetId:command.targetId??null,
+  check(activeEventCount(world.relations)<4096,'HISTORY_FULL')
+  const event={id:`relations:${nextEventNumber(world.relations)}`,kind:null,actorId:command.actorId,targetId:command.targetId??null,
     at:context.at,cause:null,requestId:command.id}
   if(command.kind==='enable') {
     check(!world.relations.exchangeVersion,'EXCHANGE_ALREADY_ENABLED')
