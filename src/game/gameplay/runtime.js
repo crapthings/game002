@@ -10,6 +10,7 @@ import { executeRelations } from './relations.js'
 import { executeExchange } from './exchange.js'
 import { executeEconomy } from './economy.js'
 import { applyLaborInterruptions } from './employment.js'
+import { executeFactions,addFactionArrival } from './factions.js'
 import { executeVillage } from './village.js'
 import { InventoryError } from './inventory.js'
 import { executeInteraction } from './interactions.js'
@@ -79,7 +80,7 @@ export function executeGameplay(state,catalog,request) {
     requireValue(state.journal.length < 4096,'HISTORY_FULL')
     const next = clone(state), events = []
     for (const [i,step] of request.steps.entries()) {
-      requireValue(step && ['interaction','knowledge','combat','property','equipment','robbery','crime','pursuit','village','registry','places','life','dialogue','opportunities','relations','exchange','economy'].includes(step.domain) && step.command && step.context,'INVALID_STEP')
+      requireValue(step && ['interaction','knowledge','combat','property','equipment','robbery','crime','pursuit','village','registry','places','life','dialogue','opportunities','relations','exchange','economy','factions'].includes(step.domain) && step.command && step.context,'INVALID_STEP')
       requireValue(!Object.hasOwn(step.command,'id') && !Object.hasOwn(step.command,'expectedRevision'),'RESERVED_COMMAND_FIELDS')
       requireValue(natural(step.context.at) && step.context.at >= next.at,'INVALID_TIME')
       const firstFact = next.social.facts.length
@@ -91,6 +92,9 @@ export function executeGameplay(state,catalog,request) {
         addArrivalLife(next,step.command.actorId,step.context.at)
         events.push(...emitted)
         for(const event of emitted)events.push(...registerFact(next,event,commandId))
+        const memberships=addFactionArrival(next,step.command.actorId,emitted[0].id,step.context.at,commandId)
+        events.push(...memberships)
+        for(const event of memberships)events.push(...registerFact(next,event,`${commandId}:${event.id}`))
       } else if(step.domain==='places') {
         const emitted=executePlaces(next,{...step.command,id:commandId},step.context)
         events.push(...emitted)
@@ -112,6 +116,10 @@ export function executeGameplay(state,catalog,request) {
         for(const event of emitted)if(event.id.startsWith('relations:'))events.push(...registerFact(next,event,`${commandId}:${event.id}`))
       } else if(step.domain==='relations') {
         const emitted=executeRelations(next,{...step.command,id:commandId},step.context)
+        events.push(...emitted)
+        for(const event of emitted)events.push(...registerFact(next,event,`${commandId}:${event.id}`))
+      } else if(step.domain==='factions') {
+        const emitted=executeFactions(next,{...step.command,id:commandId},step.context)
         events.push(...emitted)
         for(const event of emitted)events.push(...registerFact(next,event,`${commandId}:${event.id}`))
       } else if(step.domain==='economy') {

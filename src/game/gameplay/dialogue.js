@@ -6,12 +6,13 @@ import { meetingEligibility } from './meeting.js'
 import { evidenceDepth,SHAREABLE_ACTIONS } from './knowledgeLineage.js'
 import { exchangeLimit,executeExchange } from './exchange.js'
 import { relationFor } from './relations.js'
+import { factionIntroduction } from './factions.js'
 export { meetingEligibility } from './meeting.js'
 
 const copy=value=>structuredClone(value)
 const check=(ok,code)=>{if(!ok)throw new InventoryError(code)}
 const shareable=SHAREABLE_ACTIONS
-const topics=[['routine','你平时会去哪里？'],['hours','药铺什么时候营业？'],['news','最近有什么事情？'],['attitude','你怎么看我？'],['work','这里有活计可做吗？'],['requests','你有什么需要帮忙的？']]
+const topics=[['routine','你平时会去哪里？'],['duties','你在这里负责什么？'],['hours','药铺什么时候营业？'],['news','最近有什么事情？'],['attitude','你怎么看我？'],['work','这里有活计可做吗？'],['requests','你有什么需要帮忙的？']]
 export function dialogueTopics() {return topics.map(([id,label])=>({id,label}))}
 function maySharePlace(world,speakerId,placeId) {
   const place=world.places?.definitions.find(p=>p.id===placeId),binding=world.places?.bindings.find(b=>b.actorId===speakerId)
@@ -27,6 +28,7 @@ export function dialogueAnswer(world,speakerId,listenerId,topicId,context) {
   const eligibility=meetingEligibility(world,speakerId,listenerId,context)
   if(!eligibility.available)return {ok:false,code:eligibility.reason}
   const binding=world.places?.bindings.find(b=>b.actorId===speakerId)
+  if(topicId==='duties')return {ok:true,kind:'places',...factionIntroduction(world,speakerId)}
   if(topicId==='attitude') {
     const relation=relationFor(world,speakerId,listenerId)
     return {ok:true,kind:'text',text:context.identified!==true?'我还没认出你的模样。':relation.fear>=25?'先别靠得太近，我还记得那些伤人的事。':relation.trust<0?'我对你还有些戒心。':relation.gratitude>=10?'我记得你帮过我或我在意的人，有事可以来问。':relation.trust>0?'我觉得你是个靠得住的人。':'咱们还不熟，慢慢来往吧。'}

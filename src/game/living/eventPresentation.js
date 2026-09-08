@@ -1,4 +1,5 @@
 export const eventWords={
+  factions_initialized:'登记组织与职责',faction_member_arrived:'组织成员到达',
   relations_initialized:'记下亲友与邻里',attitude_changed:'心中态度改变',
   exchange_enabled:'开始邻里传话',news_exchanged:'当面交流消息',exchange_meeting_ended:'相互告辞',
   economy_initialized:'登记生计与供货',arrived:'外来人物入城',ate_food:'吃下干粮',food_needed:'尚未吃上饭',stock_shortage_noticed:'发现铺面缺货',restock_need:'新一轮补货需求',cargo_picked_up:'付货款并取货',stock_delivered:'货物运抵药铺',cargo_returned:'交回未送达的货物',
@@ -10,7 +11,7 @@ export const eventWords={
 }
 /** Only invoked by an open review panel, including intermediate evidence nodes. */
 export function createReviewIndex(state,archived=[]) {
-  const current=['combat','interactions','village','robbery','property','equipment','crime','pursuit','registry','life','places','dialogue','opportunities','relations','economy','social'].flatMap(domain=>state[domain]?.events??[])
+  const current=['combat','interactions','village','robbery','property','equipment','crime','pursuit','registry','life','places','dialogue','opportunities','relations','economy','factions','social'].flatMap(domain=>state[domain]?.events??[])
   const events=[...new Map([...archived,...current].map(e=>[e.id,e])).values()]
   for(const need of state.opportunities?.needs??[])events.push({id:need.id,kind:'personal_need',actorId:need.issuerId,targetId:need.targetActorId,at:state.opportunities.events[0].at,cause:null})
   for(const need of state.economy?.needs??[])events.push({id:need.id,kind:'restock_need',actorId:need.issuerId,targetId:need.targetActorId,at:need.at,cause:null})

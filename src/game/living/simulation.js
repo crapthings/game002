@@ -235,9 +235,14 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
     if(state.relations&&!state.relations.exchangeVersion){send('exchange',{kind:'enable',actorId:'player'});return}
     if(state.relations?.exchangeVersion&&!state.economy){send('economy',{kind:'initialize',actorId:'player'});return}
     if(state.economy&&!state.economy.employmentVersion){send('economy',{kind:'enable_employment',actorId:'player'});return}
+    if(state.economy?.employmentVersion&&!state.factions){send('factions',{kind:'initialize',actorId:'player'});return}
     if(state.economy&&!state.registry.actors.some(a=>a.actorId==='supplier-1')) {
       const body=space.supplierSetup?.()
       if(body){send('registry',{kind:'arrive',actorId:'supplier-1',templateId:'supplier-1'},{geometryConfirmed:true,proofId:'supplier-site-confirmed',body});return}
+    }
+    if(state.factions&&!state.registry.actors.some(a=>a.actorId==='gang-1')) {
+      const body=space.gangSetup?.()
+      if(body){send('registry',{kind:'arrive',actorId:'gang-1',templateId:'gang-1'},{geometryConfirmed:true,proofId:'river-site-confirmed',body});return}
     }
     if(state.opportunities) {
       const due=state.opportunities.entries.find(r=>['offered','accepted'].includes(r.status)&&!r.returnEventId&&clock>=r.deadlineAt)

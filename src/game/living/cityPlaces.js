@@ -163,3 +163,11 @@ export function resolveRoleHomes(plan) {
   const ids=new Set(homes.map(h=>`place.home-${h.actorId}`)),resolved=resolveCityPlaces(plan,homes)
   return {version:1,places:resolved.places.filter(p=>ids.has(p.id)),unresolved:resolved.unresolved.filter(p=>p.placeId===null||ids.has(p.placeId))}
 }
+
+export function resolveGangPlace(plan) {
+  const water=plan.city?.water
+  if(!water)return {version:1,places:[],unresolved:[{placeId:'place.river-meeting',code:'WATERFRONT_PLACE_MISSING'}]}
+  const resolved=resolveCityPlaces(plan,[],[{id:'place.river-meeting',label:'渡口会面处',kind:'public',
+    anchor:{x:water.maxX+12,z:water.maxZ-12},radius:0,fallbackRadius:40,public:true,hours:[{startMinute:0,endMinute:1440}]}])
+  return {version:1,places:resolved.places.filter(p=>p.id==='place.river-meeting'),unresolved:resolved.unresolved.filter(p=>p.placeId===null||p.placeId==='place.river-meeting')}
+}
