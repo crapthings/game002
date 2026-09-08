@@ -8,6 +8,7 @@ import { nextDailyActivity } from './dailySchedule.js'
 import { spokenAnswer } from './dialoguePresentation.js'
 import { createOpportunityDirector } from './opportunityDirector.js'
 import { personalOpportunity,sameKnownProgress } from '../gameplay/opportunityKnowledge.js'
+import { relationFor } from '../gameplay/relations.js'
 const copy=v=>structuredClone(v)
 export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,save,space,notify=()=>{},effects=()=>{}}) {
   const config=livingConfig(legacy,world)
@@ -211,6 +212,7 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
     if(state.places?.serviceVersion&&!state.dialogue){send('dialogue',{kind:'initialize',actorId:'player'});return}
     if(state.dialogue&&!state.opportunities){send('opportunities',{kind:'initialize',actorId:'player'});return}
     if(state.opportunities&&!state.opportunities.autonomyVersion){send('opportunities',{kind:'enable_autonomy',actorId:'player'});return}
+    if(state.opportunities?.autonomyVersion&&!state.relations){send('relations',{kind:'initialize',actorId:'player'});return}
     if(state.opportunities) {
       const due=state.opportunities.entries.find(r=>['offered','accepted'].includes(r.status)&&!r.returnEventId&&clock>=r.deadlineAt)
       if(due){send('opportunities',{kind:'expire',actorId:due.issuerId,opportunityId:due.id});return}
@@ -301,6 +303,11 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
       }
       if(conversation?.speakerId===id){space.face(id,space.point('player'));continue}
       if(f.phase==='idle') {
+        if(knowledge.relationReactionFactId){send('relations',{kind:'react',actorId:id,factId:knowledge.relationReactionFactId});return}
+        if(!config.authorities.includes(id)&&relationFor(state,id,'player').fear>=25&&sees(id,'player',true)&&near(id,'player',8)) {
+          if(interruptRoutine(id,'flee',80,state.relations?.applications.findLast(a=>a.actorId===id)?.eventId??null))return
+          space.flee(id,space.point('player'),dt);continue
+        }
         const job=opportunityDirector.updateNpc(id,dt)
         if(job==='committed')return
         if(job==='busy')continue

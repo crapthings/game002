@@ -54,7 +54,9 @@ export interface Fact {
 export interface Knowledge {
   npcId: string; factId: string; subjectId: string | null; evidenceId: string;
 }
-export interface Relationship { fromId: string; toId: string; trust: number }
+export interface Relationship { fromId:string;toId:string;trust:number;type?:'acquaintance'|'neighbor'|'kin'|'colleague';fear?:number;gratitude?:number }
+export function relationFor(state:GameplayState,fromId:string,toId:string):Required<Relationship>;
+export function relationReaction(state:GameplayState,actorId:string,factId:string):null|{targetId:string;ruleId:string;trust:number;fear:number;gratitude:number;evidenceId:string};
 interface SocialEventBase { id: string; at: number; requestId: string }
 export type SocialEvent =
   | (SocialEventBase & { kind: 'fact'; cause: null; fact: Fact })
@@ -79,6 +81,7 @@ export type GameplayStep = (
   | { domain: 'places'; command: {kind:'presence';actorId:string;placeId:string;status:'available'|'away'|'resting'|'danger'}; context:Policy & {present:boolean;proofId:string;cause?:string|null} }
   | { domain: 'places'; command: {kind:'enable_services';actorId:string}; context:Policy }
   | { domain:'life'; command:LifeCommand; context:Policy & {present?:boolean;proofId?:string;cause?:string|null;safe?:boolean} }
+  | { domain:'relations';command:{kind:'initialize';actorId:string}|{kind:'react';actorId:string;factId:string};context:Policy }
   | { domain:'dialogue'; command:{kind:'initialize';actorId:string}; context:Policy }
   | { domain:'dialogue'; command:{kind:'tell_place';actorId:string;targetId:string;placeId:string}|{kind:'share_news';actorId:string;targetId:string;factId:string}; context:MeetingContext }
   | { domain:'opportunities'; command:OpportunityCommand; context:Policy & Partial<MeetingContext> & {identified?:boolean;deadActorId?:string} }
@@ -138,6 +141,7 @@ export interface GameplayState {
   places?: {version:1;serviceVersion?:1;definitions:RegisteredPlace[];bindings:RegistryBody['binding'][];entries:PlaceEntry[];events:PlaceEvent[]};
   life?: {version:1;actors:LifeActor[];events:LifeEvent[]};
   dialogue?: {version:1;addresses:KnownAddress[];events:DialogueEvent[]};
+  relations?:{version:1;applications:{actorId:string;factId:string;eventId:string}[];events:{id:string;kind:string;actorId:string;targetId:string|null;at:number;cause:string|null;requestId:string;factId?:string;ruleId?:string;delta?:{trust:number;fear:number;gratitude:number}}[]};
   opportunities?:{version:1;autonomyVersion?:1;needs:{id:string;templateId:string;issuerId:string;targetActorId:string;source:string}[];entries:Opportunity[];events:OpportunityEvent[]};
 }
 export interface Opportunity {

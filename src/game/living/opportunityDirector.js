@@ -4,6 +4,7 @@ import { opportunityQuote } from '../gameplay/opportunities.js'
 import { prepareCommitment } from '../gameplay/commitments.js'
 import { availableWallet } from '../gameplay/reservations.js'
 import { distance } from './geometry.js'
+import { relationFor } from '../gameplay/relations.js'
 
 /** People learn in physical meetings; route goals are known fixed places. */
 export function createOpportunityDirector({state,clock,ids,point,notice,contact,face,move,interrupt,send,talkingTo}) {
@@ -80,8 +81,9 @@ export function createOpportunityDirector({state,clock,ids,point,notice,contact,
           const context=meeting(row.issuerId,id)
           if(!meetingEligibility(world,row.issuerId,id,context).available)continue
           const quote=opportunityQuote(world,row)
-          if(quote.unpaid)continue // Voluntary unpaid NPC help is added with relationships.
-          nextAcceptanceAt=at+1000;return commit(world,'accept',id,row,context,'paid')
+          const relation=relationFor(world,id,row.issuerId)
+          if(relation.fear>=25||relation.trust<0||quote.unpaid&&relation.gratitude<10&&relation.trust<15)continue
+          nextAcceptanceAt=at+1000;return commit(world,'accept',id,row,context,quote.unpaid?'unpaid':'paid')
         }
       }
       const own=world.opportunities.entries.find(r=>r.issuerId===id&&r.status==='offered'&&at<r.deadlineAt)

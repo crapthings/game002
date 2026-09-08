@@ -1,5 +1,6 @@
 import { historyCapacity } from '../gameplay/historyCapacity.js'
 import { wantedFor } from '../gameplay/crime.js'
+import { relationReaction } from '../gameplay/relations.js'
 
 const offensive = new Set(['take','threatened','robbed','damaged','parried','died','loot_item','loot_money'])
 const pair = (a, b) => JSON.stringify([a, b])
@@ -50,6 +51,7 @@ export function createLivingStateIndex(config) {
         }
       }
       npcs.set(actor.id, {
+        relationReactionFactId:known.find(row=>relationReaction(state,actor.id,row.factId))?.factId??null,
         guardRaised: guards.get(actor.id), lastAttack: attacks.get(actor.id), lastThreat: threats.get(actor.id),
         identifiedEvents: new Set(known.filter(row => row.subjectId === 'player').map(row => facts.get(row.factId)?.sourceEventId)),
         unassessed: crime.find(row => !assessed.get(actor.id)?.has(pair(row.factId, row.evidenceId)) &&

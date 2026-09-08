@@ -61,8 +61,8 @@
 | 07-B | 承诺与原子交付 | REVIEWED | [对话与委托记录](DIALOGUE-IMPLEMENTATION.md)；接单/拒绝/带话/答复/回程付款接入，同一事务、原回执、缺款保留；源码审阅，未运行 |
 | 06-B | 需求生成与 NPC 接单 | REVIEWED | [对话与委托记录](DIALOGUE-IMPLEMENTATION.md)；求助者出门、现场告知、闲置者同一接单/回执/付款与记忆旅程；源码审阅，缺货生成待 04-B，未运行 |
 | 10-B | 任务消息和因果关联 | REVIEWED | [对话与委托记录](DIALOGUE-IMPLEMENTATION.md)；个人已知进展、当面更新、进行/结束分组、柳娘旧链只读与按需因果跳转；源码审阅，未运行 |
-| 03-A | 关系图 | IN_PROGRESS | 扩展唯一的 social.relationships，初始化有向联系，依据个人证据改变态度 |
-| 03-B | 有来源的传话 | TODO | — |
+| 03-A | 关系图 | REVIEWED | [社会实施记录](SOCIETY-IMPLEMENTATION.md)；同一 trust、有向初始联系、本人证据/去重、恩情帮忙与畏惧避让；源码审阅，未运行 |
+| 03-B | 有来源的传话 | IN_PROGRESS | 真正会面后有限两跳转述，一次会面/每人一分钟限频，保留匿名 |
 | 04-A | 消费与有限补货 | TODO | — |
 | 04-B | 工资与短缺任务 | TODO | — |
 | 12-B | 历史归档和去重 | TODO | — |
