@@ -1,4 +1,6 @@
 export const eventWords={
+  daily_life_enabled:'开始日常来往',daily_greeting:'熟人当面寒暄',daily_started:'约好一段日常活动',daily_participation_ended:'结束自己的这次参与',
+  daily_tea_finished:'在茶摊歇脚后告辞',daily_help_returned:'亲手送回邻里帮运的原物',daily_return_sought:'再去原约定地点归还物品',
   justice_enabled:'登记非致命执法与保管约定',incapacitated:'被非致命制服',consciousness_returned:'恢复意识',taken_into_custody:'捕快实际控制嫌疑人',
   custody_released:'本次拘押处理后释放',custody_abandoned:'控制者死亡，拘押中断',custody_ended_by_death:'当事人死亡，拘押终止',custody_debt_paid:'结清拘押留下的赔偿',
   property_seized:'捕快接管原涉案物品',property_return_due:'原物仍待归还',property_surrendered:'当面交出待归还原物',seized_property_returned:'捕快将原物实际送回',

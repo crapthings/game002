@@ -89,7 +89,8 @@ export function executeContinuity(world,catalog,command,context) {
 }
 /** Settle known rest before an action can reduce health, never after a death. */
 export function beforeRecoveryAction(world,step,requestId) {
-  if(!world.continuity||!['life','combat','interaction','robbery','village','standing'].includes(step.domain))return []
+  if(!world.continuity||!['life','combat','interaction','robbery','village','standing','relations'].includes(step.domain))return []
+  if(step.domain==='relations'&&step.command.kind!=='start_daily')return []
   if(step.domain==='standing'&&!['start_training','resume_training','end_rest'].includes(step.command.kind))return []
   const ids=new Set([step.command.actorId,step.command.targetId])
   if(step.domain==='village'&&step.command.kind==='aid')ids.add('resident-1')

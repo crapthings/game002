@@ -44,6 +44,7 @@ export default function LivingReview({view,focusId,onFocus}) {
         <button className={link} onClick={()=>choose(e.id)}>{(e.at/1000).toFixed(1)}秒 · {index.label(e)}</button>
         <p className="mt-1">{name(e.actorId??e.authorityId??e.fact?.actorId)}{e.targetId?` → ${name(e.targetId)}`:''}{e.placeId?` · ${view.state.places?.definitions.find(p=>p.id===e.placeId)?.label??'原定场所'}`:''}{e.damage?` −${e.damage}气血`:''}{e.amount?` · ${e.amount}文`:''}{e.subjectId===null?' · 身份未确认':''}</p>
         {taskReasons[e.reason]&&<p className="mt-1">{taskReasons[e.reason]}</p>}
+        {e.text&&<p className="mt-1 text-stone-300">{e.text}</p>}
         {cause&&<p className="mt-1 text-stone-400">源于：{source?<button className={link} onClick={()=>choose(cause)}>{index.label(source)} · {(source.at/1000).toFixed(1)}秒</button>:historyPageForEvent(view.state,cause)!==null?<button className={link} disabled={loading} onClick={()=>choose(cause)}>读取原始记录</button>:'较早的已记录事实'}</p>}
       </li>
     })}</ol>

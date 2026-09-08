@@ -20,6 +20,7 @@ import { executeContinuity,beforeRecoveryAction } from './continuity.js'
 import { executeStaffing } from './staffing.js'
 import { executeJustice,bodyLocked,applyBodyConsequences } from './justice.js'
 import { executeEstates,recordEstateClaims } from './estates.js'
+import { executeDaily,interruptDaily } from './dailyActivities.js'
 import { executeVillage } from './village.js'
 import { InventoryError } from './inventory.js'
 import { executeInteraction } from './interactions.js'
@@ -133,9 +134,17 @@ export function executeGameplay(state,catalog,request) {
         events.push(...emitted)
         for(const event of emitted)if(event.id.startsWith('relations:'))events.push(...registerFact(next,event,`${commandId}:${event.id}`))
       } else if(step.domain==='relations') {
-        const emitted=executeRelations(next,{...step.command,id:commandId},step.context)
+        const daily=['enable_daily','start_daily','end_daily','finish_daily','begin_daily_return'].includes(step.command.kind)
+        const emitted=daily?executeDaily(next,catalog,{...step.command,id:commandId},step.context):executeRelations(next,{...step.command,id:commandId},step.context)
         events.push(...emitted)
-        for(const event of emitted)events.push(...registerFact(next,event,`${commandId}:${event.id}`))
+        for(const event of emitted) {
+          events.push(...registerFact(next,event,`${commandId}:${event.id}`))
+          for(const participant of event.witnessIds??[])if(next.interactions.actors.some(a=>a.id===participant&&a.health>0)) {
+            const learned=executeKnowledge(next.social,{id:`${commandId}:daily:${event.id}:${participant}`,kind:'witness',actorId:participant,
+              factId:`fact:${event.id}`,expectedRevision:next.social.revision},{allowed:true,at:event.at,observedAt:event.at,observed:true,identified:true,proofId:event.proofId})
+            requireValue(learned.ok,learned.code);next.social=learned.state;events.push(...learned.events)
+          }
+        }
       } else if(step.domain==='continuity') {
         const staffAction=['accept_staff','arrive_staff','return_operator','read_staff_notice'].includes(step.command.kind)
         const justiceAction=['enable_justice','wake','take_custody','process_custody','release_abandoned','pay_custody_debt'].includes(step.command.kind)
@@ -358,6 +367,9 @@ export function executeGameplay(state,catalog,request) {
       const laborEvents=applyLaborInterruptions(next,events.slice(firstEvent),step.context.at,commandId)
       events.push(...laborEvents)
       for(const event of laborEvents)events.push(...registerFact(next,event,`${commandId}:${event.id}`))
+      const dailyEvents=interruptDaily(next,events.slice(firstEvent),step.context.at,commandId)
+      events.push(...dailyEvents)
+      for(const event of dailyEvents)events.push(...registerFact(next,event,`${commandId}:${event.id}`))
       if (next.equipment) refreshEquipment(next.equipment,next.combat,next.interactions,catalog)
       next.at = step.context.at
     }

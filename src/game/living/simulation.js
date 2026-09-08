@@ -29,6 +29,9 @@ import { createJusticeController } from './justiceController.js'
 import { bodyCondition,bodyLocked,custodyQuote } from '../gameplay/justice.js'
 import { estateKeeper,cargoRecipient } from '../gameplay/estates.js'
 import { classifyForce } from '../gameplay/forcePolicy.js'
+import { createSocialActivities } from './socialActivities.js'
+import { createCatalog } from '../gameplay/inventory.js'
+import { ownDaily } from '../gameplay/dailyActivities.js'
 const copy=v=>structuredClone(v)
 export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,save,space,notify=()=>{},effects=()=>{}}) {
   const config=livingConfig(legacy,world)
@@ -81,6 +84,8 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
   const staffingController=createStaffingController({state:()=>state,clock:()=>clock,notice:noticesPerson,contact:near,atPlace:space.atPlace,send,talkingTo:()=>conversation?.speakerId})
   const justiceController=createJusticeController({state:()=>state,clock:()=>clock,point:space.point,notice:noticesPerson,contact:near,face:space.face,move:space.move,
     atPlace:space.atPlace,nearPlace,send,fighter,identified:(a,b)=>b==='player'?sees(a,b,true):noticesPerson(a,b),talkingTo:()=>conversation?.speakerId,interrupt:interruptRoutine})
+  const socialActivities=createSocialActivities({state:()=>state,clock:()=>clock,catalog:createCatalog(config.items),ids:()=>npcs().map(n=>n.id),point:space.point,
+    contact:near,notice:noticesPerson,atPlace:space.atPlace,nearPlace,face:space.face,move:space.move,send,talkingTo:()=>conversation?.speakerId})
   async function send(domain,command,extra={},observe=false,continuation=[]) {
     if(busy||stopped)return {ok:false,code:'BUSY'}
     busy=true
@@ -339,6 +344,7 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
     if(state.standing&&!state.standing.growthVersion){send('standing',{kind:'enable_growth',actorId:'player'});return}
     if(state.standing?.growthVersion&&!state.continuity){send('continuity',{kind:'initialize',actorId:'player'});return}
     if(state.continuity&&!state.continuity.justiceVersion){send('continuity',{kind:'enable_justice',actorId:'player'});return}
+    if(state.continuity?.justiceVersion&&!state.relations.dailyVersion){send('relations',{kind:'enable_daily',actorId:'player',seed:String(world.seed)});return}
     if(justiceController.update())return
     if(state.economy&&!state.registry.actors.some(a=>a.actorId==='supplier-1')) {
       const body=space.supplierSetup?.()
@@ -462,6 +468,11 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
         if(f.phase==='idle')space.move(id,space.point('player'),dt,1.2)
         continue
       }
+      if(ownDaily(state,id)&&f.phase==='idle') {
+        const ongoing=socialActivities.updateNpc(id,dt)
+        if(ongoing==='committed')return
+        if(ongoing==='busy')continue
+      }
       if(conversation?.speakerId===id){space.face(id,space.point('player'));continue}
       if(f.phase==='idle') {
         if(economyController.updateNpc(id))return
@@ -477,6 +488,9 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
         if(job==='committed')return
         if(job==='busy')continue
         if(socialController.updateNpc(id))return
+        const ordinary=socialActivities.updateNpc(id,dt)
+        if(ordinary==='committed')return
+        if(ordinary==='busy')continue
         if(state.life) {
           const row=state.life.actors.find(a=>a.actorId===id)
           if(!row.intent||row.interruption||clock>=(routineDue.get(id)??0)) {
@@ -500,7 +514,7 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
     // In-flight commits finish before release and the final clock-only save.
     while(busy)await new Promise(resolve=>setTimeout(resolve,5))
     if(releaseInput&&!stopped) {
-      const [first,...rest]=[...recoveryController.stopSteps(),...growthController.stopSteps()]
+      const [first,...rest]=[...recoveryController.stopSteps(),...growthController.stopSteps(),...socialActivities.stopSteps()]
       if(first)await send(first.domain,first.command,first.context,false,rest)
     }
     const hero=previewGameplayCombat(state,clock).find(f=>f.id==='player')

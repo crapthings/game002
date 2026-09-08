@@ -12,6 +12,7 @@
 - [组织接案、逐案处理、悬赏与真实护送](../docs/world-ledger/next/FACTION-ACTIONS.md)
 - [个人认可、租住和一次武艺入门](../docs/world-ledger/next/GROWTH-IMPLEMENTATION.md)
 - [休养、代班和失能/财物善后](../docs/world-ledger/next/CONTINUITY-IMPLEMENTATION.md)
+- [普通生活、帮运和提示节奏](../docs/world-ledger/next/DAILY-IMPLEMENTATION.md)
 - [B接手场景接入与验证边界](../docs/world-ledger/SCENE-INTEGRATION.md)
 - [当前状态](CURRENT_STATE.md)
 - [渲染、GPU 骨骼与 Worker 性能优化](../docs/performance.md)

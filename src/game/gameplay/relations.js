@@ -23,6 +23,7 @@ export function relationReaction(world,actorId,factId) {
   if(!personal&&!concern)return null
   if(fact.action==='aid')return {targetId:known.subjectId,ruleId:'aid-v1',trust:personal?25:8,gratitude:personal?25:10,fear:0,evidenceId:known.evidenceId}
   if(fact.action==='opportunity_fulfilled'&&personal)return {targetId:known.subjectId,ruleId:'fulfilled-v1',trust:10,gratitude:10,fear:0,evidenceId:known.evidenceId}
+  if(world.relations.dailyVersion&&fact.action==='daily_help_returned'&&personal)return {targetId:known.subjectId,ruleId:'daily-help-v1',trust:2,gratitude:2,fear:0,evidenceId:known.evidenceId}
   if(['damaged','threatened','robbed','died','loot_item','loot_money'].includes(fact.action))return {
     targetId:known.subjectId,ruleId:'harm-v1',trust:personal?-25:-12,gratitude:0,fear:personal?25:12,evidenceId:known.evidenceId}
   return null

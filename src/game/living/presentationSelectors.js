@@ -23,7 +23,10 @@ export function createPresentationSelectors() {
       else if(phase==='incapacitated')actorStates[id]='被制服，暂时不能行动'
       else if(phase==='custody')actorStates[id]='正在接受现场拘押'
       else if(['windup','active','recovery','guard','broken'].includes(phase))actorStates[id]=phase==='guard'?'正在招架':'正在交手'
-      else if(life?.interruption)actorStates[id]=life.interruption.kind==='flee'?'正在避险':'正在处理事务'
+      else if(life?.interruption) {
+        const daily=state.relations?.dailyActivities?.find(r=>r.engagements[id]==='active')
+        actorStates[id]=life.interruption.kind==='flee'?'正在避险':daily?.type==='tea'?'在茶摊歇脚':daily?.type==='carry'?(daily.helperId===id?'帮邻里带着一份原有干粮':'陪邻里把东西带回住处'):'正在处理事务'
+      }
       else if(life?.intent?.phase==='travelling')actorStates[id]='正在赶路'
       else if(life?.intent?.kind==='rest'&&actor.health<actor.maxHealth)actorStates[id]='受伤，正在休养'
       else if(id==='merchant'&&life?.intent?.phase==='interacting'&&state.opportunities?.entries.some(r=>r.issuerId===id&&r.requirements.kind==='procurement'&&r.status==='offered'&&r.deadlineAt>at))actorStates[id]='在铺前招呼帮手去采购'
