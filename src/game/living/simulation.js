@@ -1,4 +1,4 @@
-import { createGameplay, createWorldSession, migrateWorldToV2, previewGameplayCombat, pursuitFor, tradeEligibility, servicePresence, meetingEligibility, dialogueTopics, dialogueAnswer, availableWallet, knownOpportunities } from '../gameplay/index.js'
+import { createGameplay, createWorldSession, migrateWorldToV2, previewGameplayCombat, pursuitFor, tradeEligibility, servicePresence, meetingEligibility, dialogueTopics, dialogueAnswer, availableWallet, knownOpportunities, prepareCommitment } from '../gameplay/index.js'
 import { createLivingStateIndex } from './createLivingStateIndex.js'
 import { livingConfig, LIVING_NPCS, PRICES } from './config.js'
 import { distance, facingAngle, sweptContact } from './geometry.js'
@@ -124,6 +124,28 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
     const target=data.targetId
     if(!alive('player'))return
     if(['talk_start','talk_topic'].includes(kind))return talk(kind,data)
+    if(kind==='commitment') {
+      const row=state.opportunities?.entries.find(r=>r.id===data.opportunityId)
+      if(!row){notify('UNKNOWN_OPPORTUNITY');return}
+      refreshConversation()
+      const recipient=data.action==='deliver'?row.targetActorId:row.issuerId
+      if(data.action!=='cancel'&&(!conversation||conversation.id!==data.meetingId||conversation.speakerId!==recipient)){notify('MEETING_ENDED');return}
+      const context=data.action==='cancel'?{allowed:true,at:clock}:{...meetingContext(recipient),identified:sees(recipient,'player',true)}
+      const prepared=prepareCommitment(state,{kind:data.action,actorId:'player',opportunityId:row.id,terms:data.terms},context)
+      if(!prepared.ok){notify(prepared.code);return}
+      if(prepared.duplicate){notify('这一步已经有回执，沿用原来的结果。');return}
+      if(conversation)conversation.touchedAt=clock
+      const [first,...rest]=prepared.steps
+      send(first.domain,first.command,first.context,false,rest).then(result=>{
+        if(!result.ok)return
+        const current=state.opportunities.entries.find(r=>r.id===row.id)
+        const message=data.action==='accept'?`已经答应帮忙，先去找小何。${current.rewardAmount===0?'这次明确约定无偿帮忙。':''}`:
+          data.action==='deliver'?'小何收到了口信，也给了你答复。现在可以回去告诉石伯。':
+          data.action==='collect'?(current.status==='fulfilled'?(current.rewardAmount?`委托已完成，收到${current.rewardAmount}文。`:'已经按约定无偿办妥。'):'石伯确认事情办到了，但现钱不足；这笔报酬仍然欠着。'):
+          data.action==='decline'?'你婉拒了这件事，没有扣除钱物。':'已放弃这件委托。'
+        notify(message);if(conversation)conversation.lines=[message]
+      });return
+    }
     if(kind==='attack')return send('combat',{kind:'attack',actorId:'player'})
     if(kind==='mask')return send('village',{kind:'mask',actorId:'player'})
     if(kind==='use')return send('interaction',{kind:'use',actorId:'player',targetId:'player',lotId:data.lotId,quantity:1})
@@ -176,7 +198,7 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
     if(state.places?.serviceVersion&&!state.dialogue){send('dialogue',{kind:'initialize',actorId:'player'});return}
     if(state.dialogue&&!state.opportunities){send('opportunities',{kind:'initialize',actorId:'player'});return}
     if(state.opportunities) {
-      const due=state.opportunities.entries.find(r=>['offered','accepted'].includes(r.status)&&clock>=r.deadlineAt)
+      const due=state.opportunities.entries.find(r=>['offered','accepted'].includes(r.status)&&!r.returnEventId&&clock>=r.deadlineAt)
       if(due){send('opportunities',{kind:'expire',actorId:due.issuerId,opportunityId:due.id});return}
       const need=state.opportunities.needs.find(n=>alive(n.issuerId)&&alive(n.targetActorId)&&!state.opportunities.entries.some(r=>r.rootCauseId===n.id))
       if(need){send('opportunities',{kind:'offer',actorId:need.issuerId,needId:need.id});return}
@@ -297,7 +319,7 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
   return {update,command,checkpoint,release:()=>{guardDesired=false},
     canAdvance:()=>!busy&&!stopped&&!checkpointDepth,view:()=>view,state:()=>state,clock:()=>clock,
     calendar:()=>clockAt(state.calendar.clockOrigin,clock),tradeStatus,
-    conversation:()=>{refreshConversation();return conversation?{...copy(conversation),topics:dialogueTopics(),opportunities:knownOpportunities(state,'player',clock).filter(r=>conversation.opportunityIds.includes(r.id))}:null},
+    conversation:()=>{refreshConversation();return conversation?{...copy(conversation),topics:dialogueTopics(),opportunities:knownOpportunities(state,'player',clock).filter(r=>conversation.opportunityIds.includes(r.id)||r.assigneeId==='player'&&r.status==='accepted'&&[r.issuerId,r.targetActorId].includes(conversation.speakerId))}:null},
     busy:()=>busy||checkpointDepth>0,stopped:()=>stopped,config,
     close:async()=>{await checkpoint(true);return session.close()}}
 }

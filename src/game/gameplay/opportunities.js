@@ -1,6 +1,6 @@
 import { InventoryError } from './inventory.js'
 import { meetingEligibility } from './dialogue.js'
-import { availableWallet,reserveMoney,releaseReservation,reconcileReservations } from './reservations.js'
+import { availableWallet,reserveMoney,releaseReservation,reconcileReservations,requireAvailableFunds } from './reservations.js'
 import { SHI_MESSAGE_V1 } from './content/opportunityTemplatesV1.js'
 
 const copy=value=>structuredClone(value)
@@ -34,7 +34,8 @@ export function opportunityQuote(world,row) {
   return {amount:budget>=row.proposedReward?row.proposedReward:0,unpaid:budget<row.proposedReward}
 }
 export function knownOpportunities(world,actorId,at) {
-  return (world.opportunities?.entries??[]).filter(row=>row.knownBy.includes(actorId)).map(row=>({...copy(row),expired:active(row)&&at>=row.deadlineAt,
+  return (world.opportunities?.entries??[]).filter(row=>row.knownBy.includes(actorId)).map(row=>({...copy(row),expired:active(row)&&!row.returnEventId&&at>=row.deadlineAt,
+    paymentAvailable:row.status==='accepted'&&availableWallet(world.interactions,row.issuerId,row.rewardReservationId)>=row.rewardAmount,
     quote:row.status==='offered'?opportunityQuote(world,row):{amount:row.rewardAmount,unpaid:row.rewardAmount===0}}))
 }
 export function executeOpportunities(world,command,context) {
@@ -70,11 +71,11 @@ export function executeOpportunities(world,command,context) {
   const row=lookup(world,command.opportunityId)
   check(row,'UNKNOWN_OPPORTUNITY');check(active(row),'OPPORTUNITY_FINISHED')
   if(command.kind==='expire') {
-    check(command.actorId===row.issuerId&&context.at>=row.deadlineAt,'NOT_DUE')
+    check(command.actorId===row.issuerId&&context.at>=row.deadlineAt&&!row.returnEventId,'NOT_DUE')
     return [finish(world,row,'expired','DEADLINE_PASSED',context.at,command.id)]
   }
-  check(context.at<row.deadlineAt,'OPPORTUNITY_EXPIRED')
-  check(alive(world,row.issuerId)&&alive(world,row.targetActorId),'ACTOR_DEAD')
+  check(context.at<row.deadlineAt||row.returnEventId&&['collect_reward','cancel'].includes(command.kind),'OPPORTUNITY_EXPIRED')
+  check(alive(world,row.issuerId)&&(row.message.deliveredEventId||alive(world,row.targetActorId)),'ACTOR_DEAD')
   if(command.kind==='reveal') {
     check(command.actorId===row.issuerId&&!row.knownBy.includes(command.targetId),'ALREADY_KNOWN')
     meeting(world,command.actorId,command.targetId,context)
@@ -108,6 +109,44 @@ export function executeOpportunities(world,command,context) {
     check(command.actorId===row.issuerId||command.actorId===row.assigneeId,'NOT_CONTRACT_PARTY')
     return [finish(world,row,'cancelled','CANCELLED_BY_PARTY',context.at,command.id,null,command.actorId)]
   }
+  if(command.kind==='deliver_message') {
+    check(row.status==='accepted'&&row.assigneeId===command.actorId,'NOT_ASSIGNEE')
+    check(!row.message.deliveredEventId&&row.requirements.kind==='message_roundtrip','MESSAGE_ALREADY_DELIVERED')
+    meeting(world,row.targetActorId,command.actorId,context)
+    check(typeof context.identified==='boolean','MISSING_OBSERVATION')
+    const delivered=emit(world,'message_delivered',command.actorId,row.targetActorId,context.at,command.id,
+      {opportunityId:row.id,rootCauseId:row.rootCauseId,cause:row.offeredEventId,messageId:row.message.id,contentType:row.message.contentType,proofId:context.proofId,identified:context.identified})
+    const reply=emit(world,'message_acknowledged',row.targetActorId,command.actorId,context.at,command.id,
+      {opportunityId:row.id,rootCauseId:row.rootCauseId,cause:delivered.id,messageId:row.message.id,contentType:'received_visit_request',proofId:context.proofId,identified:true})
+    row.message.deliveredEventId=delivered.id;row.message.receiptEventId=reply.id
+    if(!row.knownBy.includes(row.targetActorId))row.knownBy.push(row.targetActorId)
+    return [delivered,reply]
+  }
+  if(command.kind==='collect_reward') {
+    check(row.status==='accepted'&&row.assigneeId===command.actorId&&row.message.receiptEventId,'DELIVERY_NOT_COMPLETE')
+    meeting(world,row.issuerId,command.actorId,context)
+    check(typeof context.identified==='boolean','MISSING_OBSERVATION')
+    if(availableWallet(world.interactions,row.issuerId,row.rewardReservationId)<row.rewardAmount) {
+      check(!row.returnEventId,'PAYMENT_PENDING')
+      const event=emit(world,'opportunity_payment_due',row.issuerId,command.actorId,context.at,command.id,
+        {opportunityId:row.id,rootCauseId:row.rootCauseId,cause:row.message.receiptEventId,amount:row.rewardAmount,proofId:context.proofId})
+      row.returnEventId=event.id;row.fundsBlocked=true;row.reason='AWAITING_PAYMENT'
+      return [event]
+    }
+    requireAvailableFunds(world.interactions,row.issuerId,row.rewardAmount,row.rewardReservationId)
+    if(row.rewardAmount>0) {
+      const reservation=world.interactions.reservations.find(r=>r.id===row.rewardReservationId)
+      check(reservation&&reservation.actorId===row.issuerId&&reservation.sourceId===row.id&&reservation.amount===row.rewardAmount,'RESERVATION_UNAVAILABLE')
+      check(Number.isSafeInteger(actor(world,command.actorId).wallet+row.rewardAmount),'AMOUNT_OVERFLOW')
+      releaseReservation(world.interactions,row.rewardReservationId,'spent')
+      actor(world,row.issuerId).wallet-=row.rewardAmount;actor(world,command.actorId).wallet+=row.rewardAmount
+    }
+    const event=emit(world,'opportunity_fulfilled',command.actorId,row.issuerId,context.at,command.id,
+      {opportunityId:row.id,rootCauseId:row.rootCauseId,cause:row.returnEventId??row.message.receiptEventId,amount:row.rewardAmount,
+        reservationId:row.rewardReservationId,proofId:context.proofId,identified:row.identifiedAssignee&&context.identified})
+    row.status='fulfilled';row.completionEventId=event.id;row.returnEventId=event.id;row.fundsBlocked=false;row.reason=null
+    return [event]
+  }
   throw new InventoryError('INVALID_COMMAND')
 }
 
@@ -118,7 +157,7 @@ export function applyOpportunityConsequences(world,sourceEvents,at,requestId) {
   if(!cause)return []
   const events=[],losses=reconcileReservations(world.interactions,cause)
   for(const row of world.opportunities.entries.filter(active)) {
-    const reason=!alive(world,row.issuerId)?'ISSUER_DEAD':!alive(world,row.targetActorId)?'RECIPIENT_DEAD':row.assigneeId&&!alive(world,row.assigneeId)?'ASSIGNEE_DEAD':null
+    const reason=!alive(world,row.issuerId)?'ISSUER_DEAD':!row.message.deliveredEventId&&!alive(world,row.targetActorId)?'RECIPIENT_DEAD':row.assigneeId&&!alive(world,row.assigneeId)?'ASSIGNEE_DEAD':null
     if(reason){events.push(finish(world,row,'failed',reason,at,requestId,cause));continue}
     const loss=losses.find(loss=>loss.sourceId===row.id)
     if(loss?.reason==='CARGO_UNAVAILABLE'){events.push(finish(world,row,'failed','CARGO_UNAVAILABLE',at,requestId,cause));continue}

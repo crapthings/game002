@@ -101,7 +101,14 @@ export function executeGameplay(state,catalog,request) {
       } else if(step.domain==='opportunities') {
         const emitted=executeOpportunities(next,{...step.command,id:commandId},step.context)
         events.push(...emitted)
-        for(const event of emitted)events.push(...registerFact(next,event,`${commandId}:${event.id}`))
+        for(const event of emitted) {
+          events.push(...registerFact(next,event,`${commandId}:${event.id}`))
+          if(['message_delivered','message_acknowledged'].includes(event.kind)) {
+            const observed=executeKnowledge(next.social,{id:`${commandId}:message:${event.id}`,kind:'witness',expectedRevision:next.social.revision,
+              actorId:event.targetId,factId:`fact:${event.id}`},{allowed:true,at:event.at,observed:true,observedAt:event.at,identified:event.identified,proofId:event.proofId})
+            requireValue(observed.ok,observed.code);next.social=observed.state;events.push(...observed.events)
+          }
+        }
       } else if (step.domain === 'interaction') {
         assertTradeService(next,step.command,step.context)
         if (next.combat) {

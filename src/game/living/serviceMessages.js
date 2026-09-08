@@ -15,4 +15,7 @@ export const SERVICE_REASONS={
   OPPORTUNITY_TAKEN:'这件委托已经有人承接。',OFFER_NOT_KNOWN:'请先向委托人了解这件事。',
   UNPAID_CONFIRMATION_REQUIRED:'委托人的现钱不够，需要重新选择是否愿意无偿帮忙。',
   NOT_CONTRACT_PARTY:'这不是你承接或发起的委托。',OPPORTUNITY_LIMIT:'目前要处理的事情已经够多，稍后再来。',
+  NOT_ASSIGNEE:'这件事由另一位信使承接。',MESSAGE_ALREADY_DELIVERED:'这封口信已经送达。',
+  DELIVERY_NOT_COMPLETE:'请先把口信带给小何，取得答复再回来。',PAYMENT_PENDING:'报酬还没凑足，但办妥事情的记录已经保留。',
+  TERMS_ALREADY_FIXED:'之前已经约定了报酬，重复操作不能改价。',
 }
