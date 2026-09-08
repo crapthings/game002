@@ -7,6 +7,7 @@ import { sceneActorDefinitions } from './actorRegistry.js'
 import { nextDailyActivity } from './dailySchedule.js'
 import { spokenAnswer } from './dialoguePresentation.js'
 import { createOpportunityDirector } from './opportunityDirector.js'
+import { personalOpportunity,sameKnownProgress } from '../gameplay/opportunityKnowledge.js'
 const copy=v=>structuredClone(v)
 export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,save,space,notify=()=>{},effects=()=>{}}) {
   const config=livingConfig(legacy,world)
@@ -119,7 +120,12 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
     const commands=answer.kind==='places'?answer.placeIds.filter(id=>!knownPlaces.has(id)).map(placeId=>({kind:'tell_place',actorId:current.speakerId,targetId:'player',placeId})):
       answer.kind==='news'&&!state.social.knowledge.some(k=>k.npcId==='player'&&k.factId===answer.factId&&(k.subjectId!==null||answer.subjectId===null))?[{kind:'share_news',actorId:current.speakerId,targetId:'player',factId:answer.factId}]:[]
     const steps=commands.map(command=>({domain:'dialogue',command,context}))
-    if(answer.kind==='requests')for(const id of answer.opportunityIds)if(!state.opportunities.entries.find(r=>r.id===id).knownBy.includes('player'))steps.push({domain:'opportunities',command:{kind:'reveal',actorId:current.speakerId,targetId:'player',opportunityId:id},context})
+    if(answer.kind==='requests')for(const id of answer.opportunityIds) {
+      const row=state.opportunities.entries.find(r=>r.id===id)
+      if(!row.knownBy.includes('player'))steps.push({domain:'opportunities',command:{kind:'reveal',actorId:current.speakerId,targetId:'player',opportunityId:id},context})
+      else if(!sameKnownProgress(personalOpportunity(state,row,current.speakerId,clock),personalOpportunity(state,row,'player',clock)))
+        steps.push({domain:'opportunities',command:{kind:'tell_status',actorId:current.speakerId,targetId:'player',opportunityId:id},context})
+    }
     const display=()=>{if(conversation?.id===current.id){current.lines=spokenAnswer(state,answer,Object.fromEntries(npcs().map(n=>[n.id,n.name])));current.placeIds=answer.placeIds??[];current.opportunityIds=answer.opportunityIds??[]}}
     if(!steps.length){display();return}
     send(steps[0].domain,steps[0].command,context,false,steps.slice(1)).then(result=>{if(result.ok)display()})
@@ -330,7 +336,7 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
   return {update,command,checkpoint,release:()=>{guardDesired=false},
     canAdvance:()=>!busy&&!stopped&&!checkpointDepth,view:()=>view,state:()=>state,clock:()=>clock,
     calendar:()=>clockAt(state.calendar.clockOrigin,clock),tradeStatus,
-    conversation:()=>{refreshConversation();return conversation?{...copy(conversation),topics:dialogueTopics(),opportunities:knownOpportunities(state,'player',clock).filter(r=>conversation.opportunityIds.includes(r.id)||r.assigneeId==='player'&&r.status==='accepted'&&[r.issuerId,r.targetActorId].includes(conversation.speakerId))}:null},
+    conversation:()=>{refreshConversation();return conversation?{...copy(conversation),topics:dialogueTopics(),opportunities:knownOpportunities(state,'player',clock,conversation.speakerId).filter(r=>conversation.opportunityIds.includes(r.id)||r.assigneeId==='player'&&r.status==='accepted'&&[r.issuerId,r.targetActorId].includes(conversation.speakerId))}:null},
     busy:()=>busy||checkpointDepth>0,stopped:()=>stopped,config,
     close:async()=>{await checkpoint(true);return session.close()}}
 }

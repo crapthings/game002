@@ -2,6 +2,7 @@ import { InventoryError } from './inventory.js'
 import { meetingEligibility } from './dialogue.js'
 import { availableWallet,reserveMoney,releaseReservation,reconcileReservations,requireAvailableFunds } from './reservations.js'
 import { SHI_MESSAGE_V1 } from './content/opportunityTemplatesV1.js'
+import { personalOpportunity,sameKnownProgress } from './opportunityKnowledge.js'
 
 const copy=value=>structuredClone(value)
 const check=(ok,code)=>{if(!ok)throw new InventoryError(code)}
@@ -44,10 +45,18 @@ export function opportunityQuote(world,row) {
   const budget=availableWallet(world.interactions,row.issuerId)
   return {amount:budget>=row.proposedReward?row.proposedReward:0,unpaid:budget<row.proposedReward}
 }
-export function knownOpportunities(world,actorId,at) {
-  return (world.opportunities?.entries??[]).filter(row=>row.knownBy.includes(actorId)).map(row=>({...copy(row),expired:active(row)&&!row.returnEventId&&at>=row.deadlineAt,
-    paymentAvailable:row.status==='accepted'&&availableWallet(world.interactions,row.issuerId,row.rewardReservationId)>=row.rewardAmount,
-    quote:row.status==='offered'?opportunityQuote(world,row):{amount:row.rewardAmount,unpaid:row.rewardAmount===0}}))
+export function knownOpportunities(world,actorId,at,meetingSpeakerId=null) {
+  return (world.opportunities?.entries??[]).filter(row=>row.knownBy.includes(actorId)).map(row=>{
+    const known=personalOpportunity(world,row,actorId,at),status=known.status==='declined'?'offered':known.status
+    const delivered=known.assigneeId===actorId&&['return','payment','ended'].includes(known.stage)
+    const local=meetingSpeakerId===row.issuerId
+    return {...copy(row),status,assigneeId:known.assigneeId,rewardAmount:known.amount,
+      reason:known.reason,fundsBlocked:known.stage==='payment',completionEventId:known.stage==='ended'?known.evidenceId:null,
+      returnEventId:known.stage==='payment'||known.status==='fulfilled'?known.evidenceId:null,
+      message:{...copy(row.message),deliveredEventId:delivered?row.message.deliveredEventId:null,receiptEventId:delivered?row.message.receiptEventId:null},
+      expired:status==='expired',paymentAvailable:local&&status==='accepted'&&availableWallet(world.interactions,row.issuerId,row.rewardReservationId)>=known.amount,
+      quote:status==='offered'&&local?opportunityQuote(world,row):{amount:known.amount,unpaid:known.amount===0}}
+  })
 }
 export function executeOpportunities(world,command,context) {
   check(world.version===2&&context.allowed===true,'INTERACTION_DENIED')
@@ -90,6 +99,14 @@ export function executeOpportunities(world,command,context) {
   }
   const row=lookup(world,command.opportunityId)
   check(row,'UNKNOWN_OPPORTUNITY')
+  if(command.kind==='tell_status') {
+    check(command.actorId===row.issuerId&&row.knownBy.includes(command.targetId),'OFFER_NOT_KNOWN')
+    meeting(world,command.actorId,command.targetId,context)
+    const knownState=personalOpportunity(world,row,command.actorId,context.at)
+    check(!sameKnownProgress(knownState,personalOpportunity(world,row,command.targetId,context.at)),'ALREADY_KNOWN')
+    return [emit(world,'opportunity_status_told',command.actorId,command.targetId,context.at,command.id,
+      {opportunityId:row.id,rootCauseId:row.rootCauseId,cause:knownState.evidenceId,knownState,proofId:context.proofId})]
+  }
   if(command.kind==='notice_outcome') {
     const assignment=assignmentFor(world,row)
     check(world.opportunities.autonomyVersion===1&&row.assigneeId===command.actorId&&assignment?.opportunityId===row.id&&!assignment.outcomeEventId,'NO_CHANGE')

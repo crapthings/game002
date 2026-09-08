@@ -145,21 +145,22 @@ export interface Opportunity {
   targetActorId:string;targetPlaceId:string;returnPlaceId:string;requirements:{kind:'message_roundtrip';messageId:string};
   proposedReward:number;rewardAmount:number|null;rewardReservationId:string|null;deadlineAt:number;
   status:'offered'|'accepted'|'fulfilled'|'failed'|'cancelled'|'expired';assigneeId:string|null;acceptedAt:number|null;identifiedAssignee:boolean;
-  completionEventId:string|null;returnEventId?:string;reason:string|null;fundsBlocked:boolean;knownBy:string[];declinedBy:string[];
+  completionEventId:string|null;returnEventId?:string|null;reason:string|null;fundsBlocked:boolean;knownBy:string[];declinedBy:string[];
   message:{id:string;senderId:string;recipientId:string;contentType:string;deliveredEventId:string|null;receiptEventId:string|null};
 }
 export type OpportunityCommand =
   | {kind:'initialize'|'enable_autonomy';actorId:string}
   | {kind:'offer';actorId:string;needId:string}
-  | {kind:'reveal';actorId:string;targetId:string;opportunityId:string}
+  | {kind:'reveal'|'tell_status';actorId:string;targetId:string;opportunityId:string}
   | {kind:'accept';actorId:string;opportunityId:string;terms:'paid'|'unpaid'}
   | {kind:'decline'|'cancel'|'expire'|'deliver_message'|'collect_reward'|'notice_outcome';actorId:string;opportunityId:string};
 export interface OpportunityEvent {
   id:string;kind:string;actorId:string;targetId:string|null;at:number;cause:string|null;requestId:string;
   opportunityId?:string;rootCauseId?:string;reason?:string;amount?:number;reservationId?:string|null;proofId?:string;identified?:boolean;declaredNeedIds?:string[];messageId?:string;contentType?:string;
+  knownState?:{status:string;stage:string;assigneeId:string|null;amount:number|null;reason:string|null;evidenceId:string};
 }
 export function opportunityQuote(state:GameplayState,opportunity:Opportunity):{amount:number;unpaid:boolean};
-export function knownOpportunities(state:GameplayState,actorId:string,at:number):(Opportunity & {expired:boolean;paymentAvailable:boolean;quote:{amount:number|null;unpaid:boolean}})[];
+export function knownOpportunities(state:GameplayState,actorId:string,at:number,meetingSpeakerId?:string|null):(Opportunity & {expired:boolean;paymentAvailable:boolean;quote:{amount:number|null;unpaid:boolean}})[];
 export function prepareCommitment(state:GameplayState,input:{kind:'accept'|'decline'|'cancel'|'deliver'|'collect';actorId:string;opportunityId:string;terms?:'paid'|'unpaid'},context:Policy & Partial<MeetingContext> & {identified?:boolean}):
   {ok:false;code:string}|{ok:true;duplicate:boolean;receiptId:string|null;steps:GameplayStep[]};
 export interface MeetingContext extends Policy {withinRange:boolean;clear:boolean;facing:boolean;meetingId:string;proofId:string}
