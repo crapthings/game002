@@ -21,6 +21,8 @@ import { useLivingStore } from '../../stores/useLivingStore.js'
 import { useGameStore } from '../../stores/useGameStore.js'
 import { useWorldStore } from '../../stores/useWorldStore.js'
 import { useNavigationStore } from '../../stores/useNavigationStore.js'
+import { createAttentionQueue } from './attentionQueue.js'
+import { attentionMessages } from './attentionMessages.js'
 const copy=v=>structuredClone(v)
 export function createLivingScene(scene,plan,world,player,progress,extras=()=>({})) {
   let simulation=null,spatial=null,disposed=false,closing=false,retry=0,selected=null,lastSequence=-1
@@ -33,6 +35,22 @@ export function createLivingScene(scene,plan,world,player,progress,extras=()=>({
   store().reset()
   const saved=progress.living,legacy=saved?saved.legacy:progress.ledger??null
   if(saved){validateLiving(saved,plan);spatial=copy(saved.spatial)}
+  const attention=createAttentionQueue(saved?.attention,saved?.checkpoint.simulationAt??0)
+  let attentionRevision=-1
+  function notify(message,detail={}) {
+    if(!simulation){store().notify(message);return}
+    const failure=typeof message==='string'&&/^[A-Z_]+$/.test(message)
+    attention.add(message,{priority:failure?0:1,group:failure?`error:${message}`:'reply',...detail},simulation.clock())
+  }
+  function presentAttention() {
+    if(!simulation)return
+    const fights=simulation.view(),hero=fights.find(f=>f.id==='player')
+    const active=['windup','active','recovery','guard','broken','incapacitated','custody']
+    const combat=active.includes(hero?.phase)||fights.some(f=>f.id!=='player'&&active.includes(f.phase)&&visible('player',f.id)&&distance(point('player'),point(f.id))<12)
+    attention.tick(simulation.clock(),{combat})
+    if(attention.revision()!==attentionRevision){attentionRevision=attention.revision();store().setAttention(attention.view())}
+  }
+  store().setDismissNotice(id=>{attention.dismiss(id,simulation?.clock());presentAttention()})
   let cityLayout=saved?.version>=2?copy(saved.layout):null
   const preparing=cityLayout?null:prepareCityLayout(plan,world),patrols=copy(saved?.patrols??{})
   const migration=copy(saved?.migration??{fromVersion:saved?1:0})
@@ -90,7 +108,7 @@ export function createLivingScene(scene,plan,world,player,progress,extras=()=>({
     if(!housing)housing=prepareCityLayout(plan,world,{extra:true,candidates:resolveRoleHomes(plan),knownPlaces:state.places.definitions})
     housing.update()
     const status=housing.status()
-    if(status.status==='blocked'&&housingMessage!==status.reason){housingMessage=status.reason;store().notify(`住处暂未确认：${status.reason}`)}
+    if(status.status==='blocked'&&housingMessage!==status.reason){housingMessage=status.reason;notify(`住处暂未确认：${status.reason}`,{priority:1,group:'place:housing'})}
   }
   function lifeSetup() {
     const ready=housing?.result()
@@ -108,7 +126,7 @@ export function createLivingScene(scene,plan,world,player,progress,extras=()=>({
     if(!supplierPlace)supplierPlace=prepareCityLayout(plan,world,{extra:true,owner:'city-supplier',candidates:resolveSupplierPlace(plan),knownPlaces:state.places.definitions})
     supplierPlace.update()
     const status=supplierPlace.status()
-    if(status.status==='blocked'&&supplierMessage!==status.reason){supplierMessage=status.reason;store().notify(`货郎的停靠地点尚未确认：${status.reason}`)}
+    if(status.status==='blocked'&&supplierMessage!==status.reason){supplierMessage=status.reason;notify(`货郎的停靠地点尚未确认：${status.reason}`,{priority:1,group:'place:supplier'})}
   }
   function supplierSetup() {
     return confirmedArrival(supplierPlace,'supplier-1')
@@ -119,7 +137,7 @@ export function createLivingScene(scene,plan,world,player,progress,extras=()=>({
     if(!gangPlace)gangPlace=prepareCityLayout(plan,world,{extra:true,owner:'city-river-member',candidates:resolveGangPlace(plan),knownPlaces:state.places.definitions})
     gangPlace.update()
     const status=gangPlace.status()
-    if(status.status==='blocked'&&gangMessage!==status.reason){gangMessage=status.reason;store().notify(`渡口会面处尚未确认：${status.reason}`)}
+    if(status.status==='blocked'&&gangMessage!==status.reason){gangMessage=status.reason;notify(`渡口会面处尚未确认：${status.reason}`,{priority:1,group:'place:gang'})}
   }
   function gangSetup() {
     return confirmedArrival(gangPlace,'gang-1')
@@ -168,16 +186,11 @@ export function createLivingScene(scene,plan,world,player,progress,extras=()=>({
       canEscape:(id,other)=>{const p=point(id),q=point(other),h=Math.atan2(p.x-q.x,p.z-q.z);return walkable(p.x+Math.sin(h)*2,p.z+Math.cos(h)*2)},
       flee:(id,other,dt)=>{const p=point(id),q=other,h=Math.atan2(p.x-q.x,p.z-q.z);move(id,{x:p.x+Math.sin(h)*4,y:p.y,z:p.z+Math.cos(h)*4},dt,.2)},
       idle},
-      notify:message=>store().notify(message),effects:events=>{for(const e of events){
-        const name=e.targetId==='player'?'你':npcDefinitions().find(n=>n.id===e.targetId)?.name??'对方'
-        if(['damaged','parried','guard_broken','died'].includes(e.kind))flashes.set(e.targetId,{kind:e.kind,until:simulation.clock()+350})
-        if(e.kind==='damaged')store().notify(`${name}受到${e.damage}点伤害。`)
-        if(e.kind==='parried')store().notify(`${name}挡住了这次攻击。`)
-        if(e.kind==='died')store().notify(`${name}倒下了，身上的财物留在原处。`)
-        if(e.kind==='threatened')store().notify({fight:'对方选择反抗。',flee:'对方转身逃走。',call_guard:'对方正在向捕快求助。',surrender:'对方选择交出钱财。'}[e.reaction])
-        if(e.kind==='robbed')store().notify(`对方交出${e.amount}文，但这笔钱仍被记录为强取。`)
-        if(e.kind==='reward')store().notify('柳娘当面送上15文答谢。')
-      }},
+      notify,effects:events=>{
+        for(const e of events)if(['damaged','parried','guard_broken','died'].includes(e.kind))flashes.set(e.targetId,{kind:e.kind,until:simulation.clock()+350})
+        const name=id=>id==='player'?'你':npcDefinitions().find(n=>n.id===id)?.name??'对方'
+        for(const item of attentionMessages(events,{seen:id=>visible('player',id),name}))attention.add(item.text,item,simulation.clock())
+      },
       save:async(checkpoint,meta)=>{
         if(disposed||useWorldStore.getState().document?.world!==plan)throw new Error('场景已关闭')
         const nextSpatial={...copy(spatial),player:point('player')},parcelLot=checkpoint.gameplay.interactions.inventory.lots.find(l=>l.id==='medicine-parcel')
@@ -189,7 +202,7 @@ export function createLivingScene(scene,plan,world,player,progress,extras=()=>({
         // through the owner's recorded pickup/delivery transaction.
         if(!['stall','merchant-bag'].includes(parcelLot.holderId)||checkpoint.gameplay.village.events.some(e=>e.kind==='relocate_deliver'))nextSpatial.stall=copy(cityLayout.parcelSpot)
         const nextClues=copy(pendingClues??clues)
-        const living={version:checkpoint.gameplay.archive.history?4:3,legacy:copy(legacy),checkpoint,spatial:nextSpatial,layout:copy(cityLayout),migration:copy(migration),travels:travel.snapshot(),patrols:copy(patrols),clues:nextClues}
+        const living={version:checkpoint.gameplay.archive.history?4:3,legacy:copy(legacy),checkpoint,spatial:nextSpatial,layout:copy(cityLayout),migration:copy(migration),travels:travel.snapshot(),patrols:copy(patrols),clues:nextClues,attention:attention.snapshot()}
         const worldTime=clockAt(checkpoint.gameplay.calendar.clockOrigin,checkpoint.simulationAt).hour
         const ok=await useWorldStore.getState().dispatch({type:'living-checkpoint',living,expectedSequence:meta.expectedSequence,archivePages:meta.archivePages,...extras(),worldTime})
         if(!ok)throw new Error('保存结果未确认，请重新读档。')
@@ -213,9 +226,9 @@ export function createLivingScene(scene,plan,world,player,progress,extras=()=>({
   const input=createCombatInput(canvas,()=>useGameStore.getState().phase==='playing'&&!!simulation,()=>simulation?.release())
   function remember(next,message) {
     if(!simulation.canAdvance()||pendingClues)return
-    if(next===clues){store().notify(message);return}
+    if(next===clues){notify(message);return}
     pendingClues=next
-    simulation.checkpoint().then(result=>{if(!result?.ok)pendingClues=null;else if(!closing)store().notify(message)})
+    simulation.checkpoint().then(result=>{if(!result?.ok)pendingClues=null;else if(!closing)notify(message)})
   }
   function selectTarget() {
     const p=point('player')
@@ -224,6 +237,7 @@ export function createLivingScene(scene,plan,world,player,progress,extras=()=>({
     selected=candidates.filter(q=>distance(p,q)<=2&&Math.abs(p.y-q.y)<1.5&&Math.abs(facingAngle(p,q))<65&&clear(p,q)).sort((a,b)=>Math.abs(facingAngle(p,a))-Math.abs(facingAngle(p,b))||distance(p,a)-distance(p,b))[0]?.id??null
   }
   function publish() {
+    presentAttention()
     const at=performance.now(),s=simulation.state(),busy=simulation.busy(),stopped=simulation.stopped()
     if(at-lastPublishedAt<100&&s===lastPublishedState&&busy===lastPublishedBusy&&stopped===lastPublishedStopped)return
     lastPublishedAt=at;lastPublishedState=s;lastPublishedBusy=busy;lastPublishedStopped=stopped

@@ -3,6 +3,7 @@ import { validStamina } from '../entities/createStamina.js'
 import { validWorldTime } from '../world/createDayNightCycle.js'
 import { livingConfig, LIVING_NPCS } from './config.js'
 import { restoreWorldCheckpoint } from '../gameplay/worldSession.js'
+import { validateAttention } from './attentionQueue.js'
 const finitePoint=p=>p && ['x','y','z'].every(k=>Number.isFinite(p[k])&&Math.abs(p[k])<=(k==='y'?1024:256))
 const placeIds=['place.medicine','place.market-neighbor','place.yamen-desk','place.yamen-patrol','place.home-liu','place.home-shi','place.central-contact']
 export function validateCityLayout(layout) {
@@ -40,6 +41,7 @@ export function validateLivingEnvelope(saved) {
     (saved.version===4)!==!!saved.checkpoint?.gameplay.archive?.history) throw new Error('江湖新存档版本无效。')
   const bodyIds=saved.checkpoint.gameplay.registry?.actors.filter(a=>a.hasBody&&a.actorId!=='player').map(a=>a.actorId)
   validateLivingSpatial(saved.spatial,bodyIds)
+  validateAttention(saved.attention,saved.checkpoint.simulationAt)
   if(saved.version>=2)validateCityEnvelope(saved)
 }
 export function validateLiving(saved,world) {
@@ -62,6 +64,7 @@ export function applyLivingCheckpoint(progress,event) {
     (current && JSON.stringify(current.legacy)!==JSON.stringify(next.legacy))) throw new Error('江湖检查点冲突，请重新读档。')
   const bodyIds=next.checkpoint.gameplay.registry?.actors.filter(a=>a.hasBody&&a.actorId!=='player').map(a=>a.actorId)
   validateLivingSpatial(next.spatial,bodyIds)
+  validateAttention(next.attention,next.checkpoint.simulationAt)
   if(next.version>=2) {
     validateCityEnvelope(next)
     if(current?.version>=2&&(JSON.stringify(current.layout)!==JSON.stringify(next.layout)||JSON.stringify(current.migration)!==JSON.stringify(next.migration)))throw new Error('城内布局发生冲突，请重新读档。')

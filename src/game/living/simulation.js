@@ -96,7 +96,7 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
       const result=await session.dispatch({id:`live-${++serial}`,expectedRevision:state.revision,steps})
       if(result.ok){state=result.state;view=previewGameplayCombat(state,clock);effects(result.events)}
       else {
-        notify(result.code)
+        if(command.actorId==='player'||['SAVE_OUTCOME_UNKNOWN','RECOVERY_REQUIRED','STORAGE_CONFLICT','HISTORY_FULL'].includes(result.code))notify(result.code)
         if(['SAVE_OUTCOME_UNKNOWN','RECOVERY_REQUIRED','STORAGE_CONFLICT','HISTORY_FULL'].includes(result.code))stopped=true
       }
       return result
@@ -265,7 +265,7 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
           data.action==='deliver'?'小何收到了口信，也给了你答复。现在可以回去告诉石伯。':
           data.action==='collect'?(current.status==='fulfilled'?(current.rewardAmount?`委托已完成，收到${current.rewardAmount}文。`:'已经按约定无偿办妥。'):'石伯确认事情办到了，但现钱不足；这笔报酬仍然欠着。'):
           data.action==='decline'?'你婉拒了这件事，没有扣除钱物。':'已放弃这件委托。'
-        notify(message);if(conversation)conversation.lines=[message]
+        notify(message,{priority:1,group:`task:${row.id}`});if(conversation)conversation.lines=[message]
       });return
     }
     if(kind==='attack')return send('combat',{kind:'attack',actorId:'player'})
