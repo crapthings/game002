@@ -1,6 +1,6 @@
 # World Ledger 活世界框架交付
 
-2026-09-08。本轮由当前Goal统一完成P0及12项能力的29张任务卡，全部状态为REVIEWED：代码实现与源码审阅完成。当前AGENTS.md禁止测试/build/lint；本轮也没有进行浏览器实机、容量或FPS验证。这里不将这些工作标为RUNTIME_VERIFIED，也不判断已证实好玩。
+2026-09-08启动，2026-09-09交付。本轮由当前Goal统一完成P0及12项能力的29张任务卡，全部状态为REVIEWED：代码实现与源码审阅完成。当前AGENTS.md禁止测试/build/lint；本轮也没有进行浏览器实机、容量或FPS验证。这里不将这些工作标为RUNTIME_VERIFIED，也不判断已证实好玩。
 
 工作目录`D:\WorldLedger\repo`，交付分支`feature/b-combat-rules`。最后一张实现卡为fc7d55b（12-C），之前11-B为cfee485。最新同步确认`origin/core`仍为3027b81且完整包含在本分支；原PR #1已合并过早期战斗改动，本轮新增社会/城市实现交付为[草稿PR #2](https://github.com/crapthings/game002/pull/2)，目标分支core。后续文档收尾提交见Git。
 
