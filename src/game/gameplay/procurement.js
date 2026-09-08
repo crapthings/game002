@@ -1,4 +1,5 @@
 import { InventoryError,transferLot } from './inventory.js'
+import { cargoRecipient,requireEstateMeeting } from './estates.js'
 import { availableQuantity,availableWallet,requireAvailableFunds,requireAvailableLot,reserveItems,reserveCargo,releaseReservation } from './reservations.js'
 import { ECONOMY_V1 as rules } from './content/economyV1.js'
 import { placeStatus } from './places.js'
@@ -23,7 +24,9 @@ export function offerProcurement(world,need,command,context,{emit}) {
 export function executeProcurement(world,catalog,row,command,context,{emit,finish,meeting,closeKnownAssignment}) {
   if(command.kind==='return_cargo') {
     check(row.restitution&&row.assigneeId===command.actorId&&!row.restitution.returnedEventId,'NO_CARGO_TO_RETURN')
-    meeting(world,row.issuerId,command.actorId,context)
+    const recipient=cargoRecipient(world,row)
+    if(actor(world,row.issuerId)?.health===0)requireEstateMeeting(world,row.issuerId,context)
+    meeting(world,recipient,command.actorId,context)
     check(context.present===true&&context.placeId===row.returnPlaceId,'WRONG_SERVICE_PLACE')
     const carrier=actor(world,command.actorId),owner=actor(world,row.issuerId),returned=[]
     for(const cargo of row.shipment.cargo) {
@@ -34,7 +37,8 @@ export function executeProcurement(world,catalog,row,command,context,{emit,finis
       returned.push({lotId:lot.id,quantity})
     }
     check(returned.length,'NO_CARGO_TO_RETURN')
-    const event=emit(world,'cargo_returned',carrier.id,owner.id,context.at,command.id,{opportunityId:row.id,rootCauseId:row.rootCauseId,cause:row.restitution.sourceEventId,cargo:returned,proofId:context.proofId})
+    const event=emit(world,'cargo_returned',carrier.id,owner.id,context.at,command.id,{opportunityId:row.id,rootCauseId:row.rootCauseId,cause:row.restitution.sourceEventId,cargo:returned,proofId:context.proofId,
+      ...(recipient!==owner.id?{receiverId:recipient,authorizationEventId:world.continuity.estates.find(e=>e.ownerId===owner.id).sourceEventId}:{})})
     row.restitution.returnedEventId=event.id;closeKnownAssignment(world,row,event.id);return [event]
   }
   check(row.status==='accepted'&&row.assigneeId===command.actorId,'NOT_ASSIGNEE')

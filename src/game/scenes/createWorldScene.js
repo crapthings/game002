@@ -253,7 +253,7 @@ export function createWorldScene(engine, canvas, { onLoading, onReady } = {}) {
       applyLighting()
     }
     const combat=ledger?.fighter('player')
-    const immobilized=useLivingStore.getState().panel || ledger && !ledger.isAlive() || combat&&['windup','active','recovery','broken','guard'].includes(combat.phase)
+    const immobilized=useLivingStore.getState().panel || ledger && !ledger.isAlive() || combat&&['windup','active','recovery','broken','guard','incapacitated','custody'].includes(combat.phase)
     if(immobilized){input.clear();locomotion.clearInput()}
     if(document.pointerLockElement===canvas && (!combat||combat.phase==='idle'||combat.phase==='guard')) player.root.rotation.y=Math.atan2(-Math.cos(camera.alpha),-Math.sin(camera.alpha))
     const direction = immobilized?{x:0,z:0}:input.direction()

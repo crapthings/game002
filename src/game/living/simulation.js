@@ -25,6 +25,10 @@ import { createGrowthController } from './growthController.js'
 import { GROWTH_V1,STANDING_V1 } from '../gameplay/content/standingV1.js'
 import { createRecoveryController } from './recoveryController.js'
 import { createStaffingController } from './staffingController.js'
+import { createJusticeController } from './justiceController.js'
+import { bodyCondition,bodyLocked,custodyQuote } from '../gameplay/justice.js'
+import { estateKeeper,cargoRecipient } from '../gameplay/estates.js'
+import { classifyForce } from '../gameplay/forcePolicy.js'
 const copy=v=>structuredClone(v)
 export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,save,space,notify=()=>{},effects=()=>{}}) {
   const config=livingConfig(legacy,world)
@@ -75,6 +79,8 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
   const growthController=createGrowthController({state:()=>state,clock:()=>clock,context:growthContext,nearPlace,send})
   const recoveryController=createRecoveryController({state:()=>state,clock:()=>clock,context:recoveryContext,send})
   const staffingController=createStaffingController({state:()=>state,clock:()=>clock,notice:noticesPerson,contact:near,atPlace:space.atPlace,send,talkingTo:()=>conversation?.speakerId})
+  const justiceController=createJusticeController({state:()=>state,clock:()=>clock,point:space.point,notice:noticesPerson,contact:near,face:space.face,move:space.move,
+    atPlace:space.atPlace,nearPlace,send,fighter,identified:(a,b)=>b==='player'?sees(a,b,true):noticesPerson(a,b),talkingTo:()=>conversation?.speakerId,interrupt:interruptRoutine})
   async function send(domain,command,extra={},observe=false,continuation=[]) {
     if(busy||stopped)return {ok:false,code:'BUSY'}
     busy=true
@@ -184,11 +190,32 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
     send(steps[0].domain,steps[0].command,context,false,steps.slice(1)).then(result=>{if(result.ok)display()})
   }
   function command(kind,data={}) {
-    if(kind==='guard'){guardDesired=data.held;return}
+    if(kind==='guard'){guardDesired=!bodyLocked(state,'player')&&data.held;return}
     if(kind==='talk_end'){conversation=null;return}
     if(busy||stopped||checkpointDepth)return
     const target=data.targetId
     if(!alive('player'))return
+    if(kind==='process_custody') {
+      const row=custodyQuote(state,'player')
+      if(row&&near('player',row.officerId))return send('continuity',{kind,actorId:'player',choice:'pay'},
+        {withinRange:true,clear:true,proofId:`custody-payment:${serial+1}`})
+      return
+    }
+    if(bodyLocked(state,'player')){notify('你暂时无法行动，正在等待现场处理。');return}
+    if(kind==='pay_custody_debt'&&target&&contact('player',target))return send('continuity',{kind,actorId:'player',targetId:target,debtId:data.debtId},meetingContext(target))
+    if(kind==='surrender_due_property'&&target&&contact('player',target))return send('continuity',{kind,actorId:'player',targetId:target,restitutionId:data.restitutionId},meetingContext(target))
+    if(kind==='collect_estate_claim') {
+      const row=state.continuity?.estateClaims?.find(r=>r.id===data.claimId),keeper=row&&estateKeeper(state,row.accountId)
+      if(keeper&&contact('player',keeper.keeperId))return send('continuity',{kind,actorId:'player',claimId:row.id},
+        {...meetingContext(keeper.keeperId),recipientId:keeper.keeperId,placeId:keeper.placeId,present:space.atPlace(keeper.keeperId,keeper.placeId)})
+      return
+    }
+    if(kind==='return_held_cargo') {
+      const row=state.opportunities.entries.find(r=>r.id===data.opportunityId),recipient=row&&cargoRecipient(state,row)
+      if(recipient&&contact('player',recipient))return send('opportunities',{kind:'return_cargo',actorId:'player',opportunityId:row.id},
+        {...meetingContext(recipient),recipientId:recipient,placeId:row.returnPlaceId,present:space.atPlace(recipient,row.returnPlaceId)})
+      return
+    }
     if(['talk_start','talk_topic'].includes(kind))return talk(kind,data)
     if(['review_standing','present_record'].includes(kind)&&target&&contact('player',target))return send('standing',
       {kind:kind==='review_standing'?'review':kind,actorId:'player',targetId:target,...(kind==='present_record'?{eventId:data.eventId}:{})},meetingContext(target))
@@ -280,10 +307,12 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
       if(f.phase!=='active')continue
       const fraction=(clock-f.swing.activeAt)/180,old=sweep.get(f.swing.id)??0
       for(const target of state.interactions.actors) {
-        if(target.id===f.id||target.health===0||f.swing.hitIds.includes(target.id))continue
+        if(target.id===f.id||target.health===0||f.swing.hitIds.includes(target.id)||f.swing.nonlethal&&bodyLocked(state,target.id))continue
+        if(f.swing.nonlethal&&classifyForce(state,f.id,target.id,clock).ruleId!=='force.enforcement.v1')continue
         if(sweptContact(space.point(f.id),space.point(target.id),old,fraction,space.clear)) {
           send('combat',{kind:'hit',actorId:f.id,targetId:target.id,swingId:f.swing.id},
-            {contact:true,clear:true,angleDegrees:facingAngle(space.point(target.id),space.point(f.id)),proofId:`hit-${serial+1}`},true);return
+            {contact:true,clear:true,angleDegrees:facingAngle(space.point(target.id),space.point(f.id)),proofId:`hit-${serial+1}`,
+              ...(state.continuity?.justiceVersion?{position:copy(space.point(target.id))}:{})},true);return
         }
       }
       sweep.set(f.swing.id,fraction)
@@ -309,6 +338,8 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
     if(state.factions?.actionsVersion&&!state.standing){send('standing',{kind:'initialize',actorId:'player'});return}
     if(state.standing&&!state.standing.growthVersion){send('standing',{kind:'enable_growth',actorId:'player'});return}
     if(state.standing?.growthVersion&&!state.continuity){send('continuity',{kind:'initialize',actorId:'player'});return}
+    if(state.continuity&&!state.continuity.justiceVersion){send('continuity',{kind:'enable_justice',actorId:'player'});return}
+    if(justiceController.update())return
     if(state.economy&&!state.registry.actors.some(a=>a.actorId==='supplier-1')) {
       const body=space.supplierSetup?.()
       if(body){send('registry',{kind:'arrive',actorId:'supplier-1',templateId:'supplier-1'},{geometryConfirmed:true,proofId:'supplier-site-confirmed',body});return}
@@ -332,7 +363,7 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
     if(escortController.observe())return
     for(const npc of npcs()) {
       const id=npc.id,f=fighter(id)
-      if(!alive(id))continue
+      if(!alive(id)||bodyLocked(state,id))continue
       const knowledge=index.npcs.get(id),gear=knowledge.gear
       if(f.phase!=='idle'&&interruptRoutine(id,'combat',90,f.swing?.cause??knowledge.lastAttack?.id??null))return
       if(gear&&f.phase==='idle'){const slot=index.items.get(gear.itemType).equipment.slot;if(!index.loadouts.get(id)[slot]){send('equipment',{kind:'equip',actorId:id,slot,lotId:gear.id});return}}
@@ -341,6 +372,9 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
         if(raised&&clock-raised.at>=700){send('combat',{kind:'guard',actorId:id,held:false});return}
       }
       if(index.authorities.has(id)) {
+        const control=justiceController.updateNpc(id,dt,true)
+        if(control==='committed')return
+        if(control==='busy')continue
         const unassessed=knowledge.unassessed
         if(unassessed){send('crime',{kind:'assess',actorId:id,factId:unassessed.factId});return}
         const wanted=knowledge.wanted,track=state.pursuit.tracks.find(t=>t.authorityId===id&&t.subjectId==='player')
@@ -353,13 +387,13 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
           const unsent=knowledge.reinforcement
           if(unsent){if(interruptRoutine(id,'report',70,unsent.evidenceId))return;if(near(id,'guard-2')){send('knowledge',{kind:'report',actorId:id,targetId:'guard-2',factId:unsent.factId},{delivered:true,proofId:`reinforce-${serial+1}`});return}if(f.phase==='idle')space.move(id,space.point('guard-2'),dt,1.3);continue}
         }
-        if(wanted.level>0&&alive('player')) {
+        if(wanted.level>0&&alive('player')&&!bodyLocked(state,'player')) {
           if(sees(id,'player',true)&&(!track||clock-track.seenAt>=500)) {send('pursuit',{kind:'sight',actorId:id,targetId:'player'},{visible:true,identified:true,position:copy(space.point('player')),proofId:`track-${serial+1}`});return}
           if(!sees(id,'player',true)&&track?.lostAt===null){send('pursuit',{kind:'lost',actorId:id,targetId:'player'},{visible:false,proofId:`lost-${serial+1}`});return}
           const pursuit=pursuitFor(state,id,'player',clock)
           if(pursuit.destination) {
             if(interruptRoutine(id,'pursuit',80,knowledge.lastCrimePosition?.id??null))return
-            if(pursuit.mayEngage&&near(id,'player',1.65)) {space.face(id,space.point('player')); if(f.phase==='idle'){send('combat',hero.phase==='windup'&&f.stamina>=25000&&!f.mustRelease?{kind:'guard',actorId:id,held:true}:{kind:'attack',actorId:id});return}}
+            if(pursuit.mayEngage&&near(id,'player',1.65)) {space.face(id,space.point('player')); if(f.phase==='idle'){send('combat',hero.phase==='windup'&&f.stamina>=25000&&!f.mustRelease?{kind:'guard',actorId:id,held:true}:{kind:'attack',actorId:id,...(state.continuity?.justiceVersion?{nonlethal:true}:{})});return}}
             else if(f.phase==='idle')space.move(id,pursuit.destination,dt,1.2)
             continue
           }
@@ -402,6 +436,9 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
         }
         if((threat?.reaction==='flee'||attack)&&f.phase==='idle'){if(interruptRoutine(id,'flee',80,attack?.id??threat?.id??null))return;const source=knowledge.lastKnownPosition;if(source)space.flee(id,source.position,dt);continue}
       }
+      const aftercare=justiceController.updateNpc(id,dt)
+      if(aftercare==='committed')return
+      if(aftercare==='busy')continue
       if(growthController.busyMentor(id)){space.face(id,space.point('player'));continue}
       const parcel=index.lots.get('medicine-parcel')
       if(id==='merchant'&&space.relocationPending?.()&&['stall','merchant-bag'].includes(parcel.holderId)) {
@@ -477,6 +514,17 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
   return {update,command,checkpoint,release:()=>{guardDesired=false},
     canAdvance:()=>!busy&&!stopped&&!checkpointDepth,view:()=>view,state:()=>state,clock:()=>clock,
     calendar:()=>clockAt(state.calendar.clockOrigin,clock),tradeStatus,
+    justiceView:target=>({condition:copy(bodyCondition(state,'player')),custody:copy(custodyQuote(state,'player')),
+      debts:copy((state.continuity?.custodyDebts??[]).filter(r=>r.subjectId==='player'&&r.status==='due').map(r=>({...r,payments:r.payments.map(p=>({...p,
+        amount:p.claimId?Math.max(0,state.property.moneyClaims.find(c=>c.id===p.claimId).amount-(state.property.moneyClaims.find(c=>c.id===p.claimId).repaidAmount??0)):p.amount}))}))),
+      items:copy((state.continuity?.restitutions??[]).filter(r=>r.subjectId==='player'&&r.status==='due').map(r=>({...r,
+        held:state.interactions.inventory.lots.some(l=>l.id===r.lotId&&l.holderId==='player-bag'&&l.ownerId===r.ownerId&&l.quantity>=r.quantity)}))),
+      canPayDebt:!!target&&indexed().authorities.has(target)&&alive(target)&&contact('player',target)&&sees(target,'player',true),
+      claims:copy((state.continuity?.estateClaims??[]).filter(r=>r.recipientId==='player'&&r.status==='due'&&
+        estateKeeper(state,r.accountId)?.keeperId===target&&contact('player',target)&&space.atPlace(target,estateKeeper(state,r.accountId).placeId))),
+      cargo:copy((state.opportunities?.entries??[]).filter(r=>r.assigneeId==='player'&&r.restitution&&!r.restitution.returnedEventId&&cargoRecipient(state,r)===target&&
+        target&&contact('player',target)&&space.atPlace(target,r.returnPlaceId)&&['failed','cancelled','expired'].includes(personalOpportunity(state,r,'player',clock)?.status))
+        .map(r=>({id:r.id,title:r.title}))) }),
     standingView:target=>{
       const local=!!target&&STANDING_V1.issuers.some(i=>i.actorId===target)&&contact('player',target)&&alive(target)&&sees(target,'player',true)
       const quote=local?standingQuote(state,target,'player'):null,proof=growthContext()

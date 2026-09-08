@@ -38,7 +38,7 @@ function advance(state,actors,at) {
   const r = COMBAT_RULES, dt = at-state.at
   const exhausted = []
   for (const f of state.fighters) {
-    if (actors.find(a => a.id === f.id).health === 0) continue
+    if (actors.find(a => a.id === f.id).health === 0 || f.condition) continue
     if (f.guarding) {
       const untilEmpty = Math.ceil(f.stamina/r.guardDrainPerMs)
       if (dt >= untilEmpty) {
@@ -59,6 +59,7 @@ function advance(state,actors,at) {
 
 export function combatPhase(fighter,at,health) {
   if (health === 0) return 'dead'
+  if (fighter.condition) return fighter.condition
   if (at < fighter.brokenUntil) return 'broken'
   if (fighter.guarding) return 'guard'
   const s = fighter.swing
@@ -82,10 +83,12 @@ export function executeCombat(state,actors,command,context) {
     check(state?.version === 1 && natural(state.at) && Array.isArray(state.receipts),'INVALID_STATE')
     check(command && id(command.id) && natural(command.expectedRevision) && ['attack','guard','hit'].includes(command.kind),'INVALID_COMMAND')
     check(context && natural(context.at),'INVALID_TIME')
-    const fingerprint = JSON.stringify([command.kind,command.expectedRevision,command.actorId ?? null,
+    const fingerprintParts = [command.kind,command.expectedRevision,command.actorId ?? null,
       command.targetId ?? null,command.held ?? null,command.swingId ?? null,
       context.at,context.allowed === true,context.contact === true,context.clear === true,
-      context.angleDegrees ?? null,context.proofId ?? null])
+      context.angleDegrees ?? null,context.proofId ?? null]
+    if(command.nonlethal!==undefined||context.nonlethal!==undefined)fingerprintParts.push(command.nonlethal??null,context.nonlethal??null,context.position??null)
+    const fingerprint=JSON.stringify(fingerprintParts)
     const prior = findReceipt(state,command.id)
     if (prior) {
       check(prior.fingerprint === fingerprint,'REQUEST_ID_CONFLICT')
@@ -101,6 +104,7 @@ export function executeCombat(state,actors,command,context) {
       const actor = next.fighters.find(f => f.id === command.actorId)
       const actorVitals = nextActors.find(a => a.id === command.actorId)
       check(actor && actorVitals,'UNKNOWN_ACTOR'); check(actorVitals.health > 0,'ACTOR_DEAD')
+      check(!actor.condition,'ACTOR_INCAPACITATED')
       if (command.kind === 'guard') {
         check(typeof command.held === 'boolean','INVALID_COMMAND')
         if (command.held) {
@@ -116,9 +120,11 @@ export function executeCombat(state,actors,command,context) {
         emit(next,command.held ? 'guard_started' : 'guard_released',next.at,{actorId:actor.id,cause:null})
       } else if (command.kind === 'attack') {
         check(combatPhase(actor,next.at,actorVitals.health) === 'idle' && !actor.guardHeld,'ACTOR_BUSY')
-        const cause = emit(next,'attack_started',next.at,{actorId:actor.id,swingId:command.id,cause:null})
+        check(command.nonlethal===undefined||typeof command.nonlethal==='boolean','INVALID_COMMAND')
+        const intent=command.nonlethal===true?{nonlethal:true}:{}
+        const cause = emit(next,'attack_started',next.at,{actorId:actor.id,swingId:command.id,cause:null,...intent})
         actor.swing = {id:command.id,cause,activeAt:next.at+r.windupMs,
-          recoveryAt:next.at+r.windupMs+r.activeMs,endsAt:next.at+r.windupMs+r.activeMs+r.recoveryMs,hitIds:[]}
+          recoveryAt:next.at+r.windupMs+r.activeMs,endsAt:next.at+r.windupMs+r.activeMs+r.recoveryMs,hitIds:[],...intent}
       } else {
         const swing = actor.swing, target = next.fighters.find(f => f.id === command.targetId)
         const targetVitals = nextActors.find(a => a.id === command.targetId)
@@ -139,10 +145,17 @@ export function executeCombat(state,actors,command,context) {
             target.brokenUntil = next.at+r.breakMs; target.swing = null
             emit(next,'guard_broken',next.at,{actorId:actor.id,targetId:target.id,cause:swing.cause})
           }
-          const damage = Math.min(targetVitals.health,Math.max(1,actor.attack-target.defense))
+          const nonlethal=swing.nonlethal===true&&context.nonlethal===true
+          check(!nonlethal||!target.condition,'TARGET_ALREADY_DISABLED')
+          const rawDamage=Math.max(1,actor.attack-target.defense)
+          const damage = Math.min(targetVitals.health-(nonlethal?1:0),rawDamage)
           targetVitals.health -= damage
           const cause = emit(next,'damaged',next.at,{actorId:actor.id,targetId:target.id,damage,cause:swing.cause,proofId:context.proofId})
-          if (targetVitals.health === 0) {
+          if(nonlethal&&targetVitals.health===1) {
+            check(context.position&&['x','y','z'].every(k=>Number.isFinite(context.position[k])),'MISSING_BODY_POSITION')
+            target.guarding=false;target.guardHeld=false;target.mustRelease=false;target.swing=null;target.condition='incapacitated'
+            emit(next,'incapacitated',next.at,{actorId:actor.id,targetId:target.id,cause,position:clone(context.position),proofId:context.proofId})
+          } else if (targetVitals.health === 0) {
             target.guarding = false; target.guardHeld = false; target.swing = null
             emit(next,'died',next.at,{actorId:actor.id,targetId:target.id,cause})
           }

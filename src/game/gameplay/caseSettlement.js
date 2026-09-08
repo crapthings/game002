@@ -85,6 +85,7 @@ export function reconcileCaseKnowledge(world,sourceEvents,at,requestId) {
   const events=[]
   for(const row of world.crime.cases.filter(c=>!c.resolved)) {
     const resolution=world.factions.resolutions.find(r=>r.incidentId===row.incidentId&&r.victimId===row.victimId&&r.severity>=row.severity&&
+      (!r.factScope||row.factIds.every(id=>r.sourceFactIds.includes(id)))&&
       world.social.knowledge.some(k=>k.npcId===row.authorityId&&k.factId===`fact:${r.eventId}`))
     if(!resolution)continue
     const known=world.social.knowledge.find(k=>k.npcId===row.authorityId&&k.factId===`fact:${resolution.eventId}`)

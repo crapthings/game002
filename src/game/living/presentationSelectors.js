@@ -20,6 +20,8 @@ export function createPresentationSelectors() {
     for(const [id] of visible) {
       const actor=data.actors.get(id),life=data.life.get(id),phase=phases.get(id)
       if(actor.health<=0)actorStates[id]='已经倒下'
+      else if(phase==='incapacitated')actorStates[id]='被制服，暂时不能行动'
+      else if(phase==='custody')actorStates[id]='正在接受现场拘押'
       else if(['windup','active','recovery','guard','broken'].includes(phase))actorStates[id]=phase==='guard'?'正在招架':'正在交手'
       else if(life?.interruption)actorStates[id]=life.interruption.kind==='flee'?'正在避险':'正在处理事务'
       else if(life?.intent?.phase==='travelling')actorStates[id]='正在赶路'
@@ -57,7 +59,8 @@ export function createPresentationSelectors() {
     })
     const current=places.filter(p=>inView.has(p.id)&&p.distance<=8).sort((a,b)=>a.distance-b.distance)[0]
     const visiblePursuits=state.crime.authorities.filter(id=>visible.has(id)&&data.actors.get(id)?.health>0).map(id=>pursuitFor(state,id,'player',at))
-    const pursuitText=visiblePursuits.some(p=>p.mode==='follow')?'附近有捕快正在追你':visiblePursuits.some(p=>p.mode==='search')?'附近捕快正在搜查':'暂无可见追踪'
+    const pursuitText=phases.get('player')==='custody'?'捕快正在现场处理本次案件':phases.get('player')==='incapacitated'?'你被制服了，尚未被捕快实际控制':
+      visiblePursuits.some(p=>p.mode==='follow')?'附近有捕快正在追你':visiblePursuits.some(p=>p.mode==='search')?'附近捕快正在搜查':'暂无可见追踪'
     return {places,actorStates,currentPlace:current?.label??null,targetStatus:actorStates[targetId]??null,pursuitText}
   }
 }

@@ -1,4 +1,8 @@
 export const eventWords={
+  justice_enabled:'登记非致命执法与保管约定',incapacitated:'被非致命制服',consciousness_returned:'恢复意识',taken_into_custody:'捕快实际控制嫌疑人',
+  custody_released:'本次拘押处理后释放',custody_abandoned:'控制者死亡，拘押中断',custody_ended_by_death:'当事人死亡，拘押终止',custody_debt_paid:'结清拘押留下的赔偿',
+  property_seized:'捕快接管原涉案物品',property_return_due:'原物仍待归还',property_surrendered:'当面交出待归还原物',seized_property_returned:'捕快将原物实际送回',
+  estate_transfer:'现场登记原账户保管权限',estate_debt_registered:'保留原账户未付的已赚报酬',estate_debt_paid:'保管者凭原回执支付欠款',
   staff_accepted:'根据现场情况答应代班',staff_arrived:'代班者实际到铺',operator_returned:'经营者回铺交接',staff_handover_read:'在铺面得知代班结束',
   continuity_initialized:'登记休养与代班资格',recovery_started:'开始有食物支持的休养',recovery_progress:'记录实际休养时段',rest_healed:'休养恢复气血',recovery_paused:'暂停自然休养',
   standing_initialized:'开始按履约记录认可',completion_presented:'当面出示结算收条',standing_granted:'本人确认认可与服务',standing_suspended:'本人暂停认可',standing_explained:'当面交代认可变化',

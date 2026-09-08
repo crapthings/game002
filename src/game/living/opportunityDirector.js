@@ -7,6 +7,8 @@ import { distance } from './geometry.js'
 import { relationFor } from '../gameplay/relations.js'
 import { placeStatus } from '../gameplay/places.js'
 import { escortMemory,hasEscortAssignment } from '../gameplay/escorts.js'
+import { personalOpportunity } from '../gameplay/opportunityKnowledge.js'
+import { cargoRecipient } from '../gameplay/estates.js'
 
 /** People learn in physical meetings; route goals are known fixed places. */
 export function createOpportunityDirector({state,clock,ids,point,notice,contact,face,move,interrupt,send,talkingTo,atPlace}) {
@@ -43,6 +45,26 @@ export function createOpportunityDirector({state,clock,ids,point,notice,contact,
     updateNpc(id,dt) {
       const world=state(),at=clock(),personal=life(world,id)
       if(world.opportunities?.autonomyVersion!==1||!personal?.intent||id===talkingTo())return false
+      if(world.continuity?.justiceVersion) {
+        const cargo=world.opportunities.entries.find(r=>r.assigneeId===id&&r.restitution&&!r.restitution.returnedEventId&&
+          ['failed','cancelled','expired'].includes(personalOpportunity(world,r,id,at)?.status)&&
+          r.shipment.cargo.some(c=>world.interactions.inventory.lots.some(l=>l.id===c.lotId&&l.ownerId===r.issuerId&&l.holderId===actor(world,id).containerId)))
+        if(cargo) {
+          const recipient=cargoRecipient(world,cargo),place=world.places.definitions.find(p=>p.id===cargo.returnPlaceId)
+          if(recipient&&notice(id,recipient)&&contact(id,recipient)&&atPlace(recipient,cargo.returnPlaceId)) {
+            const context={...meeting(recipient,id),recipientId:recipient,present:true,placeId:cargo.returnPlaceId}
+            if(meetingEligibility(world,recipient,id,context).available) {
+              send('opportunities',{kind:'return_cargo',actorId:id,opportunityId:cargo.id},context);return 'committed'
+            }
+          }
+          if(place&&distance(point(id),place.approach)>3) {
+            if(interrupt(id,'contract',60,cargo.restitution.sourceEventId))return 'committed'
+            move(id,place.approach,dt,1.3);return 'busy'
+          }
+          // At the known destination, wait through normal life until a real recipient is seen.
+          return false
+        }
+      }
       const assignment=personal.assignment
       if(assignment&&!assignment.outcomeEventId) {
         const row=world.opportunities.entries.find(r=>r.id===assignment.opportunityId)

@@ -35,6 +35,7 @@ export function settledCrimeFact(world,fact,{knownBy=null}={}) {
   const incidentId=incidentFor(source,sources)
   if(world.village.settled.includes(incidentId))return true
   return (world.factions?.resolutions??[]).some(r=>r.incidentId===incidentId&&r.victimId===source.targetId&&r.severity>=severity[source.kind]&&
+    (!r.factScope||r.sourceFactIds.includes(fact.id))&&
     (knownBy===null||world.social.knowledge.some(k=>k.npcId===knownBy&&k.factId===`fact:${r.eventId}`)))
 }
 
@@ -95,7 +96,8 @@ export function executeCrime(state,world,command,context) {
       record.subjectId = known.subjectId
     }
     record.severity = Math.max(record.severity,severity[source.kind])
-    if(world.factions?.actionsVersion&&record.resolved&&record.severity>resolvedSeverity(world,incidentId,source.targetId)) {
+    if(world.factions?.actionsVersion&&record.resolved&&(record.severity>resolvedSeverity(world,incidentId,source.targetId)||
+      world.continuity?.justiceVersion&&!settledCrimeFact(world,fact,{knownBy:command.actorId}))) {
       record.resolved=false;record.resolutionEventId=null
     }
     if (!record.factIds.includes(fact.id)) record.factIds.push(fact.id)

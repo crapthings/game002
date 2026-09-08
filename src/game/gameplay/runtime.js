@@ -18,6 +18,8 @@ import { executeStanding,reconcileStanding } from './standing.js'
 import { executeGrowth,interruptGrowth } from './growth.js'
 import { executeContinuity,beforeRecoveryAction } from './continuity.js'
 import { executeStaffing } from './staffing.js'
+import { executeJustice,bodyLocked,applyBodyConsequences } from './justice.js'
+import { executeEstates,recordEstateClaims } from './estates.js'
 import { executeVillage } from './village.js'
 import { InventoryError } from './inventory.js'
 import { executeInteraction } from './interactions.js'
@@ -91,6 +93,12 @@ export function executeGameplay(state,catalog,request) {
       requireValue(!Object.hasOwn(step.command,'id') && !Object.hasOwn(step.command,'expectedRevision'),'RESERVED_COMMAND_FIELDS')
       requireValue(natural(step.context.at) && step.context.at >= next.at,'INVALID_TIME')
       const commandId = `${request.id}:${i}`
+      if(bodyLocked(next,step.command.actorId)) {
+        const processing=step.domain==='continuity'&&['wake','process_custody','release_abandoned'].includes(step.command.kind)
+        const observation=step.domain==='knowledge'&&['fact','witness'].includes(step.command.kind)
+        const cleanup=step.domain==='continuity'&&step.command.kind==='stop_recovery'||step.domain==='standing'&&['pause_training','end_rest'].includes(step.command.kind)
+        requireValue(processing||observation||cleanup,'ACTOR_INCAPACITATED')
+      }
       const rested=beforeRecoveryAction(next,step,commandId)
       events.push(...rested)
       for(const event of rested)events.push(...registerFact(next,event,`${commandId}:${event.id}`))
@@ -130,9 +138,19 @@ export function executeGameplay(state,catalog,request) {
         for(const event of emitted)events.push(...registerFact(next,event,`${commandId}:${event.id}`))
       } else if(step.domain==='continuity') {
         const staffAction=['accept_staff','arrive_staff','return_operator','read_staff_notice'].includes(step.command.kind)
-        const emitted=staffAction?executeStaffing(next,{...step.command,id:commandId},step.context):executeContinuity(next,catalog,{...step.command,id:commandId},step.context)
+        const justiceAction=['enable_justice','wake','take_custody','process_custody','release_abandoned','pay_custody_debt'].includes(step.command.kind)
+        const estateAction=['take_estate_custody','collect_estate_claim','return_seized_property','surrender_due_property'].includes(step.command.kind)
+        const emitted=estateAction?executeEstates(next,catalog,{...step.command,id:commandId},step.context):staffAction?executeStaffing(next,{...step.command,id:commandId},step.context):justiceAction?
+          executeJustice(next,catalog,{...step.command,id:commandId},step.context):executeContinuity(next,catalog,{...step.command,id:commandId},step.context)
         events.push(...emitted)
-        for(const event of emitted)events.push(...registerFact(next,event,`${commandId}:${event.id}`))
+        for(const event of emitted) {
+          events.push(...registerFact(next,event,`${commandId}:${event.id}`))
+          if(event.kind==='case_settled')for(const participant of [event.actorId,event.targetId]) {
+            const learned=executeKnowledge(next.social,{id:`${commandId}:receipt:${event.id}:${participant}`,kind:'witness',actorId:participant,
+              factId:`fact:${event.id}`,expectedRevision:next.social.revision},{allowed:true,at:event.at,observedAt:event.at,observed:true,identified:true,proofId:event.proofId})
+            requireValue(learned.ok,learned.code);next.social=learned.state;events.push(...learned.events)
+          }
+        }
       } else if(step.domain==='standing') {
         const handler=['initialize','present_record','review'].includes(step.command.kind)?executeStanding:executeGrowth
         const emitted=handler(next,{...step.command,id:commandId},step.context)
@@ -191,12 +209,19 @@ export function executeGameplay(state,catalog,request) {
         requireValue(next.combat,'COMBAT_DISABLED')
         const justification = step.command.kind === 'hit'
           ? classifyForce(next,step.command.actorId,step.command.targetId,step.context.at) : null
+        if(step.command.nonlethal===true)requireValue(next.continuity?.justiceVersion===1,'JUSTICE_NOT_READY')
+        const nonlethal=next.continuity?.justiceVersion===1&&step.command.kind==='hit'&&
+          next.combat.fighters.find(f=>f.id===step.command.actorId)?.swing?.nonlethal===true
+        // Permission is recomputed at contact. A bystander cannot inherit a warrant.
+        const combatContext=nonlethal?{...step.context,nonlethal:justification?.ruleId==='force.enforcement.v1'&&!justification.unlawful}:step.context
+        requireValue(!nonlethal||!bodyLocked(next,step.command.targetId),'TARGET_ALREADY_DISABLED')
+        requireValue(!nonlethal||combatContext.nonlethal,'ENFORCEMENT_ENDED')
         const result = executeCombat(next.combat,next.interactions.actors,{
           ...step.command,id:commandId,expectedRevision:next.combat.revision,
-        },step.context)
+        },combatContext)
         requireValue(result.ok,result.code)
         for (const event of result.events) {
-          if (['parried','damaged','died'].includes(event.kind)) {
+          if (['parried','damaged','died','incapacitated'].includes(event.kind)) {
             event.justification = clone(justification)
             result.state.events.find(e => e.id === event.id).justification = clone(justification)
           }
@@ -205,7 +230,7 @@ export function executeGameplay(state,catalog,request) {
         // This is the only authoritative health array, shared with item use.
         next.interactions.actors = result.actors
         events.push(...result.events)
-        for (const event of result.events.filter(e => ['parried','damaged','died'].includes(e.kind))) {
+        for (const event of result.events.filter(e => ['parried','damaged','died','incapacitated'].includes(e.kind))) {
           const registration = executeKnowledge(next.social,{
             id:`${commandId}:fact:${event.id}`,kind:'fact',expectedRevision:next.social.revision,
             factId:`fact:${event.id}`,actorId:event.actorId,targetId:event.targetId,action:event.kind,
@@ -306,6 +331,9 @@ export function executeGameplay(state,catalog,request) {
       }
       // Consequences are world facts; witnesses of the hit do not automatically
       // learn the victim's private contracts or reserved budget.
+      const bodyEvents=applyBodyConsequences(next,events.slice(firstEvent),step.context.at,commandId)
+      events.push(...bodyEvents)
+      for(const event of bodyEvents)events.push(...registerFact(next,event,`${commandId}:${event.id}`))
       const consequences=applyOpportunityConsequences(next,events.slice(firstEvent),step.context.at,commandId)
       events.push(...consequences)
       for(const event of consequences)events.push(...registerFact(next,event,`${commandId}:${event.id}`))
@@ -315,6 +343,9 @@ export function executeGameplay(state,catalog,request) {
       const bountyEvents=reconcileBounties(next,events.slice(firstEvent),step.context.at,commandId)
       events.push(...bountyEvents)
       for(const event of bountyEvents)events.push(...registerFact(next,event,`${commandId}:${event.id}`))
+      const estateEvents=recordEstateClaims(next,events.slice(firstEvent),step.context.at,commandId)
+      events.push(...estateEvents)
+      for(const event of estateEvents)events.push(...registerFact(next,event,`${commandId}:${event.id}`))
       const escortEvents=applyEscortConsequences(next,events.slice(firstEvent),step.context.at,commandId)
       events.push(...escortEvents)
       for(const event of escortEvents)events.push(...registerFact(next,event,`${commandId}:${event.id}`))

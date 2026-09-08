@@ -147,6 +147,18 @@ export function interruptGrowth(world,events,at,requestId) {
   if(!world.standing?.growthVersion)return []
   const disrupt=new Set(['attack_started','guard_started','damaged','died','threatened','robbed','mask','activity_interrupted','standing_suspended'])
   const out=[]
+  if(world.continuity?.justiceVersion)for(const row of world.standing.training.filter(r=>!['completed','cancelled'].includes(r.status))) {
+    const death=events.find(e=>e.kind==='died'&&[row.holderId,row.mentorId].includes(e.targetId))??
+      (events.some(e=>e.kind==='justice_enabled')?world.combat.events.findLast(e=>e.kind==='died'&&[row.holderId,row.mentorId].includes(e.targetId)):null)
+    if(!death)continue
+    if(row.active)out.push(pause(world,row,{id:requestId,actorId:row.holderId},{at},death.id))
+    const hold=world.interactions.reservations.find(r=>r.id===row.reservationId)
+    if(hold&&['held','impaired'].includes(hold.status))releaseReservation(world.interactions,hold.id)
+    row.active=false;row.status='cancelled';releaseMentor(world,row)
+    const e=emitStanding(world,{id:requestId,actorId:row.holderId,targetId:row.mentorId},{at},'training_cancelled',
+      {trainingId:row.id,cause:death.id,trainedMs:row.trainedMs,reason:'PARTICIPANT_DEAD'})
+    row.completionEventId=e.id;out.push(e)
+  }
   for(const row of world.standing.training.filter(r=>r.active)) {
     const source=events.find(e=>disrupt.has(e.kind)&&!(e.kind==='activity_interrupted'&&e.reason==='training')&&
       [e.actorId,e.targetId].some(id=>id===row.holderId||id===row.mentorId))

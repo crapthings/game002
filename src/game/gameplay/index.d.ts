@@ -107,7 +107,7 @@ export type GameplayStep = (
       context: Policy & { reachable: boolean; proofId: string } }
   | { domain: 'property'; command: { kind: 'loot_money'; actorId: string; targetId: string; amount: number };
       context: Policy & { reachable: boolean; proofId: string } }
-  | { domain: 'combat'; command: { kind: 'attack'; actorId: string }; context: Policy }
+  | { domain: 'combat'; command: { kind: 'attack'; actorId: string; nonlethal?: boolean }; context: Policy }
   | { domain: 'combat'; command: { kind: 'guard'; actorId: string; held: boolean }; context: Policy }
   | { domain: 'combat'; command: { kind: 'hit'; actorId: string; targetId: string; swingId: string };
       context: Policy & { contact: boolean; clear: boolean; angleDegrees: number; proofId: string } }
@@ -253,20 +253,21 @@ export function migrateWorldToV2(config:GameplayConfig,source:WorldCheckpoint,mi
 export interface Fighter {
   id: string; attack: number; defense: number; stamina: number;
   guardHeld: boolean; guarding: boolean; mustRelease: boolean; regenAt: number; brokenUntil: number;
-  swing: null | { id: string; cause: string; activeAt: number; recoveryAt: number; endsAt: number; hitIds: string[] };
+  condition?: 'incapacitated' | 'custody' | 'dead' | null;
+  swing: null | { id: string; cause: string; activeAt: number; recoveryAt: number; endsAt: number; hitIds: string[]; nonlethal?: true };
 }
 export interface CombatEvent {
   id: string; kind: 'attack_started' | 'guard_started' | 'guard_released' | 'guard_exhausted' |
-    'parried' | 'guard_broken' | 'damaged' | 'died';
+    'parried' | 'guard_broken' | 'damaged' | 'died' | 'incapacitated';
   at: number; actorId: string; cause: string | null; targetId?: string;
-  swingId?: string; damage?: number; proofId?: string;
+  swingId?: string; damage?: number; proofId?: string; position?: WorldPoint; nonlethal?: true;
   justification?: { unlawful: boolean; ruleId: string; basisIds: string[] };
 }
 export interface CombatState {
   version: 1; revision: number; at: number; fighters: Fighter[]; events: CombatEvent[];
   receipts: { requestId: string; fingerprint: string }[];
 }
-export type CombatView = Fighter & { health: number; phase: 'dead' | 'broken' | 'guard' | 'idle' | 'windup' | 'active' | 'recovery' };
+export type CombatView = Fighter & { health: number; phase: 'dead' | 'broken' | 'guard' | 'idle' | 'windup' | 'active' | 'recovery' | 'incapacitated' | 'custody' };
 /** Read-only projection; stamina uses milli-points (100000 = 100). */
 export function previewGameplayCombat(state: GameplayState, at: number): CombatView[];
 export const COMBAT_RULES: Readonly<{

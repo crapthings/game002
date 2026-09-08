@@ -12,6 +12,7 @@ import LivingReview from './LivingReview.jsx'
 import CasePanel from './CasePanel.jsx'
 import FactionPanel from './FactionPanel.jsx'
 import StandingPanel from './StandingPanel.jsx'
+import AftercarePanel,{ CustodyStatus } from './AftercarePanel.jsx'
 import { standingPrice } from '../game/gameplay/standing.js'
 const button='rounded border border-white/20 px-2 py-1 text-xs disabled:opacity-35 enabled:hover:bg-white/15'
 const errors={HISTORY_FULL:'当前保留记录接近容量上限，请保存退出，保留原档',TARGET_BUSY:'对方正忙，暂时无法交涉',NOT_AVAILABLE:'物品已不在原处',OWN_MEDICINE_REQUIRED:'需要一份自有止血药',REWARD_NOT_DUE:'尚未满足答谢条件',SUBJECT_UNIDENTIFIED:'对方没有确认你的身份',ACTOR_DEAD:'角色已经倒下',TARGET_NOT_DEAD:'对方仍然活着，不能搜刮',INSUFFICIENT_QUANTITY:'物品数量不足',NO_CHANGE:'当前状态无需更改',ACTOR_BUSY:'正在出招或收招',RELEASE_REQUIRED:'先松开招架，再回气至25',INSUFFICIENT_STAMINA:'气力不足',BAG_FULL:'背包已满',INSUFFICIENT_FUNDS:'铜钱不足',NOT_OWNED:'这件物品仍属于别人',ITEM_EQUIPPED:'先卸下装备',THREAT_COOLDOWN:'对方仍在警惕，稍后再试',SAVE_OUTCOME_UNKNOWN:'保存结果未确认，请返回菜单重新读档',RECOVERY_REQUIRED:'请重新读档后继续',ALREADY_HELPED:'柳娘已经接受过救助',HEALTH_FULL:'气血已满',BUSY:'正在保存上一动作'}
@@ -27,7 +28,7 @@ export default function LivingHud(){
  const lots=s.interactions.inventory.lots,own=lots.filter(l=>l.holderId==='player-bag'),loadout=s.equipment.loadouts.find(l=>l.actorId==='player')
  const med=own.find(l=>l.ownerId==='player'&&l.itemType==='medicine'&&availableQuantity(s.interactions,l.id)>0)
  const availableCash=availableWallet(s.interactions,'player'),merchantCash=availableWallet(s.interactions,'merchant')
- const lockReason=v.busy?'正在保存上一动作':v.stopped?'当前记录已暂停，请保存退出':v.hero.health===0?'你已经倒下':null
+ const lockReason=v.busy?'正在保存上一动作':v.stopped?'当前记录已暂停，请保存退出':v.hero.health===0?'你已经倒下':['incapacitated','custody'].includes(f.phase)?'你暂时无法行动':null
  const noTrade=lockReason||(!v.trade?.available&&(SERVICE_REASONS[v.trade?.reason]??errors[v.trade?.reason]??'暂时无法交易'))
  const targetFighter=v.fighters.find(f=>f.id===target?.id)
  const threatReason=lockReason||(f.phase!=='idle'?'请先结束当前动作':targetFighter?.phase!=='idle'?'对方正在行动':s.robbery.cooldowns.some(c=>c.targetId===v.targetId&&c.until>v.clock)?'对方仍在警惕，稍后再试':null)
@@ -39,7 +40,8 @@ export default function LivingHud(){
    {availableCash<v.hero.wallet&&<p className="mt-1 text-stone-400">已约定支出 {v.hero.wallet-availableCash}文 · 可支配 {availableCash}文</p>}
    {v.calendar&&<p className="mt-1 text-stone-400">{v.calendar.label}{v.currentPlace?` · ${v.currentPlace}`:''}</p>}
    <div className="my-2 h-2 rounded bg-red-950"><div className="h-full rounded bg-red-400" style={{width:`${v.hero.health}%`}} /></div>
-   <p>气力 {Math.floor(f.stamina/1000)}/100 · {f.phase==='guard'?'招架中':f.mustRelease?'松开招架后回气':f.phase==='broken'?'破防':f.phase==='dead'?'已死亡':({windup:'起手',active:'挥击',recovery:'收招'}[f.phase]??'就绪')}</p>
+   <p>气力 {Math.floor(f.stamina/1000)}/100 · {f.phase==='guard'?'招架中':f.mustRelease?'松开招架后回气':f.phase==='broken'?'破防':f.phase==='dead'?'已死亡':({windup:'起手',active:'挥击',recovery:'收招',incapacitated:'被制服',custody:'拘押处理中'}[f.phase]??'就绪')}</p>
+   <CustodyStatus view={v}/>
    <div role="progressbar" aria-label="招架气力" aria-valuenow={Math.floor(f.stamina/1000)} aria-valuemin={0} aria-valuemax={100} className="my-2 h-2 rounded bg-stone-700"><div className="h-full rounded bg-cyan-300" style={{width:`${f.stamina/1000}%`}} /></div>
    <p>{s.village.masked?'已蒙面':'未蒙面'} · {v.pursuitText}</p>
    <p className="mt-2 text-amber-200">{v.targetId?`${v.targetId==='notice'?'街坊便笺':v.targetId==='stall'?'陈掌柜的药包':name(v.targetId)} · E ${v.targetId==='notice'?'阅读':v.targetId==='stall'?'拿取':'交互'}`:'靠近并面向角色，2米内 E 交互'}</p>
@@ -62,6 +64,7 @@ export default function LivingHud(){
    {v.targetStatus&&<p className="mt-1 text-xs text-stone-300">{v.targetStatus}</p>}
    <ConversationPanel view={v} lockReason={lockReason}/>
    <CasePanel view={v} lockReason={lockReason}/>
+   <AftercarePanel view={v} lockReason={lockReason}/>
    <FactionPanel view={v} lockReason={lockReason}/>
    <StandingPanel view={v} lockReason={lockReason} onReview={showReview}/>
    <TaskPanel view={v} onReview={showReview}/>

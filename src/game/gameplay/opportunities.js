@@ -23,7 +23,8 @@ function meeting(world,speakerId,listenerId,context) {
   check(typeof context.meetingId==='string'&&context.meetingId.length>0&&typeof context.proofId==='string'&&context.proofId.length>0,'MISSING_MEETING_EVIDENCE')
 }
 function releaseReward(world,row) {
-  if(row.rewardReservationId)releaseReservation(world.interactions,row.rewardReservationId)
+  if(row.rewardReservationId&&!(world.continuity?.justiceVersion&&row.returnEventId&&world.opportunities.events.some(e=>e.id===row.returnEventId&&e.kind==='opportunity_payment_due')))
+    releaseReservation(world.interactions,row.rewardReservationId)
   const purchase=world.interactions.reservations.find(r=>r.id===row.purchaseReservationId)
   if(purchase&&['held','impaired'].includes(purchase.status))releaseReservation(world.interactions,purchase.id)
   for(const reservation of world.interactions.itemReservations??[])if(reservation.sourceId===row.id&&['held','impaired'].includes(reservation.status))releaseReservation(world.interactions,reservation.id)
