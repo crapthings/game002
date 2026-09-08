@@ -19,9 +19,12 @@ export function createEconomyController({state,clock,atPlace,contact,point,face,
       const own=world.interactions.inventory.lots.find(l=>l.ownerId===id&&l.holderId===actor.containerId&&l.itemType==='ration'&&availableQuantity(world.interactions,l.id)>0)
       if(own){send('economy',{kind:'eat',actorId:id,lotId:own.id},{present:true,proofId:`meal:${id}:${at}`});return true}
       const merchant=world.interactions.actors.find(a=>a.id==='merchant')
-      if(id==='merchant'||!contact(id,'merchant')||merchant.health<=0)return false
-      face(id,point('merchant'))
-      const service=tradeContext(id,'merchant'),eligible=tradeEligibility(world,id,'merchant',service)
+      let service=tradeContext(id,'merchant')
+      const provider=service.operatorId
+      if(id==='merchant'||!provider||!contact(id,provider))return false
+      if(id!==provider)face(id,point(provider))
+      service=tradeContext(id,'merchant')
+      const eligible=tradeEligibility(world,id,'merchant',service)
       const stock=world.interactions.inventory.lots.find(l=>l.ownerId==='merchant'&&l.holderId===merchant.containerId&&l.itemType==='ration'&&availableQuantity(world.interactions,l.id)>0)
       const reason=availableWallet(world.interactions,id)<5?'INSUFFICIENT_FUNDS':!eligible.available?'SERVICE_UNAVAILABLE':!stock?'NO_FOOD_STOCK':null
       if(reason) {

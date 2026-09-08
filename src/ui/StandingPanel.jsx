@@ -32,6 +32,7 @@ export default function StandingPanel({view,lockReason,onReview}) {
       {row.sourceEventIds.map(id=><button key={id} className={button} onClick={()=>onReview(id)}>查看这次认可的依据</button>)}
     </div>)}</details>}
     {info.lease&&<section className="mt-3 text-xs"><p>租住至{clockAt(view.state.calendar.clockOrigin,info.lease.endsAt).label}</p>
+      {view.state.continuity&&<p className="mt-1 text-stone-400">受伤时可安心休养，每游戏小时恢复10气血；开始时用自有干粮，每份支持六游戏小时。</p>}
       <button className={button} onClick={()=>useLivingStore.getState().trackPlace(info.lease.placeId)}>住宅方向</button>
       <InteractionButton className={button} reason={lockReason||(!info.resting&&!info.atHome?'请到租住点歇脚':null)} onClick={()=>request(info.resting?'end_rest':'start_rest')}>{info.resting?'起身':'在门口歇脚'}</InteractionButton>
       {info.resting&&<p className="text-stone-400">正在歇脚，世界时间照常流逝；走开或遇险会结束休息。</p>}

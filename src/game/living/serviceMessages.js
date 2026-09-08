@@ -1,4 +1,6 @@
 export const SERVICE_REASONS={
+  NO_AUTHORIZED_OPERATOR:'代班人员尚未到场接手，铺面暂时不能交易。',NO_WILLING_QUALIFIED_STAFF:'目前没有能够接手的合资格街坊。',OWNER_NOT_READY:'掌柜需要恢复并实际回到铺面，才能交接。',
+  REST_FOOD_REQUIRED:'需要先满足食物需求才能自然休养；租住休养需要一份自有干粮。',MISSING_RECOVERY_EVIDENCE:'需要确认本人实际在安全的休息场所。',
   NO_STANDING_SERVICE:'这位街坊暂时不提供这项认可服务。',MORE_KNOWN_COMPLETIONS:'需要让对方知道两次不同需求的具名履约；可以当面出示原结算收条。',
   PERSONAL_HARM_PENDING:'对方还记得未处理的侵害，需先处理并让对方知道结果。',NO_SIGNED_COMPLETION:'没有符合条件的具名结算收条。',COMPLETION_ALREADY_KNOWN:'对方已经知道这次履约，无需重复出示。',
   RECOGNITION_REQUIRED:'需要先取得石伯本人的认可。',GO_TO_MENTOR_HOME:'请到石伯住宅门口，与他当面办理。',MENTOR_BUSY:'石伯正在处理别的事务，稍后再来。',

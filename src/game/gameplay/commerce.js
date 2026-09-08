@@ -2,6 +2,7 @@ import { previewCombat } from './combat.js'
 import { placeStatus } from './places.js'
 import { InventoryError } from './inventory.js'
 import { settledCrimeFact } from './crime.js'
+import { authorizedOperator } from './staffing.js'
 
 const offensive=new Set(['take','threatened','robbed','damaged','parried','died','loot_item','loot_money'])
 const refusalCache=new WeakMap()
@@ -24,7 +25,9 @@ export function tradeEligibility(world,actorId,targetId,context) {
   const denied=reason=>({...base,available:false,reason})
   if(!entry)return denied('NO_TRADE_SERVICE')
   if(context.withinRange!==true||context.clear!==true||context.facing!==true||context.operatorId!==entry.operatorId)return denied('APPROACH_TARGET')
-  const participants=[actorId,entry.operatorId,targetId]
+  const delegated=authorizedOperator(world,entry)
+  if(entry.operatorId!==targetId&&!delegated)return denied('NO_AUTHORIZED_OPERATOR')
+  const participants=delegated?[actorId,entry.operatorId]:[actorId,entry.operatorId,targetId]
   if(participants.some(id=>!world.interactions.actors.some(a=>a.id===id&&a.health>0)))return denied('ACTOR_DEAD')
   const fighters=previewCombat(world.combat,world.interactions.actors,context.at)
   if(participants.some(id=>fighters.find(f=>f.id===id)?.phase!=='idle'))return denied('TARGET_BUSY')
@@ -32,7 +35,7 @@ export function tradeEligibility(world,actorId,targetId,context) {
   if(!status.open)return denied(status.reason)
   if(context.operatorPresent!==true)return denied('OPERATOR_AWAY')
   if(!(actorId==='player'&&world.village.masked)&&knownRefusals(world).has(`${entry.operatorId}:${actorId}`))return denied('TRADE_REFUSED')
-  return {...base,available:true,reason:null}
+  return {...base,available:true,reason:null,businessAuthorized:delegated}
 }
 
 export function assertTradeService(world,command,context) {
@@ -43,4 +46,5 @@ export function assertTradeService(world,command,context) {
   const eligible=tradeEligibility(world,command.actorId,command.targetId,{...service,at:context.at})
   if(!eligible.available)throw new InventoryError(eligible.reason)
   if(service.placeId!==eligible.placeId)throw new InventoryError('WRONG_SERVICE_PLACE')
+  return eligible
 }

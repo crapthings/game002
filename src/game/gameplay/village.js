@@ -71,6 +71,7 @@ export function executeVillage(world,catalog,command,context) {
   } else if(command.kind==='aid') {
     const patient=actors.find(a=>a.id==='resident-1'),lot=inventory.lots.find(l=>l.id===command.lotId)
     check(actor.id==='player' && patient.health>0,'INVALID_TARGET')
+    if(world.continuity)check(patient.health<patient.maxHealth,'HEALTH_FULL')
     check(!s.aid.eventId,'ALREADY_HELPED')
     check(lot?.holderId===player.containerId && lot.ownerId===player.id && lot.itemType==='medicine','OWN_MEDICINE_REQUIRED')
     check(typeof context.identified==='boolean','MISSING_OBSERVATION')

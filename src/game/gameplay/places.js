@@ -1,6 +1,8 @@
 import { activeEventCount,nextEventNumber } from './historyArchive.js'
 import { InventoryError } from './inventory.js'
 import { clockAt } from '../living/clock.js'
+import { authorizedOperator } from './staffing.js'
+import { CONTINUITY_V1 } from './content/continuityV1.js'
 
 const copy=value=>structuredClone(value)
 const check=(ok,code)=>{if(!ok)throw new InventoryError(code)}
@@ -98,6 +100,7 @@ export function servicePresence(world,entry,{present,phase}) {
   const life=world.life?.actors.find(a=>a.actorId===entry.operatorId)
   if(phase!=='idle'||['combat','pursuit','flee'].includes(life?.interruption?.kind))return 'danger'
   if(life?.interruption)return 'away'
+  if(world.continuity&&actorState(world,entry.operatorId)?.health<CONTINUITY_V1.injuredBelow)return 'resting'
   if(life?.intent?.kind==='rest'&&life.intent.phase==='interacting')return 'resting'
   if(life&&!(life.intent?.kind==='work'&&life.intent.placeId===entry.placeId&&life.intent.phase==='interacting'))return 'away'
   return present?'available':'away'
@@ -110,7 +113,8 @@ export function availablePlaceActions(world,actorId,placeId,context) {
   const common=!actor||actor.health<=0?'ACTOR_DEAD':!contact?'APPROACH_TARGET':null
   const actions=definition.kind==='shop'?['buy','sell']:definition.kind==='civic'?['settle']:definition.kind==='home'?['ask_medicine','aid']:[]
   return actions.map(kind=>{
-    const supported=['buy','sell'].includes(kind)?status.operatorId==='merchant':kind==='settle'?status.operatorId==='guard':status.residentIds.includes('resident-1')
+    const entry=world.places.entries.find(e=>e.placeId===placeId)
+    const supported=['buy','sell'].includes(kind)?status.operatorId==='merchant'||authorizedOperator(world,entry):kind==='settle'?status.operatorId==='guard':status.residentIds.includes('resident-1')
     const targetId=['ask_medicine','aid'].includes(kind)?'resident-1':status.operatorId
     const reason=common??(!supported?'SERVICE_NOT_IMPLEMENTED':context.targetId!==targetId?'APPROACH_TARGET':
       actorState(world,targetId)?.health<=0?'ACTOR_DEAD':['buy','sell'].includes(kind)?status.reason:null)

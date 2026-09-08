@@ -7,6 +7,7 @@ import { evidenceDepth,SHAREABLE_ACTIONS } from './knowledgeLineage.js'
 import { exchangeLimit,executeExchange } from './exchange.js'
 import { relationFor } from './relations.js'
 import { factionIntroduction } from './factions.js'
+import { rememberedStaffPlace } from './staffing.js'
 export { meetingEligibility } from './meeting.js'
 
 const copy=value=>structuredClone(value)
@@ -28,13 +29,17 @@ export function dialogueAnswer(world,speakerId,listenerId,topicId,context) {
   const eligibility=meetingEligibility(world,speakerId,listenerId,context)
   if(!eligibility.available)return {ok:false,code:eligibility.reason}
   const binding=world.places?.bindings.find(b=>b.actorId===speakerId)
-  if(topicId==='duties')return {ok:true,kind:'places',...factionIntroduction(world,speakerId)}
+  if(topicId==='duties') {
+    const staffPlace=rememberedStaffPlace(world,speakerId)
+    return staffPlace?{ok:true,kind:'places',text:'我这阵子替陈记药铺看铺，款项和货物仍记在原铺面。',placeIds:[staffPlace]}:
+      {ok:true,kind:'places',...factionIntroduction(world,speakerId)}
+  }
   if(topicId==='attitude') {
     const relation=relationFor(world,speakerId,listenerId)
     return {ok:true,kind:'text',text:context.identified!==true?'我还没认出你的模样。':relation.fear>=25?'先别靠得太近，我还记得那些伤人的事。':relation.trust<0?'我对你还有些戒心。':relation.gratitude>=10?'我记得你帮过我或我在意的人，有事可以来问。':relation.trust>0?'我觉得你是个靠得住的人。':'咱们还不熟，慢慢来往吧。'}
   }
   if(topicId==='routine') {
-    const placeIds=[...new Set([binding?.workPlaceId,binding?.homePlaceId].filter(Boolean))]
+    const placeIds=[...new Set([rememberedStaffPlace(world,speakerId)??binding?.workPlaceId,binding?.homePlaceId].filter(Boolean))]
     return {ok:true,kind:'places',placeIds,text:placeIds.length?'这是我常去的地方；人不一定一直待在那儿。':'我暂时没有固定去处。'}
   }
   if(topicId==='hours') {

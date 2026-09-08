@@ -22,6 +22,8 @@ export function historyCapacity(state) {
     ['economy',state.economy?.events,1],
     ['factions',state.factions?.events,1],
     ['standing',state.standing?.events,1],
+    ['continuity',state.continuity?.events,1],
+    ['staff',state.continuity?.staff,1],
     ['rents',state.standing?.rents,1],
     ['training',state.standing?.training,1],
     ['rests',state.standing?.rests,1],

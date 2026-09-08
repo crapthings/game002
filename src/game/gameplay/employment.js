@@ -2,6 +2,7 @@ import { activeEventCount,nextEventNumber } from './historyArchive.js'
 import { InventoryError } from './inventory.js'
 import { availableWallet,requireAvailableFunds } from './reservations.js'
 import { previewCombat } from './combat.js'
+import { activeStaff,laborPlace } from './staffing.js'
 const check=(ok,code)=>{if(!ok)throw new InventoryError(code)}
 const actor=(world,id)=>world.interactions.actors.find(a=>a.id===id)
 const emit=(world,command,at,kind,actorId,targetId,extra={})=>{
@@ -11,17 +12,19 @@ const emit=(world,command,at,kind,actorId,targetId,extra={})=>{
 }
 export function laborEligible(world,job,at) {
   const life=world.life.actors.find(a=>a.actorId===job.workerId)
-  return actor(world,job.workerId)?.health>0&&actor(world,job.employerId)?.health>0&&!life?.interruption&&
-    life?.intent?.kind==='work'&&life.intent.placeId===job.placeId&&life.intent.phase==='interacting'&&
+  return actor(world,job.workerId)?.health>0&&(actor(world,job.employerId)?.health>0||activeStaff(world,job.employerId)?.workerId===job.workerId)&&!life?.interruption&&
+    life?.intent?.kind==='work'&&life.intent.placeId===laborPlace(world,job)&&life.intent.phase==='interacting'&&
     previewCombat(world.combat,world.interactions.actors,at).find(f=>f.id===job.workerId)?.phase==='idle'
 }
 function accrue(world,job,command,context,continuing) {
   check(job.activeSince!==null&&context.at>=job.activeSince,'NO_ACTIVE_LABOR')
   const elapsed=context.at-job.activeSince
+  const workedPlaceId=job.activePlaceId??job.placeId
   check(Number.isSafeInteger(job.workedMs+elapsed),'TIME_OVERFLOW')
   job.workedMs+=elapsed;job.activeSince=continuing?context.at:null
+  if(world.continuity)job.activePlaceId=continuing?laborPlace(world,job):null
   const event=emit(world,command,context.at,continuing?'labor_accrued':'labor_paused',job.workerId,job.employerId,
-    {employmentId:job.id,cause:job.lastWorkEventId,creditedMs:elapsed,workedMs:job.workedMs,placeId:job.placeId,proofId:context.proofId??null})
+    {employmentId:job.id,cause:job.lastWorkEventId,creditedMs:elapsed,workedMs:job.workedMs,placeId:workedPlaceId,proofId:context.proofId??null})
   job.lastWorkEventId=event.id;return event
 }
 export function executeEmployment(world,command,context) {
@@ -49,7 +52,8 @@ export function executeEmployment(world,command,context) {
     check(context.present===true&&laborEligible(world,job,context.at),'NOT_WORKING')
     if(job.activeSince===null) {
       job.activeSince=context.at
-      const event=emit(world,command,context.at,'labor_started',job.workerId,job.employerId,{employmentId:job.id,cause:job.lastWorkEventId,placeId:job.placeId,proofId:context.proofId})
+      if(world.continuity)job.activePlaceId=laborPlace(world,job)
+      const event=emit(world,command,context.at,'labor_started',job.workerId,job.employerId,{employmentId:job.id,cause:job.lastWorkEventId,placeId:laborPlace(world,job),proofId:context.proofId})
       job.lastWorkEventId=event.id;return [event]
     }
     check(Math.floor((job.workedMs+context.at-job.activeSince)/60000)>Math.floor(job.workedMs/60000),'WAGE_NOT_DUE')
@@ -63,13 +67,16 @@ export function executeEmployment(world,command,context) {
     return [emit(world,command,context.at,'wage_payment_due',job.employerId,job.workerId,{employmentId:job.id,cause:job.lastWorkEventId,earnedHours:earned,unpaidHours:earned-job.lastPaidOccurrence})]
   }
   check(command.kind==='pay_wage'&&command.actorId===job.employerId,'INVALID_COMMAND')
-  check(actor(world,job.employerId).health>0&&actor(world,job.workerId).health>0,'ACTOR_DEAD')
+  const staff=activeStaff(world,job.employerId)
+  const delegated=actor(world,job.employerId).health===0&&staff?.workerId===context.actingOperatorId&&context.actingOperatorId===job.workerId&&context.present===true
+  check((actor(world,job.employerId).health>0||delegated)&&actor(world,job.workerId).health>0,'ACTOR_DEAD')
   check(Number.isSafeInteger(command.occurrence)&&command.occurrence===job.lastPaidOccurrence+1&&command.occurrence<=earned,'WAGE_NOT_DUE')
   requireAvailableFunds(world.interactions,job.employerId,job.wagePerHour)
   check(Number.isSafeInteger(actor(world,job.workerId).wallet+job.wagePerHour),'AMOUNT_OVERFLOW')
   actor(world,job.employerId).wallet-=job.wagePerHour;actor(world,job.workerId).wallet+=job.wagePerHour;job.lastPaidOccurrence=command.occurrence
-  return [emit(world,command,context.at,'wage_paid',job.employerId,job.workerId,{employmentId:job.id,cause:job.lastWorkEventId,
-    occurrenceId:`wage:${job.id}:${command.occurrence}`,occurrence:command.occurrence,amount:job.wagePerHour})]
+  return [emit(world,command,context.at,'wage_paid',delegated?job.workerId:job.employerId,job.workerId,{employmentId:job.id,cause:job.lastWorkEventId,
+    occurrenceId:`wage:${job.id}:${command.occurrence}`,occurrence:command.occurrence,amount:job.wagePerHour,
+    ...(delegated?{sourceAccountId:job.employerId,authorizationEventId:staff.acceptedEventId,proofId:context.proofId}:{})})]
 }
 
 /** Stop at the actual interruption/death transaction, before another frame. */

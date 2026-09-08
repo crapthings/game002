@@ -16,6 +16,8 @@ import { reconcileCaseKnowledge } from './caseSettlement.js'
 import { reconcileBounties } from './bounties.js'
 import { executeStanding,reconcileStanding } from './standing.js'
 import { executeGrowth,interruptGrowth } from './growth.js'
+import { executeContinuity,beforeRecoveryAction } from './continuity.js'
+import { executeStaffing } from './staffing.js'
 import { executeVillage } from './village.js'
 import { InventoryError } from './inventory.js'
 import { executeInteraction } from './interactions.js'
@@ -85,12 +87,15 @@ export function executeGameplay(state,catalog,request) {
     requireValue(state.journal.length < 4096,'HISTORY_FULL')
     const next = clone(state), events = []
     for (const [i,step] of request.steps.entries()) {
-      requireValue(step && ['interaction','knowledge','combat','property','equipment','robbery','crime','pursuit','village','registry','places','life','dialogue','opportunities','relations','exchange','economy','factions','standing'].includes(step.domain) && step.command && step.context,'INVALID_STEP')
+      requireValue(step && ['interaction','knowledge','combat','property','equipment','robbery','crime','pursuit','village','registry','places','life','dialogue','opportunities','relations','exchange','economy','factions','standing','continuity'].includes(step.domain) && step.command && step.context,'INVALID_STEP')
       requireValue(!Object.hasOwn(step.command,'id') && !Object.hasOwn(step.command,'expectedRevision'),'RESERVED_COMMAND_FIELDS')
       requireValue(natural(step.context.at) && step.context.at >= next.at,'INVALID_TIME')
+      const commandId = `${request.id}:${i}`
+      const rested=beforeRecoveryAction(next,step,commandId)
+      events.push(...rested)
+      for(const event of rested)events.push(...registerFact(next,event,`${commandId}:${event.id}`))
       const firstFact = next.social.facts.length
       const firstEvent=events.length
-      const commandId = `${request.id}:${i}`
       if(step.domain==='registry') {
         const emitted=executeRegistry(next,catalog,{...step.command,id:commandId},step.context)
         addArrivalPlace(next,next.registry.actors.find(a=>a.actorId===step.command.actorId),emitted[0].id)
@@ -121,6 +126,11 @@ export function executeGameplay(state,catalog,request) {
         for(const event of emitted)if(event.id.startsWith('relations:'))events.push(...registerFact(next,event,`${commandId}:${event.id}`))
       } else if(step.domain==='relations') {
         const emitted=executeRelations(next,{...step.command,id:commandId},step.context)
+        events.push(...emitted)
+        for(const event of emitted)events.push(...registerFact(next,event,`${commandId}:${event.id}`))
+      } else if(step.domain==='continuity') {
+        const staffAction=['accept_staff','arrive_staff','return_operator','read_staff_notice'].includes(step.command.kind)
+        const emitted=staffAction?executeStaffing(next,{...step.command,id:commandId},step.context):executeContinuity(next,catalog,{...step.command,id:commandId},step.context)
         events.push(...emitted)
         for(const event of emitted)events.push(...registerFact(next,event,`${commandId}:${event.id}`))
       } else if(step.domain==='standing') {
@@ -155,9 +165,9 @@ export function executeGameplay(state,catalog,request) {
           }
         }
       } else if (step.domain === 'interaction') {
-        assertTradeService(next,step.command,step.context)
+        const trade=assertTradeService(next,step.command,step.context)
         if (next.combat) {
-          const participants = [step.command.actorId,step.command.targetId]
+          const participants = [step.command.actorId,trade?.businessAuthorized?trade.operatorId:step.command.targetId]
           requireValue(participants.every(id => next.interactions.actors.some(a => a.id === id && a.health > 0)),'ACTOR_DEAD')
           requireValue(!equippedLot(next.equipment,step.command.lotId),'ITEM_EQUIPPED')
         }

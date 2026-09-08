@@ -23,6 +23,8 @@ import { standingQuote,completionRecords,hasStanding,standingPrice } from '../ga
 import { activeLease,trainingFor,growthSafe } from '../gameplay/growth.js'
 import { createGrowthController } from './growthController.js'
 import { GROWTH_V1,STANDING_V1 } from '../gameplay/content/standingV1.js'
+import { createRecoveryController } from './recoveryController.js'
+import { createStaffingController } from './staffingController.js'
 const copy=v=>structuredClone(v)
 export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,save,space,notify=()=>{},effects=()=>{}}) {
   const config=livingConfig(legacy,world)
@@ -71,6 +73,8 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
   const escortController=createEscortController({state:()=>state,clock:()=>clock,point:space.point,notice:noticesPerson,contact:near,
     face:space.face,move:space.move,nearPlace,interrupt:interruptRoutine,send,talkingTo:()=>conversation?.speakerId})
   const growthController=createGrowthController({state:()=>state,clock:()=>clock,context:growthContext,nearPlace,send})
+  const recoveryController=createRecoveryController({state:()=>state,clock:()=>clock,context:recoveryContext,send})
+  const staffingController=createStaffingController({state:()=>state,clock:()=>clock,notice:noticesPerson,contact:near,atPlace:space.atPlace,send,talkingTo:()=>conversation?.speakerId})
   async function send(domain,command,extra={},observe=false,continuation=[]) {
     if(busy||stopped)return {ok:false,code:'BUSY'}
     busy=true
@@ -98,7 +102,7 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
     const provider=entry?.operatorId
     return {at:clock,placeId:entry?.placeId??null,operatorId:provider??null,
       withinRange:!!provider&&near(actorId,provider),clear:!!provider&&(space.contactClear??space.clear)(space.point(actorId),space.point(provider)),
-      facing:!!provider&&Math.abs(facingAngle(space.point(actorId),space.point(provider)))<=65,
+      facing:!!provider&&(provider===actorId||Math.abs(facingAngle(space.point(actorId),space.point(provider)))<=65),
       operatorPresent:!!provider&&space.atPlace(provider,entry.placeId),proofId:`service-${serial+1}`}
   }
   const tradeStatus=()=>tradeEligibility(state,'player','merchant',tradeContext('player','merchant'))
@@ -127,6 +131,13 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
       identified:id==='player'?sees(mentor,id,true):noticesPerson(mentor,id),placeId,present:!!placeId&&nearPlace(id,placeId),mentorPresent:!!placeId&&nearPlace(mentor,placeId),
       dangerFree:!npcs().some(n=>n.id!==id&&alive(n.id)&&near(id,n.id,12)&&['windup','active','recovery','broken'].includes(fighter(n.id)?.phase)),
       proofId:`practice:${id}:${serial+1}`}
+  }
+  function recoveryContext(id) {
+    const rest=id==='player'?state.standing?.rests?.findLast(r=>r.holderId===id&&r.active):null
+    const placeId=rest?.placeId??state.life?.actors.find(a=>a.actorId===id)?.intent?.placeId
+    return {at:clock,allowed:true,placeId,present:!!placeId&&(id==='player'?nearPlace(id,placeId):space.atPlace(id,placeId)),
+      dangerFree:conversation?.speakerId!==id&&!npcs().some(n=>n.id!==id&&alive(n.id)&&near(id,n.id,12)&&['windup','active','recovery','broken'].includes(fighter(n.id)?.phase)),
+      proofId:`recovery:${id}:${serial+1}`}
   }
   function noticePlace() {
     const p=space.point('player'),law=state.factions?.entries.find(f=>f.kind==='law')
@@ -297,6 +308,7 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
     if(state.factions?.actionsVersion&&!state.factions.escortsVersion){send('factions',{kind:'enable_escorts',actorId:'player'});return}
     if(state.factions?.actionsVersion&&!state.standing){send('standing',{kind:'initialize',actorId:'player'});return}
     if(state.standing&&!state.standing.growthVersion){send('standing',{kind:'enable_growth',actorId:'player'});return}
+    if(state.standing?.growthVersion&&!state.continuity){send('continuity',{kind:'initialize',actorId:'player'});return}
     if(state.economy&&!state.registry.actors.some(a=>a.actorId==='supplier-1')) {
       const body=space.supplierSetup?.()
       if(body){send('registry',{kind:'arrive',actorId:'supplier-1',templateId:'supplier-1'},{geometryConfirmed:true,proofId:'supplier-site-confirmed',body});return}
@@ -315,6 +327,8 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
     if(socialController.closeSeparated())return
     if(payrollController.update())return
     if(growthController.update())return
+    if(recoveryController.update())return
+    if(staffingController.update())return
     if(escortController.observe())return
     for(const npc of npcs()) {
       const id=npc.id,f=fighter(id)
@@ -449,7 +463,7 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
     // In-flight commits finish before release and the final clock-only save.
     while(busy)await new Promise(resolve=>setTimeout(resolve,5))
     if(releaseInput&&!stopped) {
-      const [first,...rest]=growthController.stopSteps()
+      const [first,...rest]=[...recoveryController.stopSteps(),...growthController.stopSteps()]
       if(first)await send(first.domain,first.command,first.context,false,rest)
     }
     const hero=previewGameplayCombat(state,clock).find(f=>f.id==='player')
