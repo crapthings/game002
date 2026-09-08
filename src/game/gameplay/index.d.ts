@@ -69,8 +69,9 @@ export interface InteractionCommand {
   lotId: string; quantity: number;
 }
 export type GameplayStep = (
-  | { domain: 'places'; command: {kind:'register';actorId:string;definitions:RegisteredPlace[];bindings:RegistryBody['binding'][]}; context:Policy & {geometryConfirmed:true} }
+  | { domain: 'places'; command: {kind:'register'|'extend';actorId:string;definitions:RegisteredPlace[];bindings:RegistryBody['binding'][]}; context:Policy & {geometryConfirmed:true} }
   | { domain: 'places'; command: {kind:'presence';actorId:string;placeId:string;status:'available'|'away'|'resting'|'danger'}; context:Policy & {present:boolean;proofId:string;cause?:string|null} }
+  | { domain:'life'; command:LifeCommand; context:Policy & {present?:boolean;proofId?:string;cause?:string|null;safe?:boolean} }
   | { domain: 'registry'; command: { kind: 'arrive'; actorId: string; templateId: string };
       context: Policy & { geometryConfirmed: true; proofId: string; body: RegistryBody } }
   | { domain: 'village'; command: { kind: 'take' | 'settle' | 'return' | 'aid' | 'reward' | 'mask'; actorId: string; lotId?: string }; context: Policy & { identified?: boolean } }
@@ -125,7 +126,31 @@ export interface GameplayState {
   calendar?: { version:1; clockOrigin:ClockOrigin };
   registry?: { version:1; actors:RegistryActor[]; events:RegistryEvent[] };
   places?: {version:1;definitions:RegisteredPlace[];bindings:RegistryBody['binding'][];entries:PlaceEntry[];events:PlaceEvent[]};
+  life?: {version:1;actors:LifeActor[];events:LifeEvent[]};
 }
+export type RoutineKind = 'work'|'rest'|'social'|'eat'|'patrol';
+export type InterruptionKind = 'combat'|'pursuit'|'report'|'delivery'|'reward'|'flee';
+export interface LifeIntent {
+  id:string;actorId:string;kind:RoutineKind;placeId:string;targetId:null;sourceEventId:string|null;
+  priority:number;startedAt:number;phase:'travelling'|'interacting'|'suspended';resumeIntentId:null;
+}
+export interface LifeActor {
+  actorId:string;activityId:string|null;activityStartedAt:number;energy:number;hunger:number;lastNeedsAt:number;
+  intent:LifeIntent|null;
+  interruption:null|{kind:InterruptionKind;priority:number;sourceEventId:string|null;at:number;resumeIntentId:string};
+}
+export type LifeCommand =
+  | {kind:'initialize';actorId:string}
+  | {kind:'activity';actorId:string;activity:RoutineKind;placeId:string;priority:10|40|50}
+  | {kind:'arrive';actorId:string;intentId:string}
+  | {kind:'interrupt';actorId:string;reason:InterruptionKind;priority:60|70|80|90}
+  | {kind:'resume';actorId:string};
+export interface LifeEvent {
+  id:string;kind:'life_initialized'|'activity_changed'|'activity_arrived'|'activity_interrupted'|'activity_resumed';
+  actorId:string;targetId:null;at:number;cause:string|null;requestId:string;
+  activity?:RoutineKind;placeId?:string;intentId?:string;proofId?:string;reason?:InterruptionKind;
+}
+export function projectedNeeds(row:LifeActor,at:number):{hunger:number;energy:number};
 export interface ClockOrigin { simulationAt:number; absoluteMinute:number }
 export interface RegisteredPlace {
   id:string; label:string; kind:string; roadId:string; heading:number;
@@ -139,7 +164,7 @@ export interface RegistryBody {
 }
 export interface RegistryActor { actorId:string; hasBody:boolean; sourceEventId:string|null; templateId?:string; body?:RegistryBody }
 export interface PlaceEntry {placeId:string;operatorId:string|null;residentIds:string[];status:'unassessed'|'available'|'away'|'resting'|'danger';reasonEventId:string;presenceAt:number|null}
-export interface PlaceEvent {id:string;kind:'places_registered'|'place_status_changed';actorId:string;targetId:null;at:number;cause:string|null;requestId:string;placeId?:string;status?:PlaceEntry['status'];proofId?:string}
+export interface PlaceEvent {id:string;kind:'places_registered'|'places_extended'|'place_status_changed';actorId:string;targetId:null;at:number;cause:string|null;requestId:string;placeId?:string;status?:PlaceEntry['status'];proofId?:string}
 export function placeStatus(state:GameplayState,placeId:string,at:number):{placeId:string;status:string;reason:string|null;open:boolean;operatorId?:string|null;residentIds?:string[];reasonEventId?:string;inHours?:boolean;label?:string};
 export function availablePlaceActions(state:GameplayState,actorId:string,placeId:string,context:{at:number;withinRange:boolean;clear:boolean;facing:boolean;targetId:string|null}):{kind:string;available:boolean;reason:string|null;targetId:string|null}[];
 export interface RegistryEvent {
@@ -241,7 +266,7 @@ export function pursuitFor(world: GameplayState, authorityId: string, subjectId:
   response: 'none' | 'question' | 'arrest' | 'reinforce';
   mode: 'idle' | 'follow' | 'search'; destination: WorldPoint | null; mayEngage: boolean;
 };
-export type GameplayEvent = PlaceEvent | RegistryEvent | VillageEvent | InteractionEvent | SocialEvent | CombatEvent | PropertyEvent | EquipmentEvent | RobberyEvent | CrimeEvent | PursuitEvent;
+export type GameplayEvent = LifeEvent | PlaceEvent | RegistryEvent | VillageEvent | InteractionEvent | SocialEvent | CombatEvent | PropertyEvent | EquipmentEvent | RobberyEvent | CrimeEvent | PursuitEvent;
 export type Failure = { ok: false; code: string; events: [] };
 export type ExecuteResult = Failure | {
   ok: true; code: 'APPLIED' | 'ALREADY_APPLIED'; duplicate: boolean;

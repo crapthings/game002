@@ -14,6 +14,7 @@ export function historyCapacity(state) {
     ['village',state.village?.events,1],
     ['registry',state.registry?.events,1],
     ['places',state.places?.events,1],
+    ['life',state.life?.events,1],
   ].filter(([,entries]) => entries !== undefined)
   const channels = rows.map(([domain,entries,cost]) => {
     const remaining = Math.max(0,4096-entries.length)

@@ -40,6 +40,18 @@ export function executePlaces(world,command,context) {
       entries:command.definitions.map(p=>entryFor(p,command.bindings,event.id)),events:[event]}
     return [copy(event)]
   }
+  if(command.kind==='extend') {
+    check(world.places?.version===1&&context.geometryConfirmed===true,'MISSING_PLACE_EVIDENCE')
+    check(Array.isArray(command.definitions)&&command.definitions.every(p=>!world.places.definitions.some(old=>old.id===p.id)),'PLACE_ALREADY_EXISTS')
+    validateDefinitions(world,[...world.places.definitions,...command.definitions],command.bindings)
+    check(world.places.events.length<4096,'HISTORY_FULL')
+    const event={id:`places:${world.places.events.length+1}`,kind:'places_extended',actorId:command.actorId,targetId:null,at:context.at,cause:null,requestId:command.id}
+    world.places.definitions.push(...copy(command.definitions));world.places.bindings=copy(command.bindings)
+    for(const definition of command.definitions)world.places.entries.push(entryFor(definition,command.bindings,event.id))
+    // Residents/roles can acquire a new home without resetting an existing shop.
+    for(const entry of world.places.entries)entry.residentIds=command.bindings.filter(b=>b.homePlaceId===entry.placeId).map(b=>b.actorId)
+    world.places.events.push(event);return [copy(event)]
+  }
   check(world.places?.version===1&&command.kind==='presence','INVALID_COMMAND')
   const entry=world.places.entries.find(p=>p.placeId===command.placeId)
   check(entry&&(entry.operatorId===command.actorId||entry.residentIds.includes(command.actorId)),'NOT_PLACE_OPERATOR')

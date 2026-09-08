@@ -8,6 +8,7 @@ import { createLivingSimulation } from './simulation.js'
 import { createCombatInput } from './createCombatInput.js'
 import { validateLiving } from './persistence.js'
 import { prepareCityLayout } from './prepareCityLayout.js'
+import { resolveRoleHomes } from './cityPlaces.js'
 import { createCityTravel } from './createCityTravel.js'
 import { CITY_NOTICE_TEXT, readCityNotice, learnPlace, placeClues, destinationDirection } from './placeClues.js'
 import { clockAt } from './clock.js'
@@ -34,6 +35,7 @@ export function createLivingScene(scene,plan,world,player,progress,extras=()=>({
   const preparing=cityLayout?null:prepareCityLayout(plan,world),patrols=copy(saved?.patrols??{})
   const migration=copy(saved?.migration??{fromVersion:saved?1:0})
   let clues=copy(saved?.clues??[]),pendingClues=null
+  let housing=null,housingMessage=null
   const point=id=>id==='player'?{x:player.root.position.x,y:player.root.position.y,z:player.root.position.z,heading:player.root.rotation.y}:id==='stall'?spatial.stall:id==='relocation'?cityLayout.parcelSpot:id==='notice'?cityLayout.notice:spatial.npcs.find(n=>n.id===id)
   const loaded=p=>world.isLoaded(p.x,p.z)
   function clear(a,b,r=.06) {
@@ -78,6 +80,35 @@ export function createLivingScene(scene,plan,world,player,progress,extras=()=>({
       point(id).heading+=dt*.25*Math.sin(at/2200+npcDefinitions().findIndex(n=>n.id===id))
     }
   }
+  function prepareHomes() {
+    const state=simulation.state()
+    if(state.life||!state.places)return
+    if(!housing)housing=prepareCityLayout(plan,world,{extra:true,candidates:resolveRoleHomes(plan),knownPlaces:state.places.definitions})
+    housing.update()
+    const status=housing.status()
+    if(status.status==='blocked'&&housingMessage!==status.reason){housingMessage=status.reason;store().notify(`住处暂未确认：${status.reason}`)}
+  }
+  function lifeSetup() {
+    const ready=housing?.result()
+    if(!ready)return null
+    const definitions=ready.places,bindings=copy(simulation.state().places.bindings)
+    for(const binding of bindings) {
+      const home=definitions.find(p=>p.id===`place.home-${binding.actorId}`)
+      if(home)binding.homePlaceId=home.id
+    }
+    return {definitions,bindings}
+  }
+  function atPlace(id,placeId) {
+    const place=registeredPlaces(simulation.state(),cityLayout).find(p=>p.id===placeId),p=point(id)
+    return !!place&&distance(p,place.approach)<=1&&Math.abs(p.y-place.approach.y)<.5&&contactClear(p,place.approach)
+  }
+  function routine(id,intent,dt,at) {
+    if(intent.phase==='interacting'&&(intent.kind==='patrol'||id==='witness'&&intent.kind==='social')){idle(id,dt,at);return}
+    const place=registeredPlaces(simulation.state(),cityLayout).find(p=>p.id===intent.placeId)
+    if(!place)return
+    if(!atPlace(id,intent.placeId))travel.move(id,place.approach,dt,.8,intent.id)
+    else point(id).heading+=dt*.2*Math.sin(at/2200+npcDefinitions().findIndex(n=>n.id===id))
+  }
   function label(root,text,color) {
     const texture=new DynamicTexture('living-label',{width:512,height:96},scene,false);texture.hasAlpha=true
     texture.drawText(text,null,64,'bold 32px sans-serif',color,'transparent',true)
@@ -94,6 +125,7 @@ export function createLivingScene(scene,plan,world,player,progress,extras=()=>({
     if(!spatial)spatial=initialSpatial()
     simulation=createLivingSimulation({world:plan,legacy,saved:saved?.checkpoint,initialHour:progress.worldTime??7.5,space:{point,clear,contactClear,visible,move,
       placeSetup:()=>({definitions:registeredPlaces(simulation.state(),cityLayout),bindings:[...cityLayout.bindings,...simulation.state().registry.actors.filter(a=>a.body).map(a=>a.body.binding)]}),
+      lifeSetup,atPlace,routine,
       relocationPending:()=>distance(spatial.stall,cityLayout.parcelSpot)>.1,
       face:(id,q)=>{point(id).heading=Math.atan2(q.x-point(id).x,q.z-point(id).z)},
       canEscape:(id,other)=>{const p=point(id),q=point(other),h=Math.atan2(p.x-q.x,p.z-q.z);return walkable(p.x+Math.sin(h)*2,p.z+Math.cos(h)*2)},
@@ -223,9 +255,9 @@ export function createLivingScene(scene,plan,world,player,progress,extras=()=>({
           remember(learnPlace(clues,'place.medicine','conversation:resident-1',simulation.clock()),'柳娘：去商街的陈记药铺买一份止血药，回来找我就好。药铺位置已记在地图上。')
         } else simulation.command(kind,{...data,...(kind==='threaten'?{targetId:selected}:{})})
       }
-      simulation.update(dt);travel.releaseInactive(simulation.clock(),alive);draw(dt)
+      prepareHomes();simulation.update(dt);travel.releaseInactive(simulation.clock(),alive);draw(dt)
       publish()
     },
-    dispose(){closing=true;preparing?.dispose();input.dispose();if(simulation)simulation.close().finally(()=>{travel.dispose();disposed=true});else{travel.dispose();disposed=true}for(const e of models.values())e.model.dispose();parcel.dispose();notice.dispose();resources.forEach(r=>r.dispose());store().reset()},
+    dispose(){closing=true;preparing?.dispose();housing?.dispose();input.dispose();if(simulation)simulation.close().finally(()=>{travel.dispose();disposed=true});else{travel.dispose();disposed=true}for(const e of models.values())e.model.dispose();parcel.dispose();notice.dispose();resources.forEach(r=>r.dispose());store().reset()},
   }
 }

@@ -29,7 +29,7 @@ function overlaps(point, box, radius = .65) {
 }
 
 /** Resolve deterministic candidates only. Live navigation must confirm geometry. */
-export function resolveCityPlaces(plan) {
+export function resolveCityPlaces(plan,additionalHomes=[]) {
   const city = plan?.city
   if (!city || !Number.isFinite(city.elevation) || !Array.isArray(city.placements) || !Array.isArray(city.roads)) {
     return { version: 1, places: [], unresolved: [{ placeId: null, code: 'CITY_PLAN_MISSING' }] }
@@ -139,5 +139,18 @@ export function resolveCityPlaces(plan) {
     accept: isHome, exclude: new Set(liu?.buildingId ? [liu.buildingId] : []), public: false, fallbackRadius: 28 })
   add({ id: 'place.central-contact', label: '中心商区街口', kind: 'public', anchor: central, radius: 48,
     accept: (p, d) => d?.kind === 'tea' || d?.kind === 'inn', rank: (p, d) => d.kind === 'tea' ? 0 : 1 })
+  const usedHomes=new Set(places.filter(p=>p.kind==='home'&&p.buildingId).map(p=>p.buildingId))
+  for(const home of additionalHomes) {
+    const place=add({id:`place.home-${home.actorId}`,label:home.label,kind:'home',anchor:home.anchor,radius:72,
+      accept:isHome,exclude:usedHomes,public:false,fallbackRadius:28})
+    if(place?.buildingId)usedHomes.add(place.buildingId)
+  }
   return { version: 1, places, unresolved }
+}
+
+export function resolveRoleHomes(plan) {
+  const homes=[['merchant','陈掌柜住处',32,-96],['witness','阿青住处',-32,-96],['guard','周平住处',-48,96],
+    ['guard-2','林岳住处',64,96],['resident-3','小何住处',96,-32]].map(([actorId,label,x,z])=>({actorId,label,anchor:{x,z}}))
+  const ids=new Set(homes.map(h=>`place.home-${h.actorId}`)),resolved=resolveCityPlaces(plan,homes)
+  return {version:1,places:resolved.places.filter(p=>ids.has(p.id)),unresolved:resolved.unresolved.filter(p=>p.placeId===null||ids.has(p.placeId))}
 }

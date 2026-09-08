@@ -10,8 +10,8 @@ export function sceneActorDefinitions(state) {
   return [...LIVING_NPCS,...extra]
 }
 export function actorPlaceBinding(state,layout,actorId) {
-  return layout.bindings.find(b=>b.actorId===actorId)??state.registry?.actors.find(a=>a.actorId===actorId)?.body?.binding
+  return state.places?.bindings.find(b=>b.actorId===actorId)??layout.bindings.find(b=>b.actorId===actorId)??state.registry?.actors.find(a=>a.actorId===actorId)?.body?.binding
 }
 export function registeredPlaces(state,layout) {
-  return [...layout.places,...(state.registry?.actors??[]).filter(a=>a.body).map(a=>a.body.place)]
+  return state.places?.definitions??[...layout.places,...(state.registry?.actors??[]).filter(a=>a.body).map(a=>a.body.place)]
 }

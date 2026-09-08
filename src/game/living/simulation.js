@@ -4,6 +4,7 @@ import { livingConfig, LIVING_NPCS, PRICES } from './config.js'
 import { distance, facingAngle, sweptContact } from './geometry.js'
 import { createClockOrigin, clockAt } from './clock.js'
 import { sceneActorDefinitions } from './actorRegistry.js'
+import { scheduledActivity } from './dailySchedule.js'
 const copy=v=>structuredClone(v)
 export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,save,space,notify=()=>{},effects=()=>{}}) {
   const config=livingConfig(legacy,world)
@@ -24,18 +25,20 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
   let serial=Math.max(state.revision,...priorRequests.map(r=>/^live-\d+$/.test(r.id)?Number(r.id.slice(5)):0)),sweep=new Map(),view=previewGameplayCombat(state,clock)
   for(const f of view)if(f.phase==='active')sweep.set(f.swing.id,(clock-f.swing.activeAt)/180)
   const actor=id=>indexed().actors.get(id)
+  const routineDue=new Map()
   const fighter=id=>view.find(a=>a.id===id)
   const alive=id=>actor(id)?.health>0
   const near=(a,b,r=2)=>distance(space.point(a),space.point(b))<=r && Math.abs(space.point(a).y-space.point(b).y)<1.5 && (space.contactClear??space.clear)(space.point(a),space.point(b))
   const sees=(a,b,identify=false)=>alive(a)&&alive(b)&&space.visible(a,b,identify)&&!(identify&&b==='player'&&state.village.masked)
   const observers=(actorId,targetId=null)=>npcs().filter(n=>n.id!==actorId&&(sees(n.id,actorId)||n.id===targetId)).map(n=>({npcId:n.id,identified:sees(n.id,actorId,true),position:copy(space.point(actorId)),proofId:`sight-${serial+1}-${n.id}`}))
-  async function send(domain,command,extra={},observe=false) {
+  async function send(domain,command,extra={},observe=false,continuation=[]) {
     if(busy||stopped)return {ok:false,code:'BUSY'}
     busy=true
     const step={domain,command,context:{at:clock,allowed:true,...extra}}
     if(observe)step.observations=observers(command.actorId,['combat','robbery'].includes(domain)?command.targetId:command.kind==='aid'?'resident-1':null)
     try {
-      const result=await session.dispatch({id:`live-${++serial}`,expectedRevision:state.revision,steps:[step]})
+      const steps=[step,...continuation.map(s=>({...s,context:{at:clock,allowed:true,...s.context}}))]
+      const result=await session.dispatch({id:`live-${++serial}`,expectedRevision:state.revision,steps})
       if(result.ok){state=result.state;view=previewGameplayCombat(state,clock);effects(result.events)}
       else {
         notify(result.code)
@@ -78,6 +81,10 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
     if(!guardDesired && alive('player') && (hero.guardHeld||hero.mustRelease)) {send('combat',{kind:'guard',actorId:'player',held:false});return}
     if(index.capacityStatus!=='available'){guardDesired=false;if(alive('player')&&(hero.guardHeld||hero.mustRelease)){send('combat',{kind:'guard',actorId:'player',held:false});return}stopped=true;notify('本轮账本接近容量上限，已停止新增行动，请保存退出。');session.checkpoint(clock).then(result=>{if(!result.ok)notify(result.code)});return}
     if(!state.places&&space.placeSetup){send('places',{kind:'register',actorId:'player',...space.placeSetup()},{geometryConfirmed:true});return}
+    if(state.places&&!state.life) {
+      const setup=space.lifeSetup?.()
+      if(setup){send('places',{kind:'extend',actorId:'player',...setup},{geometryConfirmed:true},false,[{domain:'life',command:{kind:'initialize',actorId:'player'}}]);return}
+    }
     if(guardDesired && alive('player') && !hero.guardHeld&&!hero.mustRelease&&hero.phase==='idle'&&hero.stamina>=25000){send('combat',{kind:'guard',actorId:'player',held:true});return}
     for(const f of view) {
       if(f.phase!=='active')continue
@@ -161,7 +168,19 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
         if(f.phase==='idle')space.move(id,space.point('player'),dt,1.2)
         continue
       }
-      if(f.phase==='idle')space.idle(id,dt,clock)
+      if(f.phase==='idle') {
+        if(state.life) {
+          const row=state.life.actors.find(a=>a.actorId===id)
+          if(!row.intent||clock>=(routineDue.get(id)??0)) {
+            routineDue.set(id,clock+1000)
+            const activity=scheduledActivity(state,id,clock)
+            if(activity.status==='blocked')continue
+            if(`${activity.kind}:${activity.placeId}`!==row.activityId) {send('life',{kind:'activity',actorId:id,activity:activity.kind,placeId:activity.placeId,priority:activity.priority});return}
+          }
+          if(row.intent?.phase==='travelling'&&space.atPlace(id,row.intent.placeId)) {send('life',{kind:'arrive',actorId:id,intentId:row.intent.id},{present:true,proofId:`routine-${serial+1}`});return}
+          if(row.intent)space.routine(id,row.intent,dt,clock)
+        } else space.idle(id,dt,clock)
+      }
     }
   }
   async function checkpoint(releaseInput=false) {

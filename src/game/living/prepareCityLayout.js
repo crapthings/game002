@@ -4,8 +4,9 @@ import { compileRoadNetwork } from '../world/roads/roadGeometry.js'
 import { distance } from './geometry.js'
 
 /** Incremental bootstrap. Only one place's data is pinned at a time. */
-export function prepareCityLayout(plan, world) {
-  const candidates = resolveCityPlaces(plan), places = [], owner = 'city-layout'
+export function prepareCityLayout(plan, world, options={}) {
+  const candidates = options.candidates??resolveCityPlaces(plan), places = [], owner = options.extra?'city-housing':'city-layout'
+  const knownPlaces=options.knownPlaces??[]
   let index = 0, pending = false, closed = false, failure = candidates.unresolved[0]?.code ?? null, result = null, parcelSpot = null
   const ground = p => ({ x: p.x, y: world.terrain.surfaceHeight(p.x, p.z), z: p.z })
   function clear(a, b) {
@@ -21,7 +22,7 @@ export function prepareCityLayout(plan, world) {
   function safe(p) {
     const road = world.terrain.nearbyRoad(p.x, p.z)
     return world.navigationData.canMove(p.x, p.z, .5) && !(road.width >= 4 && road.distance < road.width / 2 + .4) &&
-      places.every(other => distance(other.approach, p) >= 2) &&
+      [...knownPlaces,...places].every(other => distance(other.approach, p) >= 2) &&
       [[.5, 0], [-.5, 0], [0, .5], [0, -.5]].every(([x, z]) => Math.abs(world.terrain.surfaceHeight(p.x + x, p.z + z) - p.y) <= .3)
   }
   function nearby(anchor) {
@@ -34,6 +35,7 @@ export function prepareCityLayout(plan, world) {
   function update() {
     if (closed || failure || result || pending) return
     if (index === candidates.places.length) {
+      if(options.extra){result={version:1,places};world.navigationData.release(owner);return}
       const spawn=plan.spawn??[0,0],anchor=ground({x:spawn[0],z:spawn[1]})
       const geometry=world.navigationData.retain(owner,[anchor])
       if(geometry.status==='blocked'){failure=geometry.reason;return}
@@ -70,8 +72,9 @@ export function prepareCityLayout(plan, world) {
       if (closed) return
       const chain = [approach, ...path.map(ground), access]
       if (!path.length || !chain.slice(1).every((p, i) => clear(chain[i], p))) { failure = `PLACE_ACCESS_BLOCKED:${place.id}`; pending = false; return }
-      if (places.length) {
-        const route = await world.findCityRoute(places[0].approach, approach)
+      const networkAnchor=knownPlaces[0]??places[0]
+      if (networkAnchor) {
+        const route = await world.findCityRoute(networkAnchor.approach, approach)
         if (closed) return
         if (route.status !== 'ready') { failure = `PLACE_NETWORK_BLOCKED:${place.id}`; pending = false; return }
       }
