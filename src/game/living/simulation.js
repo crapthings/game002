@@ -6,6 +6,7 @@ import { createClockOrigin, clockAt } from './clock.js'
 import { sceneActorDefinitions } from './actorRegistry.js'
 import { nextDailyActivity } from './dailySchedule.js'
 import { spokenAnswer } from './dialoguePresentation.js'
+import { createOpportunityDirector } from './opportunityDirector.js'
 const copy=v=>structuredClone(v)
 export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,save,space,notify=()=>{},effects=()=>{}}) {
   const config=livingConfig(legacy,world)
@@ -35,6 +36,12 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
   const contact=(a,b)=>near(a,b)&&Math.abs(facingAngle(space.point(a),space.point(b)))<=65
   const sees=(a,b,identify=false)=>alive(a)&&alive(b)&&space.visible(a,b,identify)&&!(identify&&b==='player'&&state.village.masked)
   const observers=(actorId,targetId=null)=>npcs().filter(n=>n.id!==actorId&&(sees(n.id,actorId)||n.id===targetId)).map(n=>({npcId:n.id,identified:sees(n.id,actorId,true),position:copy(space.point(actorId)),proofId:`sight-${serial+1}-${n.id}`}))
+  // NPC meetings use verified ground geometry even outside rendered chunks.
+  // This is not a crime-observation shortcut, and can also notice a body nearby.
+  const noticesPerson=(a,b)=>alive(a)&&near(a,b,12)&&(near(a,b)||Math.abs(facingAngle(space.point(a),space.point(b)))<=65)
+  const opportunityDirector=createOpportunityDirector({state:()=>state,clock:()=>clock,ids:()=>npcs().map(n=>n.id),
+    point:space.point,notice:noticesPerson,contact:near,face:space.face,move:space.move,
+    interrupt:interruptRoutine,send,talkingTo:()=>conversation?.speakerId})
   async function send(domain,command,extra={},observe=false,continuation=[]) {
     if(busy||stopped)return {ok:false,code:'BUSY'}
     busy=true
@@ -197,6 +204,7 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
     if(state.life&&!state.places.serviceVersion){send('places',{kind:'enable_services',actorId:'player'});return}
     if(state.places?.serviceVersion&&!state.dialogue){send('dialogue',{kind:'initialize',actorId:'player'});return}
     if(state.dialogue&&!state.opportunities){send('opportunities',{kind:'initialize',actorId:'player'});return}
+    if(state.opportunities&&!state.opportunities.autonomyVersion){send('opportunities',{kind:'enable_autonomy',actorId:'player'});return}
     if(state.opportunities) {
       const due=state.opportunities.entries.find(r=>['offered','accepted'].includes(r.status)&&!r.returnEventId&&clock>=r.deadlineAt)
       if(due){send('opportunities',{kind:'expire',actorId:due.issuerId,opportunityId:due.id});return}
@@ -287,6 +295,9 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
       }
       if(conversation?.speakerId===id){space.face(id,space.point('player'));continue}
       if(f.phase==='idle') {
+        const job=opportunityDirector.updateNpc(id,dt)
+        if(job==='committed')return
+        if(job==='busy')continue
         if(state.life) {
           const row=state.life.actors.find(a=>a.actorId===id)
           if(!row.intent||row.interruption||clock>=(routineDue.get(id)??0)) {

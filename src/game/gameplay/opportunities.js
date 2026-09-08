@@ -23,6 +23,17 @@ function releaseReward(world,row) {
   if(row.rewardReservationId)releaseReservation(world.interactions,row.rewardReservationId)
   for(const reservation of world.interactions.itemReservations??[])if(reservation.sourceId===row.id&&['held','impaired'].includes(reservation.status))releaseReservation(world.interactions,reservation.id)
 }
+function assignmentFor(world,row) {return world.life?.actors.find(a=>a.actorId===row.assigneeId)?.assignment}
+function rememberAssignment(world,row,eventId) {
+  if(world.opportunities.autonomyVersion!==1||row.assigneeId==='player')return
+  const life=world.life.actors.find(a=>a.actorId===row.assigneeId)
+  check(life&&(!life.assignment||life.assignment.outcomeEventId),'NPC_ALREADY_ASSIGNED')
+  life.assignment={opportunityId:row.id,acceptedEventId:eventId,deadlineAt:row.deadlineAt,outcomeEventId:null}
+}
+function closeKnownAssignment(world,row,eventId) {
+  const assignment=assignmentFor(world,row)
+  if(assignment?.opportunityId===row.id)assignment.outcomeEventId=eventId
+}
 function finish(world,row,status,reason,at,requestId,cause=null,initiatorId=row.issuerId) {
   releaseReward(world,row)
   row.status=status;row.reason=reason;row.fundsBlocked=false
@@ -49,6 +60,15 @@ export function executeOpportunities(world,command,context) {
     return [emit(world,'opportunities_initialized',command.actorId,null,context.at,command.id,{declaredNeedIds:needs.map(n=>n.id)})]
   }
   check(world.opportunities,'OPPORTUNITIES_NOT_READY')
+  if(command.kind==='enable_autonomy') {
+    check(!world.opportunities.autonomyVersion,'AUTONOMY_ALREADY_ENABLED')
+    world.opportunities.autonomyVersion=1
+    for(const row of world.opportunities.entries)if(row.status==='accepted'&&row.assigneeId!=='player') {
+      const accepted=world.opportunities.events.find(e=>e.kind==='opportunity_accepted'&&e.opportunityId===row.id)
+      check(accepted,'MISSING_ACCEPTANCE');rememberAssignment(world,row,accepted.id)
+    }
+    return [emit(world,'opportunity_autonomy_enabled',command.actorId,null,context.at,command.id)]
+  }
   if(command.kind==='offer') {
     const need=world.opportunities.needs.find(n=>n.id===command.needId)
     check(need?.templateId===SHI_MESSAGE_V1.id&&need.issuerId===command.actorId,'UNKNOWN_NEED')
@@ -69,7 +89,26 @@ export function executeOpportunities(world,command,context) {
     return [event]
   }
   const row=lookup(world,command.opportunityId)
-  check(row,'UNKNOWN_OPPORTUNITY');check(active(row),'OPPORTUNITY_FINISHED')
+  check(row,'UNKNOWN_OPPORTUNITY')
+  if(command.kind==='notice_outcome') {
+    const assignment=assignmentFor(world,row)
+    check(world.opportunities.autonomyVersion===1&&row.assigneeId===command.actorId&&assignment?.opportunityId===row.id&&!assignment.outcomeEventId,'NO_CHANGE')
+    check(alive(world,command.actorId),'ACTOR_DEAD')
+    const deadlineKnown=!row.returnEventId&&context.at>=assignment.deadlineAt
+    if(!deadlineKnown) {
+      check(!active(row),'OPPORTUNITY_NOT_FINISHED')
+      if(context.deadActorId) {
+        check([row.issuerId,row.targetActorId].includes(context.deadActorId)&&actor(world,context.deadActorId)?.health===0&&context.withinRange===true&&context.clear===true&&context.facing===true&&typeof context.proofId==='string','MISSING_OUTCOME_EVIDENCE')
+      } else {
+        check(row.status==='cancelled','MISSING_OUTCOME_EVIDENCE')
+        meeting(world,row.issuerId,command.actorId,context)
+      }
+    }
+    const event=emit(world,'opportunity_outcome_learned',command.actorId,row.issuerId,context.at,command.id,
+      {opportunityId:row.id,rootCauseId:row.rootCauseId,cause:deadlineKnown?assignment.acceptedEventId:row.completionEventId,reason:deadlineKnown?'DEADLINE_PASSED':row.reason,proofId:context.proofId??null})
+    closeKnownAssignment(world,row,event.id);return [event]
+  }
+  check(active(row),'OPPORTUNITY_FINISHED')
   if(command.kind==='expire') {
     check(command.actorId===row.issuerId&&context.at>=row.deadlineAt&&!row.returnEventId,'NOT_DUE')
     return [finish(world,row,'expired','DEADLINE_PASSED',context.at,command.id)]
@@ -97,7 +136,8 @@ export function executeOpportunities(world,command,context) {
       reserveMoney(world.interactions,{id:row.rewardReservationId,actorId:row.issuerId,amount,sourceId:row.id,at:context.at})
     }
     row.status='accepted';row.assigneeId=command.actorId;row.acceptedAt=context.at;row.rewardAmount=amount;row.identifiedAssignee=context.identified
-    return [emit(world,'opportunity_accepted',command.actorId,row.issuerId,context.at,command.id,{opportunityId:row.id,rootCauseId:row.rootCauseId,cause:row.offeredEventId,amount,reservationId:row.rewardReservationId,proofId:context.proofId,identified:context.identified})]
+    const event=emit(world,'opportunity_accepted',command.actorId,row.issuerId,context.at,command.id,{opportunityId:row.id,rootCauseId:row.rootCauseId,cause:row.offeredEventId,amount,reservationId:row.rewardReservationId,proofId:context.proofId,identified:context.identified})
+    rememberAssignment(world,row,event.id);return [event]
   }
   if(command.kind==='decline') {
     check(row.status==='offered'&&row.knownBy.includes(command.actorId)&&!row.declinedBy.includes(command.actorId),'NO_CHANGE')
@@ -107,7 +147,9 @@ export function executeOpportunities(world,command,context) {
   }
   if(command.kind==='cancel') {
     check(command.actorId===row.issuerId||command.actorId===row.assigneeId,'NOT_CONTRACT_PARTY')
-    return [finish(world,row,'cancelled','CANCELLED_BY_PARTY',context.at,command.id,null,command.actorId)]
+    const event=finish(world,row,'cancelled','CANCELLED_BY_PARTY',context.at,command.id,null,command.actorId)
+    if(command.actorId===row.assigneeId)closeKnownAssignment(world,row,event.id)
+    return [event]
   }
   if(command.kind==='deliver_message') {
     check(row.status==='accepted'&&row.assigneeId===command.actorId,'NOT_ASSIGNEE')
@@ -145,6 +187,7 @@ export function executeOpportunities(world,command,context) {
       {opportunityId:row.id,rootCauseId:row.rootCauseId,cause:row.returnEventId??row.message.receiptEventId,amount:row.rewardAmount,
         reservationId:row.rewardReservationId,proofId:context.proofId,identified:row.identifiedAssignee&&context.identified})
     row.status='fulfilled';row.completionEventId=event.id;row.returnEventId=event.id;row.fundsBlocked=false;row.reason=null
+    closeKnownAssignment(world,row,event.id)
     return [event]
   }
   throw new InventoryError('INVALID_COMMAND')

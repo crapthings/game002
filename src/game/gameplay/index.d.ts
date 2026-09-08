@@ -81,7 +81,7 @@ export type GameplayStep = (
   | { domain:'life'; command:LifeCommand; context:Policy & {present?:boolean;proofId?:string;cause?:string|null;safe?:boolean} }
   | { domain:'dialogue'; command:{kind:'initialize';actorId:string}; context:Policy }
   | { domain:'dialogue'; command:{kind:'tell_place';actorId:string;targetId:string;placeId:string}|{kind:'share_news';actorId:string;targetId:string;factId:string}; context:MeetingContext }
-  | { domain:'opportunities'; command:OpportunityCommand; context:Policy & Partial<MeetingContext> & {identified?:boolean} }
+  | { domain:'opportunities'; command:OpportunityCommand; context:Policy & Partial<MeetingContext> & {identified?:boolean;deadActorId?:string} }
   | { domain: 'registry'; command: { kind: 'arrive'; actorId: string; templateId: string };
       context: Policy & { geometryConfirmed: true; proofId: string; body: RegistryBody } }
   | { domain: 'village'; command: { kind: 'take' | 'settle' | 'return' | 'aid' | 'reward' | 'mask'; actorId: string; lotId?: string }; context: Policy & { identified?: boolean } }
@@ -138,7 +138,7 @@ export interface GameplayState {
   places?: {version:1;serviceVersion?:1;definitions:RegisteredPlace[];bindings:RegistryBody['binding'][];entries:PlaceEntry[];events:PlaceEvent[]};
   life?: {version:1;actors:LifeActor[];events:LifeEvent[]};
   dialogue?: {version:1;addresses:KnownAddress[];events:DialogueEvent[]};
-  opportunities?:{version:1;needs:{id:string;templateId:string;issuerId:string;targetActorId:string;source:string}[];entries:Opportunity[];events:OpportunityEvent[]};
+  opportunities?:{version:1;autonomyVersion?:1;needs:{id:string;templateId:string;issuerId:string;targetActorId:string;source:string}[];entries:Opportunity[];events:OpportunityEvent[]};
 }
 export interface Opportunity {
   id:string;templateId:string;title:string;issuerId:string;rootCauseId:string;offeredEventId:string;
@@ -149,11 +149,11 @@ export interface Opportunity {
   message:{id:string;senderId:string;recipientId:string;contentType:string;deliveredEventId:string|null;receiptEventId:string|null};
 }
 export type OpportunityCommand =
-  | {kind:'initialize';actorId:string}
+  | {kind:'initialize'|'enable_autonomy';actorId:string}
   | {kind:'offer';actorId:string;needId:string}
   | {kind:'reveal';actorId:string;targetId:string;opportunityId:string}
   | {kind:'accept';actorId:string;opportunityId:string;terms:'paid'|'unpaid'}
-  | {kind:'decline'|'cancel'|'expire'|'deliver_message'|'collect_reward';actorId:string;opportunityId:string};
+  | {kind:'decline'|'cancel'|'expire'|'deliver_message'|'collect_reward'|'notice_outcome';actorId:string;opportunityId:string};
 export interface OpportunityEvent {
   id:string;kind:string;actorId:string;targetId:string|null;at:number;cause:string|null;requestId:string;
   opportunityId?:string;rootCauseId?:string;reason?:string;amount?:number;reservationId?:string|null;proofId?:string;identified?:boolean;declaredNeedIds?:string[];messageId?:string;contentType?:string;
@@ -173,7 +173,7 @@ export function dialogueTopics():{id:string;label:string}[];
 export function dialogueAnswer(state:GameplayState,speakerId:string,listenerId:string,topicId:string,context:MeetingContext):
   {ok:false;code:string}|{ok:true;kind:'text'|'places'|'news'|'requests';text?:string;placeIds?:string[];factId?:string;subjectId?:string|null;evidenceId?:string;opportunityIds?:string[]};
 export type RoutineKind = 'work'|'rest'|'social'|'eat'|'patrol';
-export type InterruptionKind = 'combat'|'pursuit'|'report'|'delivery'|'reward'|'flee';
+export type InterruptionKind = 'combat'|'pursuit'|'report'|'delivery'|'reward'|'flee'|'seek_help'|'contract';
 export interface LifeIntent {
   id:string;actorId:string;kind:RoutineKind;placeId:string;targetId:null;sourceEventId:string|null;
   priority:number;startedAt:number;phase:'travelling'|'interacting'|'suspended';resumeIntentId:null;
@@ -182,12 +182,13 @@ export interface LifeActor {
   actorId:string;activityId:string|null;activityStartedAt:number;energy:number;hunger:number;lastNeedsAt:number;
   intent:LifeIntent|null;
   interruption:null|{kind:InterruptionKind;priority:number;sourceEventId:string|null;at:number;resumeIntentId:string};
+  assignment?:{opportunityId:string;acceptedEventId:string;deadlineAt:number;outcomeEventId:string|null};
 }
 export type LifeCommand =
   | {kind:'initialize';actorId:string}
   | {kind:'activity';actorId:string;activity:RoutineKind;placeId:string;priority:10|40|50}
   | {kind:'arrive';actorId:string;intentId:string}
-  | {kind:'interrupt';actorId:string;reason:InterruptionKind;priority:60|70|80|90}
+  | {kind:'interrupt';actorId:string;reason:InterruptionKind;priority:40|60|70|80|90}
   | {kind:'resume';actorId:string};
 export interface LifeEvent {
   id:string;kind:'life_initialized'|'activity_changed'|'activity_arrived'|'activity_interrupted'|'activity_resumed';

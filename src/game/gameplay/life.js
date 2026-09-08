@@ -48,7 +48,7 @@ export function executeLife(world,command,context) {
     settleNeeds(row,context.at);row.intent.phase='interacting';row.activityStartedAt=context.at
     event.kind='activity_arrived';event.placeId=row.intent.placeId;event.intentId=row.intent.id;event.proofId=context.proofId
   } else if(command.kind==='interrupt') {
-    check(row.intent&&['combat','pursuit','report','delivery','reward','flee'].includes(command.reason)&&[60,70,80,90].includes(command.priority),'INVALID_INTERRUPTION')
+    check(row.intent&&['combat','pursuit','report','delivery','reward','flee','seek_help','contract'].includes(command.reason)&&[40,60,70,80,90].includes(command.priority),'INVALID_INTERRUPTION')
     check(!row.interruption||row.interruption.priority<command.priority,'NO_CHANGE')
     settleNeeds(row,context.at)
     row.interruption={kind:command.reason,priority:command.priority,sourceEventId:context.cause??null,at:context.at,resumeIntentId:row.intent.id}
