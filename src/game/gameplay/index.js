@@ -2,6 +2,7 @@
 export { createGameplay, executeGameplay, restoreGameplay, previewGameplayCombat } from './runtime.js'
 export { migrateWorldToV2 } from './migrations/v2.js'
 export { physicalActorIds } from './registry.js'
+export { placeStatus,availablePlaceActions } from './places.js'
 export { COMBAT_RULES } from './combat.js'
 export { wantedFor } from './crime.js'
 export { pursuitFor, PURSUIT_RULES } from './pursuit.js'

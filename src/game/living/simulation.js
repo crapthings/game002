@@ -77,6 +77,7 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
     const index=indexed()
     if(!guardDesired && alive('player') && (hero.guardHeld||hero.mustRelease)) {send('combat',{kind:'guard',actorId:'player',held:false});return}
     if(index.capacityStatus!=='available'){guardDesired=false;if(alive('player')&&(hero.guardHeld||hero.mustRelease)){send('combat',{kind:'guard',actorId:'player',held:false});return}stopped=true;notify('本轮账本接近容量上限，已停止新增行动，请保存退出。');session.checkpoint(clock).then(result=>{if(!result.ok)notify(result.code)});return}
+    if(!state.places&&space.placeSetup){send('places',{kind:'register',actorId:'player',...space.placeSetup()},{geometryConfirmed:true});return}
     if(guardDesired && alive('player') && !hero.guardHeld&&!hero.mustRelease&&hero.phase==='idle'&&hero.stamina>=25000){send('combat',{kind:'guard',actorId:'player',held:true});return}
     for(const f of view) {
       if(f.phase!=='active')continue

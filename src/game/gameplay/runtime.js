@@ -1,6 +1,7 @@
 import * as v1 from './versions/v1/runtime.js'
 import { createV2Baseline } from './migrations/v2.js'
 import { executeRegistry } from './registry.js'
+import { executePlaces,addArrivalPlace } from './places.js'
 import { executeVillage } from './village.js'
 import { InventoryError } from './inventory.js'
 import { executeInteraction } from './interactions.js'
@@ -69,13 +70,18 @@ export function executeGameplay(state,catalog,request) {
     requireValue(state.journal.length < 4096,'HISTORY_FULL')
     const next = clone(state), events = []
     for (const [i,step] of request.steps.entries()) {
-      requireValue(step && ['interaction','knowledge','combat','property','equipment','robbery','crime','pursuit','village','registry'].includes(step.domain) && step.command && step.context,'INVALID_STEP')
+      requireValue(step && ['interaction','knowledge','combat','property','equipment','robbery','crime','pursuit','village','registry','places'].includes(step.domain) && step.command && step.context,'INVALID_STEP')
       requireValue(!Object.hasOwn(step.command,'id') && !Object.hasOwn(step.command,'expectedRevision'),'RESERVED_COMMAND_FIELDS')
       requireValue(natural(step.context.at) && step.context.at >= next.at,'INVALID_TIME')
       const firstFact = next.social.facts.length
       const commandId = `${request.id}:${i}`
       if(step.domain==='registry') {
         const emitted=executeRegistry(next,catalog,{...step.command,id:commandId},step.context)
+        addArrivalPlace(next,next.registry.actors.find(a=>a.actorId===step.command.actorId),emitted[0].id)
+        events.push(...emitted)
+        for(const event of emitted)events.push(...registerFact(next,event,commandId))
+      } else if(step.domain==='places') {
+        const emitted=executePlaces(next,{...step.command,id:commandId},step.context)
         events.push(...emitted)
         for(const event of emitted)events.push(...registerFact(next,event,commandId))
       } else if (step.domain === 'interaction') {

@@ -93,6 +93,7 @@ export function createLivingScene(scene,plan,world,player,progress,extras=()=>({
     if(!cityLayout){preparing.update();cityLayout=preparing.result();if(!cityLayout)return false}
     if(!spatial)spatial=initialSpatial()
     simulation=createLivingSimulation({world:plan,legacy,saved:saved?.checkpoint,initialHour:progress.worldTime??7.5,space:{point,clear,contactClear,visible,move,
+      placeSetup:()=>({definitions:registeredPlaces(simulation.state(),cityLayout),bindings:[...cityLayout.bindings,...simulation.state().registry.actors.filter(a=>a.body).map(a=>a.body.binding)]}),
       relocationPending:()=>distance(spatial.stall,cityLayout.parcelSpot)>.1,
       face:(id,q)=>{point(id).heading=Math.atan2(q.x-point(id).x,q.z-point(id).z)},
       canEscape:(id,other)=>{const p=point(id),q=point(other),h=Math.atan2(p.x-q.x,p.z-q.z);return walkable(p.x+Math.sin(h)*2,p.z+Math.cos(h)*2)},

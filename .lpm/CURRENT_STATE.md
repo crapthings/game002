@@ -1,5 +1,7 @@
 ## 2026-09-08 — 统一完成活世界的持续 Goal 已启动
 
+最新：12-A 提交 7c641d8 已在本地；02-A places.js 已接首次登记事务、运营者/住户记录、营业/可执行动作查询，新增角色到达时连同场所一并注册。当前查询仍是规则基础，交易营业限制将在 02-B 统一接入；未声称界面或营业已验收。正在 01-A，为掌柜等五人的非工作时间绑定实际住宅，再接日程/需求。当前未运行测试/build/lint，整个 Goal active。
+
 续进：P0 已由 12e5a20、b3f9461、78cf8df 提交并推送原功能分支。12-A 已实现并源码审阅：十二份旧 reducer 冻结且 Git 内容与 78cf8df 一致；新玩法 v2 基线由完整恢复的旧检查点推导；单一日历、旧 ID 去重、registry 身体登记与模板化到达接口接通。新写 living v3 / document schema 5，保留读取 living v1/v2。供货商模板已登记但没有自动出生。详见 [版本映射](../docs/world-ledger/next/VERSIONING.md)。尚未运行任何新增验证；下一卡为 02-A 场所登记，Goal active。
 
 用户要求取消 A/B 等待与分工，全部 29 张卡片由当前 Goal 连续完成。Goal active；未设置 token 预算。已核对 origin/core 仍为 3027b81，工作分支 feature/b-combat-rules，计划提交 b8c87b1。
