@@ -1,6 +1,6 @@
 ## 2026-09-08 — 统一完成活世界的持续 Goal 已启动
 
-最新进入 03-B：10-B `300d33f` 已推送；03-A 扩展同一 social.relationships 的初始有向联系、fear/gratitude、个人证据反应与去重，接帮忙/避让。当前 16 张卡到源码审阅；仍未运行测试/build/lint，Goal active。下一步当面有限传播，然后供需、工资与历史归档。见 [社会实施记录](../docs/world-ledger/next/SOCIETY-IMPLEMENTATION.md)。
+最新进入 04-A：03-A `d54af37`；03-B 接 NPC/玩家询问共同的实际会面传播规则、两跳上限、每人一分钟/每次会面一条、会面结束持久记录、匿名保留与态度对话。当前 17 张卡到源码审阅；仍未运行测试/build/lint，Goal active。下一步有限供货、真实干粮消费、运输，然后工资和历史归档。见 [社会实施记录](../docs/world-ledger/next/SOCIETY-IMPLEMENTATION.md)。
 
 当前推进到 07-B。07-A 已由 `193ac89` 接本次会面、个人知识回答和地址告知；06-A 已接统一钱包/库存预留、初始石伯口信、告知/接受/拒绝/取消/到期/死亡/资金受损。见 [对话与委托记录](../docs/world-ledger/next/DIALOGUE-IMPLEMENTATION.md)。当前 12 张卡到源码审阅，未实际运行；下一步完成接单、带话回执、回程及同一事务付款，之后继续 06-B NPC 接单。Goal 保持 active，禁止在此将全部 29 卡报为完成。
 

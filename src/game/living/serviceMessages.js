@@ -19,4 +19,5 @@ export const SERVICE_REASONS={
   DELIVERY_NOT_COMPLETE:'请先把口信带给小何，取得答复再回来。',PAYMENT_PENDING:'报酬还没凑足，但办妥事情的记录已经保留。',
   TERMS_ALREADY_FIXED:'之前已经约定了报酬，重复操作不能改价。',
   NPC_ALREADY_ASSIGNED:'对方已经答应了另一件事。',MISSING_OUTCOME_EVIDENCE:'还没有当面确认事情后来的变化。',
+  NEWS_REST:'对方刚聊过一些事，稍后再叙。',MEETING_ALREADY_SHARED:'这次会面已经交流过一条消息。',MESSAGE_TOO_DISTANT:'这条消息已经转述过几次，暂时不再传下去。',
 }

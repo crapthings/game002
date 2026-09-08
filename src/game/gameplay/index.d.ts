@@ -82,6 +82,7 @@ export type GameplayStep = (
   | { domain: 'places'; command: {kind:'enable_services';actorId:string}; context:Policy }
   | { domain:'life'; command:LifeCommand; context:Policy & {present?:boolean;proofId?:string;cause?:string|null;safe?:boolean} }
   | { domain:'relations';command:{kind:'initialize';actorId:string}|{kind:'react';actorId:string;factId:string};context:Policy }
+  | { domain:'exchange';command:{kind:'enable';actorId:string}|{kind:'leave';actorId:string;relayId:string}|{kind:'share';actorId:string;targetId:string;factId:string};context:Policy & Partial<MeetingContext> & {separated?:boolean;solicited?:boolean} }
   | { domain:'dialogue'; command:{kind:'initialize';actorId:string}; context:Policy }
   | { domain:'dialogue'; command:{kind:'tell_place';actorId:string;targetId:string;placeId:string}|{kind:'share_news';actorId:string;targetId:string;factId:string}; context:MeetingContext }
   | { domain:'opportunities'; command:OpportunityCommand; context:Policy & Partial<MeetingContext> & {identified?:boolean;deadActorId?:string} }
@@ -141,7 +142,7 @@ export interface GameplayState {
   places?: {version:1;serviceVersion?:1;definitions:RegisteredPlace[];bindings:RegistryBody['binding'][];entries:PlaceEntry[];events:PlaceEvent[]};
   life?: {version:1;actors:LifeActor[];events:LifeEvent[]};
   dialogue?: {version:1;addresses:KnownAddress[];events:DialogueEvent[]};
-  relations?:{version:1;applications:{actorId:string;factId:string;eventId:string}[];events:{id:string;kind:string;actorId:string;targetId:string|null;at:number;cause:string|null;requestId:string;factId?:string;ruleId?:string;delta?:{trust:number;fear:number;gratitude:number}}[]};
+  relations?:{version:1;exchangeVersion?:1;relays?:RelationRelay[];applications:{actorId:string;factId:string;eventId:string}[];events:RelationEvent[]};
   opportunities?:{version:1;autonomyVersion?:1;needs:{id:string;templateId:string;issuerId:string;targetActorId:string;source:string}[];entries:Opportunity[];events:OpportunityEvent[]};
 }
 export interface Opportunity {
@@ -167,7 +168,15 @@ export function opportunityQuote(state:GameplayState,opportunity:Opportunity):{a
 export function knownOpportunities(state:GameplayState,actorId:string,at:number,meetingSpeakerId?:string|null):(Opportunity & {expired:boolean;paymentAvailable:boolean;quote:{amount:number|null;unpaid:boolean}})[];
 export function prepareCommitment(state:GameplayState,input:{kind:'accept'|'decline'|'cancel'|'deliver'|'collect';actorId:string;opportunityId:string;terms?:'paid'|'unpaid'},context:Policy & Partial<MeetingContext> & {identified?:boolean}):
   {ok:false;code:string}|{ok:true;duplicate:boolean;receiptId:string|null;steps:GameplayStep[]};
-export interface MeetingContext extends Policy {withinRange:boolean;clear:boolean;facing:boolean;meetingId:string;proofId:string}
+export interface MeetingContext extends Policy {withinRange:boolean;clear:boolean;facing:boolean;meetingId:string;proofId:string;identified?:boolean}
+export interface RelationEvent {
+  id:string;kind:string;actorId:string;targetId:string|null;at:number;cause:string|null;requestId:string;factId?:string;ruleId?:string;
+  delta?:{trust:number;fear:number;gratitude:number};deliveredEvidenceId?:string|null;subjectId?:string|null;depth?:number;meetingId?:string;proofId?:string;alreadyKnown?:boolean;
+}
+export interface RelationRelay {
+  id:string;key:string;speakerId:string;listenerId:string;factId:string;sourceEvidenceId:string;deliveredEvidenceId:string|null;
+  subjectId:string|null;depth:number;receivedAt:number;closedAt:number|null;
+}
 export interface KnownAddress {listenerId:string;speakerId:string;placeId:string;at:number;eventId:string}
 export interface DialogueEvent {
   id:string;kind:'dialogue_initialized'|'address_told'|'news_told';actorId:string;targetId:string|null;at:number;cause:string|null;requestId:string;

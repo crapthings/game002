@@ -1,25 +1,16 @@
 import { InventoryError } from './inventory.js'
 import { executeKnowledge } from './knowledge.js'
-import { previewCombat } from './combat.js'
-import { wantedFor } from './crime.js'
 import { placeStatus } from './places.js'
+import { meetingEligibility } from './meeting.js'
+import { evidenceDepth,SHAREABLE_ACTIONS } from './knowledgeLineage.js'
+import { exchangeLimit,executeExchange } from './exchange.js'
+import { relationFor } from './relations.js'
+export { meetingEligibility } from './meeting.js'
 
 const copy=value=>structuredClone(value)
 const check=(ok,code)=>{if(!ok)throw new InventoryError(code)}
-const shareable=new Set(['aid','reward','take','threatened','robbed','damaged','parried','died','loot_item','loot_money'])
-const topics=[['routine','你平时会去哪里？'],['hours','药铺什么时候营业？'],['news','最近有什么事情？'],['work','这里有活计可做吗？'],['requests','你有什么需要帮忙的？']]
-const actor=(world,id)=>world.interactions.actors.find(a=>a.id===id)
-
-export function meetingEligibility(world,speakerId,listenerId,context) {
-  if(speakerId===listenerId||![speakerId,listenerId].every(id=>actor(world,id)?.health>0))return {available:false,reason:'ACTOR_DEAD'}
-  if(context.withinRange!==true||context.clear!==true||context.facing!==true)return {available:false,reason:'MEETING_ENDED'}
-  const fighters=previewCombat(world.combat,world.interactions.actors,context.at)
-  if([speakerId,listenerId].some(id=>fighters.find(f=>f.id===id)?.phase!=='idle'))return {available:false,reason:'NO_SAFE_MEETING'}
-  const life=world.life?.actors.find(a=>a.actorId===speakerId)
-  if((life?.interruption&&life.interruption.kind!=='seek_help')||world.robbery.cooldowns.some(c=>c.targetId===speakerId&&c.until>context.at))return {available:false,reason:'TARGET_BUSY'}
-  if(world.crime.authorities.includes(speakerId)&&wantedFor(world.crime,speakerId,listenerId).level>0)return {available:false,reason:'OFFICIAL_CASE_PENDING'}
-  return {available:true,reason:null}
-}
+const shareable=SHAREABLE_ACTIONS
+const topics=[['routine','你平时会去哪里？'],['hours','药铺什么时候营业？'],['news','最近有什么事情？'],['attitude','你怎么看我？'],['work','这里有活计可做吗？'],['requests','你有什么需要帮忙的？']]
 export function dialogueTopics() {return topics.map(([id,label])=>({id,label}))}
 function maySharePlace(world,speakerId,placeId) {
   const place=world.places?.definitions.find(p=>p.id===placeId),binding=world.places?.bindings.find(b=>b.actorId===speakerId)
@@ -27,7 +18,7 @@ function maySharePlace(world,speakerId,placeId) {
 }
 function newsFor(world,speakerId,listenerId) {
   const facts=new Map(world.social.facts.map(f=>[f.id,f]))
-  const known=world.social.knowledge.filter(k=>k.npcId===speakerId&&shareable.has(facts.get(k.factId)?.action)).sort((a,b)=>facts.get(b.factId).at-facts.get(a.factId).at||a.factId.localeCompare(b.factId))
+  const known=world.social.knowledge.filter(k=>k.npcId===speakerId&&shareable.has(facts.get(k.factId)?.action)&&(!world.relations?.exchangeVersion||evidenceDepth(world.social,k.evidenceId)<2)).sort((a,b)=>facts.get(b.factId).at-facts.get(a.factId).at||a.factId.localeCompare(b.factId))
   // The speaker can remember its own conversations, not read the listener's mind.
   return known.find(k=>!world.dialogue?.events.some(e=>e.kind==='news_told'&&e.actorId===speakerId&&e.targetId===listenerId&&e.factId===k.factId&&e.subjectId===k.subjectId))??known[0]??null
 }
@@ -35,6 +26,10 @@ export function dialogueAnswer(world,speakerId,listenerId,topicId,context) {
   const eligibility=meetingEligibility(world,speakerId,listenerId,context)
   if(!eligibility.available)return {ok:false,code:eligibility.reason}
   const binding=world.places?.bindings.find(b=>b.actorId===speakerId)
+  if(topicId==='attitude') {
+    const relation=relationFor(world,speakerId,listenerId)
+    return {ok:true,kind:'text',text:context.identified!==true?'我还没认出你的模样。':relation.fear>=25?'先别靠得太近，我还记得那些伤人的事。':relation.trust<0?'我对你还有些戒心。':relation.gratitude>=10?'我记得你帮过我或我在意的人，有事可以来问。':relation.trust>0?'我觉得你是个靠得住的人。':'咱们还不熟，慢慢来往吧。'}
+  }
   if(topicId==='routine') {
     const placeIds=[...new Set([binding?.workPlaceId,binding?.homePlaceId].filter(Boolean))]
     return {ok:true,kind:'places',placeIds,text:placeIds.length?'这是我常去的地方；人不一定一直待在那儿。':'我暂时没有固定去处。'}
@@ -45,6 +40,7 @@ export function dialogueAnswer(world,speakerId,listenerId,topicId,context) {
     return {ok:true,kind:'places',placeIds:place?[placeId]:[],text:`陈记药铺平常08:00—18:00营业。${speakerId==='merchant'?(status?.open?'我现在可以做买卖。':'我现在还不能接待买卖，请等我回铺面准备好。'):'掌柜此刻在不在，你得到铺前看看。'}`}
   }
   if(topicId==='news') {
+    if(world.relations?.exchangeVersion&&exchangeLimit(world,speakerId,listenerId,context.at))return {ok:true,kind:'text',text:'这回先聊到这里，改日再叙。'}
     const known=newsFor(world,speakerId,listenerId)
     return known?{ok:true,kind:'news',factId:known.factId,subjectId:known.subjectId,evidenceId:known.evidenceId}:
       {ok:true,kind:'text',text:'我没有亲眼见到或听人讲过什么可告诉你的新事。'}
@@ -77,10 +73,15 @@ export function executeDialogue(world,command,context) {
     const fact=world.social.facts.find(f=>f.id===command.factId)
     check(known&&shareable.has(fact?.action),'SPEAKER_UNINFORMED')
     check(!world.social.knowledge.some(k=>k.npcId===command.targetId&&k.factId===known.factId&&(k.subjectId!==null||known.subjectId===null)),'ALREADY_KNOWN')
-    const result=executeKnowledge(world.social,{id:`${command.id}:report`,kind:'report',expectedRevision:world.social.revision,
-      actorId:command.actorId,targetId:command.targetId,factId:known.factId},{allowed:true,at:context.at,delivered:true,proofId:context.proofId})
-    check(result.ok,result.code);world.social=result.state;socialEvents=result.events
-    event.kind='news_told';event.factId=known.factId;event.subjectId=known.subjectId;event.cause=known.evidenceId;event.deliveredEvidenceId=result.events[0].id
+    if(world.relations?.exchangeVersion) {
+      socialEvents=executeExchange(world,{...command,kind:'share'}, {...context,solicited:true})
+      event.deliveredEvidenceId=socialEvents.find(e=>e.kind==='news_exchanged').deliveredEvidenceId
+    } else {
+      const result=executeKnowledge(world.social,{id:`${command.id}:report`,kind:'report',expectedRevision:world.social.revision,
+        actorId:command.actorId,targetId:command.targetId,factId:known.factId},{allowed:true,at:context.at,delivered:true,proofId:context.proofId})
+      check(result.ok,result.code);world.social=result.state;socialEvents=result.events;event.deliveredEvidenceId=result.events[0].id
+    }
+    event.kind='news_told';event.factId=known.factId;event.subjectId=known.subjectId;event.cause=known.evidenceId
   } else throw new InventoryError('INVALID_COMMAND')
   world.dialogue.events.push(event);return [copy(event),...socialEvents]
 }

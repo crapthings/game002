@@ -1,5 +1,6 @@
 export const eventWords={
   relations_initialized:'记下亲友与邻里',attitude_changed:'心中态度改变',
+  exchange_enabled:'开始邻里传话',news_exchanged:'当面交流消息',exchange_meeting_ended:'相互告辞',
   relocate_pickup:'物主搬取药包',relocate_deliver:'物主搬回新摊位',attack_started:'出招',guard_started:'招架',guard_released:'松手回气',guard_exhausted:'气力耗尽',guard_broken:'破防',damaged:'受伤',parried:'挡住攻击',died:'死亡',take:'拿走药包',settle:'交还赔偿',return:'送回药包',aid:'救助',reward:'回礼',mask:'改变遮面',buy:'购买',sell:'出售',use:'使用',equip:'装备',unequip:'卸下',threatened:'威胁',robbed:'被迫交钱',loot_item:'搜刮物品',loot_money:'搜刮铜钱',case_assessed:'受理案件',witness:'目击',report:'当面传话',relationship:'关系变化',sight:'认出行踪',lost:'失去视线',
   life_initialized:'开始日常生活',activity_changed:'调整活动',activity_arrived:'抵达场所',activity_interrupted:'中断日常',activity_resumed:'恢复日常',places_registered:'登记场所',places_extended:'登记住处',place_services_enabled:'开设场所服务',place_status_changed:'接待状态变化',
   dialogue_initialized:'准备交谈',address_told:'当面告知地址',news_told:'当面转述消息',

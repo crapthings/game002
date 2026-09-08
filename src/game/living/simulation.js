@@ -9,6 +9,7 @@ import { spokenAnswer } from './dialoguePresentation.js'
 import { createOpportunityDirector } from './opportunityDirector.js'
 import { personalOpportunity,sameKnownProgress } from '../gameplay/opportunityKnowledge.js'
 import { relationFor } from '../gameplay/relations.js'
+import { createSocialController } from './socialController.js'
 const copy=v=>structuredClone(v)
 export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,save,space,notify=()=>{},effects=()=>{}}) {
   const config=livingConfig(legacy,world)
@@ -44,6 +45,8 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
   const opportunityDirector=createOpportunityDirector({state:()=>state,clock:()=>clock,ids:()=>npcs().map(n=>n.id),
     point:space.point,notice:noticesPerson,contact:near,face:space.face,move:space.move,
     interrupt:interruptRoutine,send,talkingTo:()=>conversation?.speakerId})
+  const socialController=createSocialController({state:()=>state,clock:()=>clock,ids:()=>npcs().map(n=>n.id),point:space.point,contact:near,
+    face:space.face,send,talkingTo:()=>conversation?.speakerId})
   async function send(domain,command,extra={},observe=false,continuation=[]) {
     if(busy||stopped)return {ok:false,code:'BUSY'}
     busy=true
@@ -90,6 +93,7 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
   function meetingContext(speakerId) {
     return {at:clock,allowed:true,withinRange:near('player',speakerId),clear:space.clear(space.point('player'),space.point(speakerId)),
       facing:Math.abs(facingAngle(space.point('player'),space.point(speakerId)))<=65,
+      identified:sees(speakerId,'player',true),
       meetingId:conversation?.id??'meeting-pending',proofId:`meeting-${serial+1}`}
   }
   function refreshConversation() {
@@ -213,6 +217,7 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
     if(state.dialogue&&!state.opportunities){send('opportunities',{kind:'initialize',actorId:'player'});return}
     if(state.opportunities&&!state.opportunities.autonomyVersion){send('opportunities',{kind:'enable_autonomy',actorId:'player'});return}
     if(state.opportunities?.autonomyVersion&&!state.relations){send('relations',{kind:'initialize',actorId:'player'});return}
+    if(state.relations&&!state.relations.exchangeVersion){send('exchange',{kind:'enable',actorId:'player'});return}
     if(state.opportunities) {
       const due=state.opportunities.entries.find(r=>['offered','accepted'].includes(r.status)&&!r.returnEventId&&clock>=r.deadlineAt)
       if(due){send('opportunities',{kind:'expire',actorId:due.issuerId,opportunityId:due.id});return}
@@ -220,6 +225,7 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
       if(need){send('opportunities',{kind:'offer',actorId:need.issuerId,needId:need.id});return}
     }
     if(refreshServices())return
+    if(socialController.closeSeparated())return
     for(const npc of npcs()) {
       const id=npc.id,f=fighter(id)
       if(!alive(id))continue
@@ -311,6 +317,7 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
         const job=opportunityDirector.updateNpc(id,dt)
         if(job==='committed')return
         if(job==='busy')continue
+        if(socialController.updateNpc(id))return
         if(state.life) {
           const row=state.life.actors.find(a=>a.actorId===id)
           if(!row.intent||row.interruption||clock>=(routineDue.get(id)??0)) {
