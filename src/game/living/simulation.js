@@ -18,7 +18,7 @@ import { caseSettlementQuote } from '../gameplay/caseSettlement.js'
 import { warningOptions } from '../gameplay/gangRequests.js'
 import { captureForBounty } from '../gameplay/bounties.js'
 import { createEscortController } from './escortController.js'
-import { escortMemory } from '../gameplay/escorts.js'
+import { escortMemory,hasEscortAssignment } from '../gameplay/escorts.js'
 import { standingQuote,completionRecords,hasStanding,standingPrice } from '../gameplay/standing.js'
 import { activeLease,trainingFor,growthSafe } from '../gameplay/growth.js'
 import { createGrowthController } from './growthController.js'
@@ -32,8 +32,10 @@ import { classifyForce } from '../gameplay/forcePolicy.js'
 import { createSocialActivities } from './socialActivities.js'
 import { createCatalog } from '../gameplay/inventory.js'
 import { ownDaily } from '../gameplay/dailyActivities.js'
+import { createLifeCadence,LIFE_CADENCE } from './lifeCadence.js'
+import { createLivingMetrics } from './runtimeMetrics.js'
 const copy=v=>structuredClone(v)
-export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,save,space,notify=()=>{},effects=()=>{}}) {
+export function createLivingSimulation({world,legacy=null,saved,savedCadence,populationTarget=9,initialHour=7.5,save,space,notify=()=>{},effects=()=>{}}) {
   const config=livingConfig(legacy,world)
   let checkpoint=saved
   if(checkpoint?.gameplay.version!==2) {
@@ -42,7 +44,8 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
     if(!migrated.ok)throw new Error(`江湖版本迁移失败：${migrated.code}，保留原档。`)
     checkpoint=migrated.checkpoint
   }
-  const session=createWorldSession(config,{saved:checkpoint,save,archive:true})
+  const metrics=createLivingMetrics()
+  const session=createWorldSession(config,{saved:checkpoint,save:(checkpoint,meta)=>metrics.save(save,checkpoint,meta),archive:true})
   let state=session.snapshot().gameplay,clock=session.status().simulationAt,busy=false,stopped=false,guardDesired=false,checkpointDepth=0
   const stateIndex=createLivingStateIndex(config),indexed=()=>stateIndex(state)
   let npcState=null,npcCache=LIVING_NPCS
@@ -53,12 +56,16 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
     .reduce((n,id)=>/^live-\d+$/.test(id)?Math.max(n,Number(id.slice(5))):n,state.revision),sweep=new Map(),view=previewGameplayCombat(state,clock)
   for(const f of view)if(f.phase==='active')sweep.set(f.swing.id,(clock-f.swing.activeAt)/180)
   const actor=id=>indexed().actors.get(id)
-  const routineDue=new Map()
+  const cadence=createLifeCadence(savedCadence,clock,npcs().map(n=>n.id))
+  const far=id=>distance(space.point('player'),space.point(id))>LIFE_CADENCE.nearRadius
+  const stepSeconds=dt=>cadence.seconds(state,clock,Math.min(.05,Math.max(0,dt),restAdvance?Math.max(0,restAdvance.untilAt-clock)/1000:Infinity),npcs().map(n=>n.id),far)
   let servicesDue=0
   let conversation=null,meetingSerial=0
+  let restAdvance=null
   const fighter=id=>view.find(a=>a.id===id)
   const alive=id=>actor(id)?.health>0
-  const near=(a,b,r=2)=>distance(space.point(a),space.point(b))<=r && Math.abs(space.point(a).y-space.point(b).y)<1.5 && (space.contactClear??space.clear)(space.point(a),space.point(b))
+  const near=(a,b,r=2)=>distance(space.point(a),space.point(b))<=r && Math.abs(space.point(a).y-space.point(b).y)<1.5 &&
+    (space.bodyPresent?.(a)??true)&&(space.bodyPresent?.(b)??true)&&(space.contactClear??space.clear)(space.point(a),space.point(b))
   const contact=(a,b)=>near(a,b)&&Math.abs(facingAngle(space.point(a),space.point(b)))<=65
   const nearPlace=(id,placeId)=>{const place=state.places?.definitions.find(p=>p.id===placeId);return !!place&&distance(space.point(id),place.approach)<=3&&
     Math.abs(space.point(id).y-place.approach.y)<1.5&&(space.contactClear??space.clear)(space.point(id),place.approach)}
@@ -94,7 +101,14 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
     try {
       const steps=[step,...continuation.map(s=>({...s,context:{at:clock,allowed:true,...s.context}}))]
       const result=await session.dispatch({id:`live-${++serial}`,expectedRevision:state.revision,steps})
-      if(result.ok){state=result.state;view=previewGameplayCombat(state,clock);effects(result.events)}
+      if(result.ok){state=result.state;view=previewGameplayCombat(state,clock);effects(result.events)
+        if(restAdvance&&result.events.some(e=>(e.actorId==='player'||e.targetId==='player')&&
+          ['damaged','threatened','robbed','reward','news_told','opportunity_outcome_learned','opportunity_fulfilled','case_settled','rest_ended'].includes(e.kind)))stopRestAdvance('发生了当面事项，已停止加快休息。')
+        for(const e of result.events)if(['damaged','ate_food','rest_healed','activity_interrupted','activity_resumed','daily_participation_ended','daily_help_returned','staff_accepted','staff_handover_read'].includes(e.kind)) {
+          if(e.actorId)cadence.wake(e.actorId,clock)
+          if(e.targetId)cadence.wake(e.targetId,clock)
+        }
+      }
       else {
         if(command.actorId==='player'||['SAVE_OUTCOME_UNKNOWN','RECOVERY_REQUIRED','STORAGE_CONFLICT','HISTORY_FULL'].includes(result.code))notify(result.code)
         if(['SAVE_OUTCOME_UNKNOWN','RECOVERY_REQUIRED','STORAGE_CONFLICT','HISTORY_FULL'].includes(result.code))stopped=true
@@ -195,11 +209,18 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
     send(steps[0].domain,steps[0].command,context,false,steps.slice(1)).then(result=>{if(result.ok)display()})
   }
   function command(kind,data={}) {
+    if(kind==='stop_fast_rest'){stopRestAdvance();return}
+    if(restAdvance&&kind!=='fast_rest')stopRestAdvance()
     if(kind==='guard'){guardDesired=!bodyLocked(state,'player')&&data.held;return}
     if(kind==='talk_end'){conversation=null;return}
     if(busy||stopped||checkpointDepth)return
     const target=data.targetId
     if(!alive('player'))return
+    if(kind==='fast_rest') {
+      if(!safeRestAdvance()){notify('请先在有效租住处安全歇脚，再加快休息。');return}
+      restAdvance={untilAt:Math.min(clock+60000,activeLease(state,'player',clock).endsAt)}
+      conversation=null;notify('开始加快休息；遇险、租期结束或当面事项会停下。');return
+    }
     if(kind==='process_custody') {
       const row=custodyQuote(state,'player')
       if(row&&near('player',row.officerId))return send('continuity',{kind,actorId:'player',choice:'pay'},
@@ -297,6 +318,8 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
   // Priorities: release, active hits, evidence delivery/assessment, NPC goals.
   function update(dt) {
     if(busy||stopped||checkpointDepth)return
+    dt=stepSeconds(dt)
+    if(dt===0)cadence.held()
     remainder+=dt*1000;const elapsed=Math.floor(remainder);remainder-=elapsed;clock+=elapsed;view=previewGameplayCombat(state,clock)
     refreshConversation()
     const hero=fighter('player')
@@ -312,7 +335,8 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
       if(f.phase!=='active')continue
       const fraction=(clock-f.swing.activeAt)/180,old=sweep.get(f.swing.id)??0
       for(const target of state.interactions.actors) {
-        if(target.id===f.id||target.health===0||f.swing.hitIds.includes(target.id)||f.swing.nonlethal&&bodyLocked(state,target.id))continue
+        if(target.id===f.id||target.health===0||f.swing.hitIds.includes(target.id)||f.swing.nonlethal&&bodyLocked(state,target.id)||
+          !(space.bodyPresent?.(f.id)??true)||!(space.bodyPresent?.(target.id)??true))continue
         if(f.swing.nonlethal&&classifyForce(state,f.id,target.id,clock).ruleId!=='force.enforcement.v1')continue
         if(sweptContact(space.point(f.id),space.point(target.id),old,fraction,space.clear)) {
           send('combat',{kind:'hit',actorId:f.id,targetId:target.id,swingId:f.swing.id},
@@ -346,13 +370,17 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
     if(state.continuity&&!state.continuity.justiceVersion){send('continuity',{kind:'enable_justice',actorId:'player'});return}
     if(state.continuity?.justiceVersion&&!state.relations.dailyVersion){send('relations',{kind:'enable_daily',actorId:'player',seed:String(world.seed)});return}
     if(justiceController.update())return
-    if(state.economy&&!state.registry.actors.some(a=>a.actorId==='supplier-1')) {
+    if(populationTarget>=9&&state.economy&&!state.registry.actors.some(a=>a.actorId==='supplier-1')) {
       const body=space.supplierSetup?.()
       if(body){send('registry',{kind:'arrive',actorId:'supplier-1',templateId:'supplier-1'},{geometryConfirmed:true,proofId:'supplier-site-confirmed',body});return}
     }
-    if(state.factions&&!state.registry.actors.some(a=>a.actorId==='gang-1')) {
+    if(populationTarget>=9&&state.factions&&!state.registry.actors.some(a=>a.actorId==='gang-1')) {
       const body=space.gangSetup?.()
       if(body){send('registry',{kind:'arrive',actorId:'gang-1',templateId:'gang-1'},{geometryConfirmed:true,proofId:'river-site-confirmed',body});return}
+    }
+    if(populationTarget===12&&state.relations?.dailyVersion) {
+      const entry=space.populationSetup?.()
+      if(entry){send('registry',{kind:'arrive',actorId:entry.actorId,templateId:entry.actorId},{geometryConfirmed:true,proofId:`population-site:${entry.actorId}`,body:entry.body});return}
     }
     if(state.opportunities) {
       const due=state.opportunities.entries.find(r=>['offered','accepted'].includes(r.status)&&!r.returnEventId&&clock>=r.deadlineAt)
@@ -369,6 +397,8 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
     if(escortController.observe())return
     for(const npc of npcs()) {
       const id=npc.id,f=fighter(id)
+      const ordinaryDue=cadence.due(id,clock)
+      try {
       if(!alive(id)||bodyLocked(state,id))continue
       const knowledge=index.npcs.get(id),gear=knowledge.gear
       if(f.phase!=='idle'&&interruptRoutine(id,'combat',90,f.swing?.cause??knowledge.lastAttack?.id??null))return
@@ -475,7 +505,13 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
       }
       if(conversation?.speakerId===id){space.face(id,space.point('player'));continue}
       if(f.phase==='idle') {
-        if(economyController.updateNpc(id))return
+        const personal=state.life?.actors.find(a=>a.actorId===id)
+        if(ordinaryDue&&personal&&!personal.interruption&&(!personal.assignment||personal.assignment.outcomeEventId)&&!hasEscortAssignment(state,id)) {
+          const activity=nextDailyActivity(state,id,clock)
+          if(activity.status==='blocked')continue
+          if(`${activity.kind}:${activity.placeId}`!==personal.activityId||activity.priority!==personal.intent?.priority) {send('life',{kind:'activity',actorId:id,activity:activity.kind,placeId:activity.placeId,priority:activity.priority});return}
+        }
+        if(ordinaryDue&&economyController.updateNpc(id))return
         if(knowledge.relationReactionFactId){send('relations',{kind:'react',actorId:id,factId:knowledge.relationReactionFactId});return}
         if(!index.authorities.has(id)&&relationFor(state,id,'player').fear>=25&&sees(id,'player',true)&&near(id,'player',8)) {
           if(interruptRoutine(id,'flee',80,state.relations?.applications.findLast(a=>a.actorId===id)?.eventId??null))return
@@ -487,28 +523,27 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
         const job=opportunityDirector.updateNpc(id,dt)
         if(job==='committed')return
         if(job==='busy')continue
-        if(socialController.updateNpc(id))return
-        const ordinary=socialActivities.updateNpc(id,dt)
+        if(state.life&&ordinaryDue) {
+          const row=state.life.actors.find(a=>a.actorId===id),activity=nextDailyActivity(state,id,clock)
+          if(activity.status==='blocked')continue
+          if(`${activity.kind}:${activity.placeId}`!==row.activityId||activity.priority!==row.intent?.priority) {send('life',{kind:'activity',actorId:id,activity:activity.kind,placeId:activity.placeId,priority:activity.priority});return}
+          if(row.interruption){send('life',{kind:'resume',actorId:id},{safe:true});return}
+        }
+        if(ordinaryDue&&socialController.updateNpc(id))return
+        const ordinary=ordinaryDue?socialActivities.updateNpc(id,dt):null
         if(ordinary==='committed')return
         if(ordinary==='busy')continue
         if(state.life) {
           const row=state.life.actors.find(a=>a.actorId===id)
-          if(!row.intent||row.interruption||clock>=(routineDue.get(id)??0)) {
-            const offset=npcs().findIndex(n=>n.id===id)*97%1000
-            routineDue.set(id,Math.floor((clock-offset)/1000)*1000+1000+offset)
-            const activity=nextDailyActivity(state,id,clock)
-            if(activity.status==='blocked')continue
-            if(`${activity.kind}:${activity.placeId}`!==row.activityId||activity.priority!==row.intent?.priority) {send('life',{kind:'activity',actorId:id,activity:activity.kind,placeId:activity.placeId,priority:activity.priority});return}
-            if(row.interruption){send('life',{kind:'resume',actorId:id},{safe:true});return}
-          }
           if(row.intent?.phase==='travelling'&&space.atPlace(id,row.intent.placeId)) {send('life',{kind:'arrive',actorId:id,intentId:row.intent.id},{present:true,proofId:`routine-${serial+1}`});return}
           if(row.intent)space.routine(id,row.intent,dt,clock)
         } else space.idle(id,dt,clock)
       }
+      } finally {if(ordinaryDue)cadence.finish(state,id,clock,far(id))}
     }
   }
   async function checkpoint(releaseInput=false) {
-    if(releaseInput)guardDesired=false
+    if(releaseInput){guardDesired=false;restAdvance=null}
     checkpointDepth++
     try {
     // In-flight commits finish before release and the final clock-only save.
@@ -525,7 +560,23 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
     return result
     } finally {checkpointDepth--}
   }
-  return {update,command,checkpoint,release:()=>{guardDesired=false},
+  function stopRestAdvance(message) {
+    if(!restAdvance)return
+    restAdvance=null
+    if(message)notify(message)
+  }
+  function safeRestAdvance() {
+    const rest=state.standing?.rests?.find(r=>r.holderId==='player'&&r.active),lease=activeLease(state,'player',clock)
+    return !!rest&&!!lease&&rest.placeId===lease.placeId&&nearPlace('player',rest.placeId)&&growthSafe(state,'player',clock)&&recoveryContext('player').dangerFree&&!guardDesired
+  }
+  function fastRestActive() {
+    if(restAdvance&&(clock>=restAdvance.untilAt||!safeRestAdvance()))stopRestAdvance('本段休息结束，已恢复正常时间。')
+    return !!restAdvance
+  }
+  return {update,command,checkpoint,stepSeconds,cadenceSnapshot:()=>cadence.snapshot(),fastRestActive,release:()=>{guardDesired=false;restAdvance=null},
+    performanceStats:()=>({actors:npcs().length,simulationAt:clock,...cadence.stats(),...metrics.read(),
+      activeRequests:state.journal.length,archivePages:state.archive.history?.pages.length??0,
+      archivedRequests:state.archive.history?.pages.reduce((sum,p)=>sum+p.requestCount,0)??0,revision:state.revision}),
     canAdvance:()=>!busy&&!stopped&&!checkpointDepth,view:()=>view,state:()=>state,clock:()=>clock,
     calendar:()=>clockAt(state.calendar.clockOrigin,clock),tradeStatus,
     justiceView:target=>({condition:copy(bodyCondition(state,'player')),custody:copy(custodyQuote(state,'player')),
@@ -547,7 +598,7 @@ export function createLivingSimulation({world,legacy=null,saved,initialHour=7.5,
         acknowledgments:copy((state.standing?.acknowledgments??[]).filter(r=>r.holderId==='player')),
         recognized:local&&hasStanding(state,target,'player'),homePlaceId:proof.placeId,atHome:proof.present,mentorHome:proof.mentorPresent,
         canPractice:proof.present&&proof.mentorPresent&&proof.withinRange&&proof.facing&&proof.identified&&proof.dangerFree&&growthSafe(state,'player',clock)&&growthSafe(state,GROWTH_V1.mentorId,clock),
-        lease:copy(activeLease(state,'player',clock)),training:copy(trainingFor(state,'player')),resting:!!state.standing?.rests?.some(r=>r.holderId==='player'&&r.active)}
+        lease:copy(activeLease(state,'player',clock)),training:copy(trainingFor(state,'player')),resting:!!state.standing?.rests?.some(r=>r.holderId==='player'&&r.active),fastRest:copy(restAdvance)}
     },
     factionView:target=>({noticePlaceId:noticePlace()?.id??null,
       unreadNotices:!!noticePlace()&&(state.factions?.bounties??[]).some(b=>b.postedEventId&&b.placeId===noticePlace().id&&!(state.factions.bountyKnowledge??[]).some(k=>k.actorId==='player'&&k.bountyId===b.id)),

@@ -1,4 +1,4 @@
-import { useEffect,useMemo,useRef,useState } from 'react'
+import { useCallback,useEffect,useMemo,useRef,useState } from 'react'
 import { createReviewIndex } from '../game/living/eventPresentation.js'
 import { taskReasons } from '../game/living/taskPresentation.js'
 import { historyPageForEvent } from '../game/gameplay/historyArchive.js'
@@ -8,14 +8,15 @@ export default function LivingReview({view,focusId,onFocus}) {
   const [limit,setLimit]=useState(40)
   const [loaded,setLoaded]=useState({}),[loading,setLoading]=useState(false),[error,setError]=useState(null)
   const owner=view.state.archive?.history?.id??null,live=useRef(owner)
-  useEffect(()=>{live.current=owner;setLoaded({});setError(null);setLoading(false);return()=>{live.current=null}},[owner])
+  const requestedFocus=useRef(new Set())
+  useEffect(()=>{live.current=owner;requestedFocus.current.clear();setLoaded({});setError(null);setLoading(false);return()=>{live.current=null}},[owner])
   const archived=useMemo(()=>Object.values(loaded).flat(),[loaded])
   const index=useMemo(()=>createReviewIndex(view.state,archived),[view.state,archived])
   const rootId=focusId?index.root(focusId):null
   const chain=rootId?index.events.filter(e=>index.root(e.id)===rootId):index.events
   const shown=chain.slice(-limit),name=id=>id==='player'?'你':view.names[id]??'街坊'
   const link='text-left text-amber-200 underline'
-  const readPage=async(pageIndex,focus=null)=>{
+  const readPage=useCallback(async(pageIndex,focus=null)=>{
     if(loading||pageIndex===null)return
     const document=useWorldStore.getState().document,scope=owner
     if(document?.progress.living?.checkpoint.gameplay.archive?.history?.id!==scope)return
@@ -28,11 +29,18 @@ export default function LivingReview({view,focusId,onFocus}) {
       if(focus){onFocus(focus);setLimit(40)}
     } catch(failure){if(live.current===scope)setError(failure.message)}
     finally {if(live.current===scope)setLoading(false)}
-  }
+  },[loading,owner,onFocus])
   const choose=id=>{
     if(id&&!index.byId.has(id)){const page=historyPageForEvent(view.state,id);if(page!==null){readPage(page,id);return}}
     onFocus(id);setLimit(40)
   }
+  useEffect(()=>{
+    if(!focusId||loading||index.byId.has(focusId))return
+    const page=historyPageForEvent(view.state,focusId),key=`${owner}:${focusId}`
+    if(page===null||requestedFocus.current.has(key))return
+    requestedFocus.current.add(key)
+    readPage(page,focusId)
+  },[focusId,owner,index,loading,readPage,view.state])
   const older=[...(view.state.archive?.history?.pages??[])].reverse().find(page=>!Object.hasOwn(loaded,page.index))
   return <section aria-label="事后因果链" className="mt-2 text-xs">
     <p className="text-stone-400">这里展示世界事实。打开回顾不会让任何人物获得消息。</p>

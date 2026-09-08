@@ -157,10 +157,18 @@ export function resolveSupplierPlace(plan) {
   return {version:1,places:resolved.places.filter(p=>p.id==='place.supplier-loading'),unresolved:resolved.unresolved.filter(p=>p.placeId===null||p.placeId==='place.supplier-loading')}
 }
 
+const roleHomes=[['merchant','陈掌柜住处',32,-96],['witness','阿青住处',-32,-96],['guard','周平住处',-48,96],
+  ['guard-2','林岳住处',64,96],['resident-3','小何住处',96,-32]].map(([actorId,label,x,z])=>({actorId,label,anchor:{x,z}}))
 export function resolveRoleHomes(plan) {
-  const homes=[['merchant','陈掌柜住处',32,-96],['witness','阿青住处',-32,-96],['guard','周平住处',-48,96],
-    ['guard-2','林岳住处',64,96],['resident-3','小何住处',96,-32]].map(([actorId,label,x,z])=>({actorId,label,anchor:{x,z}}))
+  const homes=roleHomes
   const ids=new Set(homes.map(h=>`place.home-${h.actorId}`)),resolved=resolveCityPlaces(plan,homes)
+  return {version:1,places:resolved.places.filter(p=>ids.has(p.id)),unresolved:resolved.unresolved.filter(p=>p.placeId===null||ids.has(p.placeId))}
+}
+
+export function resolvePopulationHomes(plan) {
+  const extra=[['resident-4','沈禾住处',-88,32],['resident-5','杜芸住处',-112,64],['resident-6','许安住处',96,32]]
+    .map(([actorId,label,x,z])=>({actorId,label,anchor:{x,z}}))
+  const ids=new Set(extra.map(h=>`place.home-${h.actorId}`)),resolved=resolveCityPlaces(plan,[...roleHomes,...extra])
   return {version:1,places:resolved.places.filter(p=>ids.has(p.id)),unresolved:resolved.unresolved.filter(p=>p.placeId===null||ids.has(p.placeId))}
 }
 

@@ -8,7 +8,7 @@ import { createLivingSimulation } from './simulation.js'
 import { createCombatInput } from './createCombatInput.js'
 import { validateLiving } from './persistence.js'
 import { prepareCityLayout } from './prepareCityLayout.js'
-import { resolveRoleHomes,resolveSupplierPlace,resolveGangPlace } from './cityPlaces.js'
+import { resolveRoleHomes,resolveSupplierPlace,resolveGangPlace,resolvePopulationHomes } from './cityPlaces.js'
 import { createCityTravel } from './createCityTravel.js'
 import { CITY_NOTICE_TEXT, readCityNotice, placeClues, destinationDirection } from './placeClues.js'
 import { clockAt } from './clock.js'
@@ -23,6 +23,7 @@ import { useWorldStore } from '../../stores/useWorldStore.js'
 import { useNavigationStore } from '../../stores/useNavigationStore.js'
 import { createAttentionQueue } from './attentionQueue.js'
 import { attentionMessages } from './attentionMessages.js'
+import { populationProfile,SCALE_RESIDENTS } from './populationProfile.js'
 const copy=v=>structuredClone(v)
 export function createLivingScene(scene,plan,world,player,progress,extras=()=>({})) {
   let simulation=null,spatial=null,disposed=false,closing=false,retry=0,selected=null,lastSequence=-1
@@ -35,6 +36,7 @@ export function createLivingScene(scene,plan,world,player,progress,extras=()=>({
   store().reset()
   const saved=progress.living,legacy=saved?saved.legacy:progress.ledger??null
   if(saved){validateLiving(saved,plan);spatial=copy(saved.spatial)}
+  const population=populationProfile(progress,window.location.search,import.meta.env.DEV)
   const attention=createAttentionQueue(saved?.attention,saved?.checkpoint.simulationAt??0)
   let attentionRevision=-1
   function notify(message,detail={}) {
@@ -58,8 +60,10 @@ export function createLivingScene(scene,plan,world,player,progress,extras=()=>({
   let housing=null,housingMessage=null
   let supplierPlace=null,supplierMessage=null
   let gangPlace=null,gangMessage=null
+  let populationPlaces=null,populationMessage=null
   const point=id=>id==='player'?{x:player.root.position.x,y:player.root.position.y,z:player.root.position.z,heading:player.root.rotation.y}:id==='stall'?spatial.stall:id==='relocation'?cityLayout.parcelSpot:id==='notice'?cityLayout.notice:spatial.npcs.find(n=>n.id===id)
   const loaded=p=>world.isLoaded(p.x,p.z)
+  const bodyReady=p=>loaded(p)&&(world.bodyLocationStatus?.(p.x,p.y,p.z)??'ready')==='ready'
   function clear(a,b,r=.06) {
     if(!loaded(a)||!loaded(b))return false
     const count=Math.max(1,Math.ceil(distance(a,b)/.15))
@@ -69,16 +73,19 @@ export function createLivingScene(scene,plan,world,player,progress,extras=()=>({
   }
   const alive=id=>simulation?.state().interactions.actors.find(a=>a.id===id)?.health>0
   const body=id=>({...point(id),height:alive(id)?1.75:.25})
-  const bodies=exclude=>spatial?spatial.npcs.filter(n=>n.id!==exclude&&loaded(n)).map(n=>body(n.id)):[]
+  const bodies=exclude=>spatial?spatial.npcs.filter(n=>n.id!==exclude&&models.get(n.id)?.model.root.isEnabled()&&bodyReady(n)).map(n=>body(n.id)):[]
   function visible(a,b,identify=false) {
     const p=point(a),q=point(b)
-    return p&&q&&distance(p,q)<=(identify?8:12)&&Math.abs(p.y-q.y)<2.5&&Math.abs(facingAngle(p,q))<=60&&clear(p,q)
+    return p&&q&&distance(p,q)<=(identify?8:12)&&Math.abs(p.y-q.y)<2.5&&Math.abs(facingAngle(p,q))<=60&&
+      (b==='player'||models.get(b)?.model.root.isEnabled()&&bodyReady(q))&&(a==='player'||models.get(a)?.model.root.isEnabled()&&bodyReady(p))&&clear(p,q)
   }
   const travel=createCityTravel({world,point,clock:()=>simulation?.clock()??0,canAdvance:()=>!closing&&!disposed&&simulation?.canAdvance(),
     bodies:id=>[...spatial.npcs.filter(n=>n.id!==id).map(n=>body(n.id)),body('player')]})
   const walkable=(x,z)=>world.navigationData.canMove(x,z,.36)||(world.isLoaded(x,z)&&world.canMove(x,z,.36))
   const move=(id,target,dt,stop=1.2)=>travel.move(id,target,dt,stop)
   const contactClear=(a,b)=>loaded(a)&&loaded(b)?clear(a,b):travel.clearGround(a,b,.06)
+  const bodyPresent=id=>id==='player'||!spatial.npcs.some(n=>n.id===id)||(loaded(point(id))?!!models.get(id)?.model.root.isEnabled()&&bodyReady(point(id)):travel.clearGround(point(id),point(id),.35))
+  const canMaterialize=id=>bodyMoveClear(point(id),point(id),[body('player'),...bodies(id)],{radius:.35,height:alive(id)?1.75:.25})
   function initialSpatial() {
     const ground=anchor=>({x:anchor[0],y:world.terrain.surfaceHeight(anchor[0],anchor[1]),z:anchor[1]})
     const npcs=LIVING_NPCS.map(n=>{
@@ -142,8 +149,24 @@ export function createLivingScene(scene,plan,world,player,progress,extras=()=>({
   function gangSetup() {
     return confirmedArrival(gangPlace,'gang-1')
   }
-  function confirmedArrival(prepared,actorId) {
-    const place=prepared?.result()?.places[0]
+  function preparePopulation() {
+    if(population.target!==12||!simulation.state().relations?.dailyVersion||SCALE_RESIDENTS.every(id=>simulation.state().registry.actors.some(a=>a.actorId===id)))return
+    if(!populationPlaces) {
+      const missing=new Set(SCALE_RESIDENTS.filter(id=>!simulation.state().registry.actors.some(a=>a.actorId===id)).map(id=>`place.home-${id}`))
+      const resolved=resolvePopulationHomes(plan),candidates={...resolved,places:resolved.places.filter(p=>missing.has(p.id)),unresolved:resolved.unresolved.filter(p=>p.placeId===null||missing.has(p.placeId))}
+      populationPlaces=prepareCityLayout(plan,world,{extra:true,owner:'population-homes',candidates,knownPlaces:registeredPlaces(simulation.state(),cityLayout)})
+    }
+    populationPlaces.update()
+    const status=populationPlaces.status()
+    if(status.status==='blocked'&&populationMessage!==status.reason){populationMessage=status.reason;notify('扩展街坊的住处暂未确认，保留已到达的人物。',{priority:1,group:'place:population'})}
+  }
+  function populationSetup() {
+    const id=SCALE_RESIDENTS.find(id=>!simulation.state().registry.actors.some(a=>a.actorId===id))
+    const body=id&&confirmedArrival(populationPlaces,id,`place.home-${id}`)
+    return body?{actorId:id,body}:null
+  }
+  function confirmedArrival(prepared,actorId,placeId=null) {
+    const place=placeId?prepared?.result()?.places.find(p=>p.id===placeId):prepared?.result()?.places[0]
     if(!place)return null
     if([point('player'),...spatial.npcs].some(p=>distance(p,place.approach)<2))return null
     if(registeredPlaces(simulation.state(),cityLayout).some(p=>p.id!==place.id&&distance(p.approach,place.approach)<2))return null
@@ -175,9 +198,9 @@ export function createLivingScene(scene,plan,world,player,progress,extras=()=>({
   function start() {
     if(!cityLayout){preparing.update();cityLayout=preparing.result();if(!cityLayout)return false}
     if(!spatial)spatial=initialSpatial()
-    simulation=createLivingSimulation({world:plan,legacy,saved:saved?.checkpoint,initialHour:progress.worldTime??7.5,space:{point,clear,contactClear,visible,move,
+    simulation=createLivingSimulation({world:plan,legacy,saved:saved?.checkpoint,savedCadence:saved?.cadence,populationTarget:population.target,initialHour:progress.worldTime??7.5,space:{point,clear,contactClear,bodyPresent,visible,move,
       placeSetup:()=>({definitions:registeredPlaces(simulation.state(),cityLayout),bindings:[...cityLayout.bindings,...simulation.state().registry.actors.filter(a=>a.body).map(a=>a.body.binding)]}),
-      lifeSetup,supplierSetup,gangSetup,atPlace,routine,
+      lifeSetup,supplierSetup,gangSetup,populationSetup,atPlace,routine,
       knownPlaceIds:()=>clues.map(c=>c.placeId),
       conversationOpen:()=>store().panel,
       suspendRoutine:id=>{const intent=simulation.state().life?.actors.find(a=>a.actorId===id)?.intent;if(intent)travel.cancelTravel(intent.id)},
@@ -202,7 +225,7 @@ export function createLivingScene(scene,plan,world,player,progress,extras=()=>({
         // through the owner's recorded pickup/delivery transaction.
         if(!['stall','merchant-bag'].includes(parcelLot.holderId)||checkpoint.gameplay.village.events.some(e=>e.kind==='relocate_deliver'))nextSpatial.stall=copy(cityLayout.parcelSpot)
         const nextClues=copy(pendingClues??clues)
-        const living={version:checkpoint.gameplay.archive.history?4:3,legacy:copy(legacy),checkpoint,spatial:nextSpatial,layout:copy(cityLayout),migration:copy(migration),travels:travel.snapshot(),patrols:copy(patrols),clues:nextClues,attention:attention.snapshot()}
+        const living={version:checkpoint.gameplay.archive.history?4:3,legacy:copy(legacy),checkpoint,spatial:nextSpatial,layout:copy(cityLayout),migration:copy(migration),travels:travel.snapshot(),patrols:copy(patrols),clues:nextClues,attention:attention.snapshot(),cadence:simulation.cadenceSnapshot(),population:copy(population)}
         const worldTime=clockAt(checkpoint.gameplay.calendar.clockOrigin,checkpoint.simulationAt).hour
         const ok=await useWorldStore.getState().dispatch({type:'living-checkpoint',living,expectedSequence:meta.expectedSequence,archivePages:meta.archivePages,...extras(),worldTime})
         if(!ok)throw new Error('保存结果未确认，请重新读档。')
@@ -220,6 +243,7 @@ export function createLivingScene(scene,plan,world,player,progress,extras=()=>({
   function syncModels() {
     for(const n of npcDefinitions())if(!models.has(n.id)) {
       const model=createNpcModel(scene,n.model??(n.id.startsWith('guard')?'npc.guard':n.id==='merchant'?'npc.vendor':n.id==='resident-1'?'npc.citizen-woman':'npc.citizen'))
+      model.root.setEnabled(false)
       const texture=label(model.root,n.name,n.color);models.set(n.id,{model,texture,caption:'',last:copy(point(n.id))})
     }
   }
@@ -234,7 +258,7 @@ export function createLivingScene(scene,plan,world,player,progress,extras=()=>({
     const p=point('player')
     const parcelAvailable=simulation.state().interactions.inventory.lots.some(l=>l.id==='medicine-parcel'&&l.holderId==='stall')
     const candidates=[...spatial.npcs.map(n=>({...n,dead:!alive(n.id)})),...(parcelAvailable?[{...spatial.stall,id:'stall'}]:[]),{...cityLayout.notice,id:'notice'}]
-    selected=candidates.filter(q=>distance(p,q)<=2&&Math.abs(p.y-q.y)<1.5&&Math.abs(facingAngle(p,q))<65&&clear(p,q)).sort((a,b)=>Math.abs(facingAngle(p,a))-Math.abs(facingAngle(p,b))||distance(p,a)-distance(p,b))[0]?.id??null
+    selected=candidates.filter(q=>distance(p,q)<=2&&Math.abs(p.y-q.y)<1.5&&Math.abs(facingAngle(p,q))<65&&(['stall','notice'].includes(q.id)||bodyPresent(q.id))&&clear(p,q)).sort((a,b)=>Math.abs(facingAngle(p,a))-Math.abs(facingAngle(p,b))||distance(p,a)-distance(p,b))[0]?.id??null
   }
   function publish() {
     presentAttention()
@@ -273,7 +297,7 @@ export function createLivingScene(scene,plan,world,player,progress,extras=()=>({
     const noticeEnabled=loaded(cityLayout.notice)
     if(notice.isEnabled()!==noticeEnabled)notice.setEnabled(noticeEnabled)
     for(const [id,entry] of models) {
-      const p=point(id),f=fighters.find(f=>f.id===id),enabled=loaded(p)
+      const p=point(id),f=fighters.find(f=>f.id===id),enabled=bodyReady(p)&&(entry.model.root.isEnabled()||canMaterialize(id))
       if(entry.model.root.isEnabled()!==enabled)entry.model.root.setEnabled(enabled)
       if(!enabled)continue
       entry.model.root.position.set(p.x,p.y,p.z);entry.model.root.rotation.y=p.heading
@@ -293,6 +317,11 @@ export function createLivingScene(scene,plan,world,player,progress,extras=()=>({
   }
   return {
     present:()=>{if(simulation){publish();draw(0)}},
+    stepSeconds:dt=>simulation?.stepSeconds(dt)??dt,
+    performanceStats:()=>simulation?{...simulation.performanceStats(),populationTarget:population.target,seed:String(plan.seed),player:point('player'),
+      bodyWaiting:spatial.npcs.filter(p=>loaded(p)&&world.bodyLocationStatus?.(p.x,p.y,p.z)==='waiting_for_geometry').length,
+      bodyOverlap:spatial.npcs.filter(p=>bodyReady(p)&&!models.get(p.id)?.model.root.isEnabled()&&!canMaterialize(p.id)).length,
+      bodyBlocked:spatial.npcs.filter(p=>loaded(p)&&world.bodyLocationStatus?.(p.x,p.y,p.z)==='blocked').length}:null,
     canAdvance:()=>!simulation||simulation.canAdvance(),isAlive:()=>!simulation||alive('player'),
     fighter:id=>simulation?.view().find(f=>f.id===id),
     bodyClear:(from,to)=>bodyMoveClear(from,to,bodies()),bodySupport:(x,z,ceiling)=>bodySupportHeight(x,z,ceiling,bodies()),
@@ -318,9 +347,23 @@ export function createLivingScene(scene,plan,world,player,progress,extras=()=>({
           if(meeting?.speakerId==='resident-1')simulation.command('talk_topic',{meetingId:meeting.id,topicId:'hours'})
         } else simulation.command(kind,{...data,...(kind==='threaten'?{targetId:selected}:{})})
       }
-      prepareHomes();prepareSupplier();prepareGang();simulation.update(dt);travel.releaseInactive(simulation.clock(),alive);draw(dt)
+      prepareHomes();if(population.target>=9){prepareSupplier();prepareGang()}preparePopulation();simulation.update(dt)
+      // Explicit, bounded foreground rest. Reuse physical steps and stop at the
+      // first pending commit; no wall-clock/offline catch-up or inferred travel.
+      let extraSeconds=0
+      const restBudget=performance.now()
+      for(let i=0;i<4&&simulation.canAdvance()&&simulation.fastRestActive()&&performance.now()-restBudget<6;i++) {
+        const extra=simulation.stepSeconds(dt),before=simulation.clock()
+        simulation.update(extra)
+        const advanced=(simulation.clock()-before)/1000
+        extraSeconds+=advanced
+        if(advanced>0)world.updateNpcs(advanced,point('player').x,point('player').z)
+        if(!advanced)break
+      }
+      travel.releaseInactive(simulation.clock(),alive);draw(dt+extraSeconds)
       publish()
+      return extraSeconds
     },
-    dispose(){closing=true;preparing?.dispose();housing?.dispose();supplierPlace?.dispose();gangPlace?.dispose();input.dispose();if(simulation)simulation.close().finally(()=>{travel.dispose();disposed=true});else{travel.dispose();disposed=true}for(const e of models.values())e.model.dispose();parcel.dispose();notice.dispose();resources.forEach(r=>r.dispose());store().reset()},
+    dispose(){closing=true;preparing?.dispose();housing?.dispose();supplierPlace?.dispose();gangPlace?.dispose();populationPlaces?.dispose();input.dispose();if(simulation)simulation.close().finally(()=>{travel.dispose();disposed=true});else{travel.dispose();disposed=true}for(const e of models.values())e.model.dispose();parcel.dispose();notice.dispose();resources.forEach(r=>r.dispose());store().reset()},
   }
 }

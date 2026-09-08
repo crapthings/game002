@@ -201,6 +201,12 @@ export function createStreamedWorld(scene, plan, initialViewDistance = 64) {
     getStats: () => ({ loaded: loaded.size, queued: required.filter((chunk) => !loaded.has(chunk.key)).length, required: required.length, ready: required.filter((chunk) => loaded.has(chunk.key)).length, templatesReady: templateCount - warmup.length, templatesTotal: templateCount, pending: Boolean(pending), assembling: Boolean(assembling), center, ...navigation.stats(), ...navigationData.stats(), ...collisionIndex.stats(), ...assets.stats() }),
     // 所有导航与移动共用这层检查，不依赖美术模型的三角面。
     isLoaded(x,z) { const at=chunkAt(x,z); return loaded.has(chunkKey(at.x,at.z)) },
+    bodyLocationStatus(x,y,z) {
+      const at=chunkAt(x,z)
+      for(const chunk of requiredChunks(at,1))if(insideWorld(plan.bounds,(chunk.x+.5)*CHUNK_SIZE,(chunk.z+.5)*CHUNK_SIZE)&&!loaded.has(chunk.key))return 'waiting_for_geometry'
+      if(Math.abs(y-terrain.surfaceHeight(x,z))>.4||!canMoveInWorld(plan,loaded,x,z,.35,collisionIndex))return 'blocked'
+      return 'ready'
+    },
     isClearLanding(x, z) {
       if (!insideWorld(plan.bounds, x, z, 3)) return false
       const at = chunkAt(x, z)

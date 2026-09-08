@@ -36,6 +36,10 @@ export default function StandingPanel({view,lockReason,onReview}) {
       <button className={button} onClick={()=>useLivingStore.getState().trackPlace(info.lease.placeId)}>住宅方向</button>
       <InteractionButton className={button} reason={lockReason||(!info.resting&&!info.atHome?'请到租住点歇脚':null)} onClick={()=>request(info.resting?'end_rest':'start_rest')}>{info.resting?'起身':'在门口歇脚'}</InteractionButton>
       {info.resting&&<p className="text-stone-400">正在歇脚，世界时间照常流逝；走开或遇险会结束休息。</p>}
+      {info.resting&&<>
+        <InteractionButton className={button} reason={info.fastRest?null:lockReason} onClick={()=>request(info.fastRest?'stop_fast_rest':'fast_rest')}>{info.fastRest?'停止加快时间':'加快休息一小时'}</InteractionButton>
+        {info.fastRest&&<p className="text-stone-400">最多5倍速度，至{clockAt(view.state.calendar.clockOrigin,info.fastRest.untilAt).label}；危险或当面事项会中断。</p>}
+      </>}
     </section>}
     {lesson&&<section className="mt-3 text-xs"><p>武艺入门 · {Math.floor(lesson.trainedMs/1000)}/30 游戏分钟 · {({training:'正在练习',paused:'已暂停，进度保留',payment_due:'练习已足，尚待结算',completed:'已学会，基础攻击永久+2'})[lesson.status]}</p>
       <div className="my-2 h-1 rounded bg-stone-700"><div className="h-full rounded bg-emerald-300" style={{width:`${lesson.trainedMs/300}%`}}/></div>

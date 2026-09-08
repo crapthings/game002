@@ -51,7 +51,7 @@ export function createWorldScene(engine, canvas, { onLoading, onReady } = {}) {
   audio.setActive(useGameStore.getState().phase==='playing')
   const input = createMovementInput(scene, () => useGameStore.getState().phase === 'playing' && !useLivingStore.getState().panel && (ledger?.isAlive()??true))
   let world = null, activePlan = null, lastSaved = null, lastSavedFog = null
-  scene.metadata = { readPerformanceStats: () => world?.getStats() ?? null }
+  scene.metadata = { readPerformanceStats: () => world?{...world.getStats(),living:ledger?.performanceStats()??null}:null }
   let ledger = null, lastSavedLedgerRevision = -1
   let stamina = createStamina(), lastSavedStamina = null
   let dayNight = createDayNightCycle(), lastSavedWorldTime = null
@@ -244,7 +244,7 @@ export function createWorldScene(engine, canvas, { onLoading, onReady } = {}) {
     }
     if (useGameStore.getState().phase !== 'playing') return
     if (ledger && !ledger.canAdvance()) { ledger.present(); return }
-    const dt = Math.min(engine.getDeltaTime() / 1000, 0.05)
+    const dt = ledger?.stepSeconds(Math.min(engine.getDeltaTime() / 1000, 0.05))??Math.min(engine.getDeltaTime() / 1000, 0.05)
     const worldHour=ledger?.worldHour()
     if(Number.isFinite(worldHour))dayNight.setTime(worldHour)
     lightingTimer += dt
@@ -284,7 +284,8 @@ export function createWorldScene(engine, canvas, { onLoading, onReady } = {}) {
       return road.distance<=road.width/2+.5?'stone':'grass'
     })
     world.updateNpcs(dt,position.x,position.z)
-    ledger?.update(dt)
+    const restSeconds=ledger?.update(dt)??0
+    if(restSeconds>0){stamina.update(restSeconds,false,false);saveTimer+=restSeconds;exploreTimer+=restSeconds}
     const updatedHour=ledger?.worldHour()
     if(Number.isFinite(updatedHour))dayNight.setTime(updatedHour)
     thirdPerson.follow(player.root, world.terrain, dt)

@@ -4,6 +4,8 @@ import { validWorldTime } from '../world/createDayNightCycle.js'
 import { livingConfig, LIVING_NPCS } from './config.js'
 import { restoreWorldCheckpoint } from '../gameplay/worldSession.js'
 import { validateAttention } from './attentionQueue.js'
+import { validateCadence } from './lifeCadence.js'
+import { validatePopulation } from './populationProfile.js'
 const finitePoint=p=>p && ['x','y','z'].every(k=>Number.isFinite(p[k])&&Math.abs(p[k])<=(k==='y'?1024:256))
 const placeIds=['place.medicine','place.market-neighbor','place.yamen-desk','place.yamen-patrol','place.home-liu','place.home-shi','place.central-contact']
 export function validateCityLayout(layout) {
@@ -42,6 +44,8 @@ export function validateLivingEnvelope(saved) {
   const bodyIds=saved.checkpoint.gameplay.registry?.actors.filter(a=>a.hasBody&&a.actorId!=='player').map(a=>a.actorId)
   validateLivingSpatial(saved.spatial,bodyIds)
   validateAttention(saved.attention,saved.checkpoint.simulationAt)
+  validateCadence(saved.cadence,saved.checkpoint.simulationAt,bodyIds??LIVING_NPCS.map(n=>n.id))
+  validatePopulation(saved.population,bodyIds??LIVING_NPCS.map(n=>n.id))
   if(saved.version>=2)validateCityEnvelope(saved)
 }
 export function validateLiving(saved,world) {
@@ -65,6 +69,9 @@ export function applyLivingCheckpoint(progress,event) {
   const bodyIds=next.checkpoint.gameplay.registry?.actors.filter(a=>a.hasBody&&a.actorId!=='player').map(a=>a.actorId)
   validateLivingSpatial(next.spatial,bodyIds)
   validateAttention(next.attention,next.checkpoint.simulationAt)
+  validateCadence(next.cadence,next.checkpoint.simulationAt,bodyIds??LIVING_NPCS.map(n=>n.id))
+  validatePopulation(next.population,bodyIds??LIVING_NPCS.map(n=>n.id))
+  if(current&&(current.population?.target??9)!==(next.population?.target??9))throw new Error('不能在已有种子中切换人口观察条件，保留原档。')
   if(next.version>=2) {
     validateCityEnvelope(next)
     if(current?.version>=2&&(JSON.stringify(current.layout)!==JSON.stringify(next.layout)||JSON.stringify(current.migration)!==JSON.stringify(next.migration)))throw new Error('城内布局发生冲突，请重新读档。')
