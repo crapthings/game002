@@ -1,3 +1,4 @@
+import { activeEventCount } from './historyArchive.js'
 // Diagnostics only. Actual admission still happens atomically in the reducers.
 // All counts are persisted entries, not seconds of gameplay or free NPC slots.
 export function historyCapacity(state) {
@@ -12,10 +13,32 @@ export function historyCapacity(state) {
     ['crime',state.crime?.events,1],
     ['pursuit',state.pursuit?.events,1],
     ['village',state.village?.events,1],
+    ['registry',state.registry?.events,1],
+    ['places',state.places?.events,1],
+    ['life',state.life?.events,1],
+    ['dialogue',state.dialogue?.events,1],
+    ['opportunities',state.opportunities?.events,1],
+    ['relations',state.relations?.events,1],
+    ['economy',state.economy?.events,1],
+    ['factions',state.factions?.events,1],
+    ['standing',state.standing?.events,1],
+    ['continuity',state.continuity?.events,1],
+    ['staff',state.continuity?.staff,1],
+    ['rents',state.standing?.rents,1],
+    ['training',state.standing?.training,1],
+    ['rests',state.standing?.rests,1],
+    ['faction-reports',state.factions?.reportIntents,1],
+    ['bounties',state.factions?.bounties,1],
+    ['escorts',state.factions?.escorts,1],
+    ['gang-requests',state.factions?.threatRequests,1],
+    ['money-reservations',state.interactions.reservations,1],
+    ['item-reservations',state.interactions.itemReservations,1],
   ].filter(([,entries]) => entries !== undefined)
   const channels = rows.map(([domain,entries,cost]) => {
-    const remaining = Math.max(0,4096-entries.length)
-    return {domain,used:entries.length,limit:4096,remaining,
+    const key={interaction:'interactions',knowledge:'social'}[domain]??domain
+    const used=state[key]?.events===entries?activeEventCount(state[key]):entries.length
+    const remaining = Math.max(0,4096-used)
+    return {domain,used,retained:entries.length-used,limit:4096,remaining,
       standaloneOperations:Math.floor(remaining/cost),
       status:remaining < cost ? 'full' : remaining <= 128 ? 'low' : 'available'}
   })

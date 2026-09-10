@@ -1,3 +1,4 @@
+import { activeEventCount,findReceipt } from './historyArchive.js'
 import { InventoryError, itemDefinition } from './inventory.js'
 import { previewCombat } from './combat.js'
 
@@ -42,13 +43,13 @@ export function executeEquipment(state,combat,interactions,catalog,command,conte
       ['equip','unequip'].includes(command.kind) && ['weapon','armor'].includes(command.slot),'INVALID_COMMAND')
     const fingerprint = JSON.stringify([command.kind,command.expectedRevision,command.actorId,command.slot,
       command.lotId ?? null,context?.at,context?.allowed === true])
-    const prior = state.receipts.find(r => r.requestId === command.id)
+    const prior = findReceipt(state,command.id)
     if (prior) {
       check(prior.fingerprint === fingerprint,'REQUEST_ID_CONFLICT')
       return {ok:true,code:'ALREADY_APPLIED',duplicate:true,state:clone(state),combat:clone(combat),events:[]}
     }
     check(command.expectedRevision === state.revision,'STALE_REVISION')
-    check(state.events.length < 4096,'HISTORY_FULL')
+    check(activeEventCount(state)<4096,'HISTORY_FULL')
     check(context?.allowed === true,'INTERACTION_DENIED')
     check(natural(context.at) && context.at >= combat.at && (!state.events.length || context.at >= state.events.at(-1).at),'INVALID_TIME')
     const actor = interactions.actors.find(a => a.id === command.actorId)

@@ -1,6 +1,7 @@
 export function combatPose(f,at) {
   if(!f)return {arm:0,side:0,lean:0,dead:false}
   if(f.phase==='dead')return {arm:0,side:0,lean:0,dead:true}
+  if(['incapacitated','custody'].includes(f.phase))return {arm:.2,side:.1,lean:.5,dead:false}
   if(f.phase==='guard')return {arm:-1.35,side:.3,lean:-.12,dead:false}
   if(f.phase==='broken')return {arm:.3,side:.2,lean:-.35,dead:false}
   if(!f.swing)return {arm:0,side:0,lean:0,dead:false}

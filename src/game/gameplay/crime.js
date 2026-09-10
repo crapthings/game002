@@ -1,4 +1,6 @@
+import { activeEventCount,findReceipt } from './historyArchive.js'
 import { InventoryError } from './inventory.js'
+import { resolvedSeverity } from './caseSettlement.js'
 const clone = value => structuredClone(value)
 const natural = n => Number.isSafeInteger(n) && n >= 0
 const id = s => typeof s === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,95}$/.test(s)
@@ -25,6 +27,18 @@ function incidentFor(source,events) {
   return root.id
 }
 
+export function settledCrimeFact(world,fact,{knownBy=null}={}) {
+  if(!fact)return false
+  const sources=[...world.combat.events,...world.robbery.events,...world.property.events,...world.village.events]
+  const source=sources.find(e=>e.id===fact.sourceEventId)
+  if(!source||!Object.hasOwn(severity,source.kind))return false
+  const incidentId=incidentFor(source,sources)
+  if(world.village.settled.includes(incidentId))return true
+  return (world.factions?.resolutions??[]).some(r=>r.incidentId===incidentId&&r.victimId===source.targetId&&r.severity>=severity[source.kind]&&
+    (!r.factScope||r.sourceFactIds.includes(fact.id))&&
+    (knownBy===null||world.social.knowledge.some(k=>k.npcId===knownBy&&k.factId===`fact:${r.eventId}`)))
+}
+
 export function wantedFor(state,authorityId,subjectId) {
   check(state.authorities.includes(authorityId),'NOT_AUTHORITY')
   check(id(subjectId),'INVALID_SUBJECT')
@@ -41,13 +55,13 @@ export function executeCrime(state,world,command,context) {
       id(command.factId) && natural(command.expectedRevision),'INVALID_COMMAND')
     const fingerprint = JSON.stringify([command.kind,command.expectedRevision,command.actorId,command.factId,
       context?.at,context?.allowed === true])
-    const prior = state.receipts.find(r => r.requestId === command.id)
+    const prior = findReceipt(state,command.id)
     if (prior) {
       check(prior.fingerprint === fingerprint,'REQUEST_ID_CONFLICT')
       return {ok:true,code:'ALREADY_APPLIED',duplicate:true,state:clone(state),events:[]}
     }
     check(command.expectedRevision === state.revision,'STALE_REVISION')
-    check(state.events.length < 4096,'HISTORY_FULL')
+    check(activeEventCount(state)<4096,'HISTORY_FULL')
     check(context?.allowed === true,'INTERACTION_DENIED')
     check(natural(context.at) && (!state.events.length || context.at >= state.events.at(-1).at),'INVALID_TIME')
     check(state.authorities.includes(command.actorId),'NOT_AUTHORITY')
@@ -69,6 +83,7 @@ export function executeCrime(state,world,command,context) {
     const ruleId = combatFact ? source.justification.ruleId : 'property.coercion.v1'
     const incidentId = incidentFor(source,sources)
     check(!world.village?.settled.includes(incidentId),'INCIDENT_RESOLVED')
+    check(!settledCrimeFact(world,fact,{knownBy:command.actorId}),'INCIDENT_RESOLVED')
     const next = clone(state)
     let record = next.cases.find(c => c.authorityId === command.actorId && c.incidentId === incidentId && c.victimId === source.targetId)
     if (!record) {
@@ -81,6 +96,10 @@ export function executeCrime(state,world,command,context) {
       record.subjectId = known.subjectId
     }
     record.severity = Math.max(record.severity,severity[source.kind])
+    if(world.factions?.actionsVersion&&record.resolved&&(record.severity>resolvedSeverity(world,incidentId,source.targetId)||
+      world.continuity?.justiceVersion&&!settledCrimeFact(world,fact,{knownBy:command.actorId}))) {
+      record.resolved=false;record.resolutionEventId=null
+    }
     if (!record.factIds.includes(fact.id)) record.factIds.push(fact.id)
     record.evidenceIds.push(known.evidenceId)
     const event = {id:`crime:${state.revision+1}`,kind:'case_assessed',at:context.at,

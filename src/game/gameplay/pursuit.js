@@ -1,3 +1,4 @@
+import { activeEventCount,findReceipt } from './historyArchive.js'
 import { InventoryError } from './inventory.js'
 import { wantedFor } from './crime.js'
 const clone = value => structuredClone(value)
@@ -32,13 +33,13 @@ export function executePursuit(state,world,command,context) {
     const fingerprint = JSON.stringify([command.kind,command.expectedRevision,command.actorId,command.targetId,
       context?.at,context?.allowed === true,context?.visible,context?.identified,context?.proofId,
       p?.x ?? null,p?.y ?? null,p?.z ?? null])
-    const prior = state.receipts.find(r => r.requestId === command.id)
+    const prior = findReceipt(state,command.id)
     if (prior) {
       check(prior.fingerprint === fingerprint,'REQUEST_ID_CONFLICT')
       return {ok:true,code:'ALREADY_APPLIED',duplicate:true,state:clone(state),events:[]}
     }
     check(command.expectedRevision === state.revision,'STALE_REVISION')
-    check(state.events.length < 4096,'HISTORY_FULL')
+    check(activeEventCount(state)<4096,'HISTORY_FULL')
     check(context?.allowed === true && id(context.proofId),'MISSING_SIGHT_EVIDENCE')
     check(natural(context.at) && Number.isSafeInteger(context.at+31000) &&
       (!state.events.length || context.at >= state.events.at(-1).at),'INVALID_TIME')

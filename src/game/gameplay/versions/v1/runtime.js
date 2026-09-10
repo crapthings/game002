@@ -1,0 +1,271 @@
+import { createVillageState, executeVillage } from './village.js'
+import { createCatalog, createInventory, InventoryError } from './inventory.js'
+import { createInteractionState, executeInteraction } from './interactions.js'
+import { createKnowledgeState, executeKnowledge } from './knowledge.js'
+import { createCombatState, executeCombat, previewCombat } from './combat.js'
+import { createPropertyState, executeProperty } from './property.js'
+import { createEquipmentState, executeEquipment, equippedLot, refreshEquipment } from './equipment.js'
+import { createRobberyState, executeRobbery } from './robbery.js'
+import { createCrimeState, executeCrime } from './crime.js'
+import { createPursuitState, executePursuit } from './pursuit.js'
+import { classifyForce } from './forcePolicy.js'
+
+const clone = value => structuredClone(value)
+const natural = value => Number.isSafeInteger(value) && value >= 0
+const id = value => typeof value === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,59}$/.test(value)
+class GameplayError extends Error {
+  constructor(code) { super(code); this.code = code }
+}
+const requireValue = (condition,code) => { if (!condition) throw new GameplayError(code) }
+
+// Stable JSON comparison without silently dropping undefined/non-finite values.
+function canonical(value, depth = 0) {
+  requireValue(depth < 32,'INVALID_JSON')
+  if (value === null || typeof value === 'boolean' || typeof value === 'string') return JSON.stringify(value)
+  if (typeof value === 'number') { requireValue(Number.isFinite(value),'INVALID_JSON'); return JSON.stringify(value) }
+  if (Array.isArray(value)) return `[${Array.from(value,v => canonical(v,depth+1)).join(',')}]`
+  requireValue(value && typeof value === 'object' && [Object.prototype,null].includes(Object.getPrototypeOf(value)),'INVALID_JSON')
+  return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonical(value[key],depth+1)}`).join(',')}}`
+}
+
+export function createGameplay(config) {
+  requireValue(config && id(config.id),'INVALID_CONFIG')
+  const catalog = createCatalog(config.items)
+  const inventory = createInventory(catalog,{containers:config.containers,lots:config.lots ?? []})
+  const interactions = createInteractionState(catalog,inventory,config.actors)
+  const social = createKnowledgeState(config.actors.map(actor => actor.id))
+  requireValue(config.combat === undefined || config.combat === true,'INVALID_COMBAT_CONFIG')
+  const combat = config.combat ? {combat:createCombatState(config.actors),property:createPropertyState(),equipment:createEquipmentState(config.actors),robbery:createRobberyState(config.actors),crime:createCrimeState(config.actors.map(a => a.id),config.authorities),pursuit:createPursuitState()} : {}
+  const state={version:1,configId:config.id,configSignature:canonical(config),catalogSignature:canonical(catalog),revision:0,at:0,interactions,social,...combat,journal:[]}
+  if(config.village) {
+    requireValue(config.combat,'COMBAT_DISABLED')
+    state.village=createVillageState(config.village)
+    for(const e of state.village.events) registerFact(state,e,`seed:${e.id}`)
+    for(const [i,k] of config.village.knowledge.entries()) {
+      const fact=state.social.facts.find(f=>f.sourceEventId===k.sourceId)
+      requireValue(fact,'INVALID_LEGACY_KNOWLEDGE')
+      const result=executeKnowledge(state.social,{id:`seed:knowledge:${i}`,expectedRevision:state.social.revision,
+        kind:k.kind,actorId:k.actorId,...(k.kind==='report'?{targetId:'guard'}:{}),factId:fact.id},
+        {allowed:true,at:config.village.at,observed:true,observedAt:fact.at,identified:k.subjectId!==null,delivered:true,proofId:k.proofId,position:k.position})
+      requireValue(result.ok,result.code); state.social=result.state
+    }
+    if(config.village.trust) state.social.relationships.push({fromId:'resident-1',toId:'player',trust:config.village.trust})
+    for(const k of state.social.knowledge.filter(k=>k.npcId==='guard')) {
+      const result=executeCrime(state.crime,state,{id:`seed:case:${state.crime.revision}`,kind:'assess',actorId:'guard',factId:k.factId,expectedRevision:state.crime.revision},{allowed:true,at:config.village.at})
+      if(result.ok)state.crime=result.state
+      else requireValue(['NOT_CRIME_FACT','INCIDENT_RESOLVED'].includes(result.code),result.code)
+    }
+    state.at=config.village.at
+  }
+  return {catalog,state}
+}
+
+
+function registerFact(state,event,requestId) {
+  const result=executeKnowledge(state.social,{id:`${requestId}:fact`,kind:'fact',expectedRevision:state.social.revision,
+    factId:`fact:${event.id}`,actorId:event.actorId,targetId:event.targetId,action:event.kind},
+    {allowed:true,at:event.at,sourceEventId:event.id})
+  requireValue(result.ok,result.code); state.social=result.state
+  return result.events
+}
+
+export function previewGameplayCombat(state,at) {
+  requireValue(state.combat,'COMBAT_DISABLED')
+  requireValue(natural(at) && at >= state.at,'INVALID_TIME')
+  return previewCombat(state.combat,state.interactions.actors,at)
+}
+
+// request.steps is assembled by a trusted adapter, not accepted directly from UI.
+// The coordinator assigns subcommand IDs/revisions and registers interaction facts.
+export function executeGameplay(state,catalog,request) {
+  try {
+    requireValue(state?.version === 1 && natural(state.revision) && Array.isArray(state.journal),'INVALID_STATE')
+    requireValue(canonical(catalog) === state.catalogSignature,'CATALOG_MISMATCH')
+    requireValue(request && id(request.id) && natural(request.expectedRevision) && Array.isArray(request.steps) && request.steps.length > 0 && request.steps.length <= 32,'INVALID_REQUEST')
+    const key = canonical(request)
+    const prior = state.journal.find(entry => entry.id === request.id)
+    if (prior) {
+      requireValue(canonical(prior) === key,'REQUEST_ID_CONFLICT')
+      return {ok:true,code:'ALREADY_APPLIED',duplicate:true,state:clone(state),events:[]}
+    }
+    requireValue(request.expectedRevision === state.revision,'STALE_REVISION')
+    requireValue(state.journal.length < 4096,'HISTORY_FULL')
+    const next = clone(state), events = []
+    for (const [i,step] of request.steps.entries()) {
+      requireValue(step && ['interaction','knowledge','combat','property','equipment','robbery','crime','pursuit','village'].includes(step.domain) && step.command && step.context,'INVALID_STEP')
+      requireValue(!Object.hasOwn(step.command,'id') && !Object.hasOwn(step.command,'expectedRevision'),'RESERVED_COMMAND_FIELDS')
+      requireValue(natural(step.context.at) && step.context.at >= next.at,'INVALID_TIME')
+      const firstFact = next.social.facts.length
+      const commandId = `${request.id}:${i}`
+      if (step.domain === 'interaction') {
+        if (next.combat) {
+          const participants = [step.command.actorId,step.command.targetId]
+          requireValue(participants.every(id => next.interactions.actors.some(a => a.id === id && a.health > 0)),'ACTOR_DEAD')
+          requireValue(!equippedLot(next.equipment,step.command.lotId),'ITEM_EQUIPPED')
+        }
+        const result = executeInteraction(next.interactions,catalog,{
+          ...step.command,id:commandId,expectedRevision:next.interactions.revision,
+        },step.context)
+        requireValue(result.ok,result.code)
+        requireValue(!result.duplicate,'DUPLICATE_SUBCOMMAND')
+        next.interactions = result.state
+        events.push(...result.events)
+        for (const event of result.events) {
+          const registration = executeKnowledge(next.social,{
+            id:`${commandId}:fact`,kind:'fact',expectedRevision:next.social.revision,
+            factId:`fact:${event.id}`,actorId:event.actorId,targetId:event.targetId,action:event.kind,
+          },{allowed:true,at:event.at,sourceEventId:event.id})
+          requireValue(registration.ok,registration.code)
+          next.social = registration.state
+          events.push(...registration.events)
+        }
+      } else if (step.domain === 'combat') {
+        requireValue(next.combat,'COMBAT_DISABLED')
+        const justification = step.command.kind === 'hit'
+          ? classifyForce(next,step.command.actorId,step.command.targetId,step.context.at) : null
+        const result = executeCombat(next.combat,next.interactions.actors,{
+          ...step.command,id:commandId,expectedRevision:next.combat.revision,
+        },step.context)
+        requireValue(result.ok,result.code)
+        for (const event of result.events) {
+          if (['parried','damaged','died'].includes(event.kind)) {
+            event.justification = clone(justification)
+            result.state.events.find(e => e.id === event.id).justification = clone(justification)
+          }
+        }
+        next.combat = result.state
+        // This is the only authoritative health array, shared with item use.
+        next.interactions.actors = result.actors
+        events.push(...result.events)
+        for (const event of result.events.filter(e => ['parried','damaged','died'].includes(e.kind))) {
+          const registration = executeKnowledge(next.social,{
+            id:`${commandId}:fact:${event.id}`,kind:'fact',expectedRevision:next.social.revision,
+            factId:`fact:${event.id}`,actorId:event.actorId,targetId:event.targetId,action:event.kind,
+          },{allowed:true,at:event.at,sourceEventId:event.id})
+          requireValue(registration.ok,registration.code)
+          next.social = registration.state
+          events.push(...registration.events)
+        }
+      } else if (step.domain === 'village') {
+        const emitted=executeVillage(next,catalog,{...step.command,id:commandId},step.context)
+        events.push(...emitted)
+        for(const event of emitted) events.push(...registerFact(next,event,commandId))
+      } else if (step.domain === 'pursuit') {
+        requireValue(next.pursuit,'COMBAT_DISABLED')
+        const result = executePursuit(next.pursuit,next,{
+          ...step.command,id:commandId,expectedRevision:next.pursuit.revision,
+        },step.context)
+        requireValue(result.ok,result.code)
+        next.pursuit = result.state; events.push(...result.events)
+      } else if (step.domain === 'crime') {
+        requireValue(next.crime,'COMBAT_DISABLED')
+        const result = executeCrime(next.crime,next,{
+          ...step.command,id:commandId,expectedRevision:next.crime.revision,
+        },step.context)
+        requireValue(result.ok,result.code)
+        next.crime = result.state; events.push(...result.events)
+      } else if (step.domain === 'robbery') {
+        requireValue(next.combat && next.robbery,'COMBAT_DISABLED')
+        const result = executeRobbery(next.robbery,next.interactions,next.combat,next.property,{
+          ...step.command,id:commandId,expectedRevision:next.robbery.revision,
+        },step.context)
+        requireValue(result.ok,result.code)
+        next.robbery = result.state; next.interactions = result.interactions; next.property = result.property
+        events.push(...result.events)
+        for (const event of result.events) {
+          const registration = executeKnowledge(next.social,{
+            id:`${commandId}:fact:${event.id}`,kind:'fact',expectedRevision:next.social.revision,
+            factId:`fact:${event.id}`,actorId:event.actorId,targetId:event.targetId,action:event.kind,
+          },{allowed:true,at:event.at,sourceEventId:event.id})
+          requireValue(registration.ok,registration.code)
+          next.social = registration.state; events.push(...registration.events)
+        }
+      } else if (step.domain === 'equipment') {
+        requireValue(next.combat && next.equipment,'COMBAT_DISABLED')
+        const result = executeEquipment(next.equipment,next.combat,next.interactions,catalog,{
+          ...step.command,id:commandId,expectedRevision:next.equipment.revision,
+        },step.context)
+        requireValue(result.ok,result.code)
+        next.equipment = result.state; next.combat = result.combat
+        events.push(...result.events)
+      } else if (step.domain === 'property') {
+        requireValue(next.combat && next.property,'COMBAT_DISABLED')
+        const result = executeProperty(next.property,next.interactions,next.combat,catalog,{
+          ...step.command,id:commandId,expectedRevision:next.property.revision,
+        },step.context)
+        requireValue(result.ok,result.code)
+        next.property = result.state
+        next.interactions = result.interactions
+        events.push(...result.events)
+        for (const event of result.events) {
+          const registration = executeKnowledge(next.social,{
+            id:`${commandId}:fact`,kind:'fact',expectedRevision:next.social.revision,
+            factId:`fact:${event.id}`,actorId:event.actorId,targetId:event.targetId,action:event.kind,
+          },{allowed:true,at:event.at,sourceEventId:event.id})
+          requireValue(registration.ok,registration.code)
+          next.social = registration.state
+          events.push(...registration.events)
+        }
+      } else {
+        if (next.combat && step.command.kind !== 'fact') {
+          requireValue(next.interactions.actors.some(a => a.id === step.command.actorId && a.health > 0),'ACTOR_DEAD')
+          if (step.command.kind === 'report') {
+            requireValue(next.interactions.actors.some(a => a.id === step.command.targetId && a.health > 0),'RECIPIENT_DEAD')
+          }
+        }
+        // Other world facts may be admitted by the trusted adapter. Transaction
+        // facts must only originate from the automatic path above.
+        requireValue(step.command.kind !== 'fact' || (typeof step.context.sourceEventId === 'string' && !/^(interaction|combat|property|equipment|robbery|village):/.test(step.context.sourceEventId)),'RESERVED_FACT_SOURCE')
+        const result = executeKnowledge(next.social,{
+          ...step.command,id:commandId,expectedRevision:next.social.revision,
+        },step.context)
+        requireValue(result.ok,result.code)
+        requireValue(!result.duplicate,'DUPLICATE_SUBCOMMAND')
+        next.social = result.state
+        events.push(...result.events)
+      }
+      if(step.observations!==undefined) {
+        requireValue(Array.isArray(step.observations) && step.observations.length<=16,'INVALID_OBSERVERS')
+        for(const fact of next.social.facts.slice(firstFact)) for(const [j,observation] of step.observations.entries()) {
+          // A killed observer cannot deliver a final, posthumous memory.
+          if(!next.interactions.actors.some(a=>a.id===observation.npcId && a.health>0)) continue
+          const result=executeKnowledge(next.social,{id:`${commandId}:see:${j}:${fact.id}`,kind:'witness',
+            actorId:observation.npcId,factId:fact.id,expectedRevision:next.social.revision},
+            {allowed:true,at:step.context.at,observed:true,observedAt:fact.at,
+              identified:observation.identified,proofId:observation.proofId,position:observation.position})
+          requireValue(result.ok,result.code); next.social=result.state; events.push(...result.events)
+        }
+      }
+      if (next.equipment) refreshEquipment(next.equipment,next.combat,next.interactions,catalog)
+      next.at = step.context.at
+    }
+    requireValue(natural(next.revision+1),'REVISION_OVERFLOW')
+    next.revision++
+    next.journal.push(clone(request))
+    return {ok:true,code:'APPLIED',duplicate:false,state:next,events}
+  } catch (error) {
+    if (!(error instanceof GameplayError) && !(error instanceof InventoryError)) throw error
+    return {ok:false,code:error.code,events:[]}
+  }
+}
+
+// config is the application's trusted initial setup for this world/configId.
+// Replay derives state, but never runs scene callbacks, sends notifications or
+// credits an external wallet. It detects inconsistent snapshots, not forgery of
+// an entire local history and its claimed spatial evidence.
+export function restoreGameplay(config,saved) {
+  try {
+    requireValue(saved?.version === 1 && saved.configId === config.id && Array.isArray(saved.journal) && saved.journal.length <= 4096,'INVALID_SAVE')
+    const initial = createGameplay(config)
+    let state = initial.state
+    for (const request of saved.journal) {
+      const result = executeGameplay(state,initial.catalog,request)
+      requireValue(result.ok && !result.duplicate,'INVALID_HISTORY')
+      state = result.state
+    }
+    requireValue(canonical(state) === canonical(saved),'PROJECTION_MISMATCH')
+    return {ok:true,code:'RESTORED',catalog:initial.catalog,state,events:[]}
+  } catch (error) {
+    return {ok:false,code:error instanceof GameplayError ? error.code : 'INVALID_SAVE',events:[]}
+  }
+}

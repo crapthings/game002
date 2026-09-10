@@ -3,7 +3,7 @@ import { FOG_CELL_SIZE, FOG_GROUP_SIZE, REVEAL_RADIUS, isExplored } from './fog.
 import { traceVisibility } from './visibility.js'
 
 // 只读取规划与探索数据，不触发区块生成或素材加载。北方为世界 +Z。
-export function drawMap(ctx, width, height, { center, span, position, heading, fog, plan, radar, revealMap = false, vision = { radius: REVEAL_RADIUS, beamRange: 0 } }) {
+export function drawMap(ctx, width, height, { center, span, position, heading, fog, plan, radar, markers=[], trackedPlaceId=null, revealMap = false, vision = { radius: REVEAL_RADIUS, beamRange: 0 } }) {
   ctx.clearRect(0, 0, width, height)
   ctx.fillStyle = '#080e0e'
   ctx.fillRect(0, 0, width, height)
@@ -154,6 +154,17 @@ export function drawMap(ctx, width, height, { center, span, position, heading, f
       ctx.fillStyle = '#eee1b6'
       ctx.fillText(town.name, sx, sy - 13)
     }
+  }
+  // A told address may be marked without revealing its surrounding terrain.
+  // These are fixed destinations, never a feed of hidden actors' live positions.
+  for(const marker of markers) {
+    const [x,y]=screen(marker.point.x,marker.point.z)
+    if(x<0||y<0||x>width||y>height)continue
+    const tracked=marker.id===trackedPlaceId
+    ctx.fillStyle=tracked?'#a8f4d0':'#f3d995';ctx.strokeStyle=ctx.fillStyle;ctx.lineWidth=tracked?2:1
+    ctx.beginPath();ctx.arc(x,y,tracked?6:4,0,Math.PI*2)
+    if(marker.explored)ctx.fill();else ctx.stroke()
+    if(!radar){ctx.font='12px system-ui';ctx.textAlign='center';ctx.fillText(marker.label,x,y+19)}
   }
   if (px >= 0 && py >= 0 && px <= width && py <= height) {
     ctx.strokeStyle = 'rgba(150, 227, 187, 0.2)'

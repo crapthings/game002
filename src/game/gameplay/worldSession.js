@@ -1,4 +1,5 @@
 import { createGameplay, executeGameplay, restoreGameplay } from './runtime.js'
+import { compactGameplay,installHistoryPages,shouldArchive } from './historyArchive.js'
 
 const clone = value => structuredClone(value)
 const natural = n => Number.isSafeInteger(n) && n >= 0
@@ -17,7 +18,7 @@ export function restoreWorldCheckpoint(config,saved) {
 // Alternative to createGameplaySession for worlds with an independent clock.
 // Inject ONE atomic checkpoint store. Do not operate both session types on the
 // same world. sequence protects clock-only saves as well as gameplay changes.
-export function createWorldSession(config,{saved,save} = {}) {
+export function createWorldSession(config,{saved,save,archive=false} = {}) {
   if (typeof save !== 'function') throw new TypeError('A checkpoint save adapter is required.')
   const opened = saved === undefined ? createGameplay(config) : restoreWorldCheckpoint(config,saved)
   if (opened.ok === false) throw Object.assign(new Error(opened.code),{code:opened.code})
@@ -28,11 +29,20 @@ export function createWorldSession(config,{saved,save} = {}) {
   async function commit(candidate) {
     if (!natural(current.sequence+1)) return failure('REVISION_OVERFLOW')
     candidate.sequence = current.sequence+1
+    let archivePages=[]
+    if(archive&&shouldArchive(candidate.gameplay)) {
+      try {
+        let id=candidate.gameplay.archive.history?.id
+        if(!id){const bytes=new Uint32Array(4);globalThis.crypto.getRandomValues(bytes);id=`history:${Array.from(bytes,n=>n.toString(16).padStart(8,'0')).join('')}`}
+        const compacted=compactGameplay(candidate.gameplay,id)
+        candidate.gameplay=compacted.state;archivePages=[compacted.page]
+      } catch(error){return failure(error.code??'ARCHIVE_PREPARE_FAILED')}
+    }
     let receipt
     saving = true
     try {
       receipt = await save(clone(candidate),{configId:current.gameplay.configId,
-        expectedSequence:current.sequence,nextSequence:candidate.sequence})
+        expectedSequence:current.sequence,nextSequence:candidate.sequence,archivePages})
     } catch {
       recoveryRequired = true
       return failure('SAVE_OUTCOME_UNKNOWN')
@@ -45,6 +55,7 @@ export function createWorldSession(config,{saved,save} = {}) {
       recoveryRequired = true
       return failure('SAVE_OUTCOME_UNKNOWN')
     }
+    if(archivePages.length)installHistoryPages(candidate.gameplay.archive.history.id,archivePages)
     current = candidate
     return null
   }

@@ -1,3 +1,23 @@
+## 2026-09-09 — 活世界框架实现与源码审阅交付（Goal于09-08启动）
+
+最新：29张卡均已实现并完成源码审阅，本轮实现交付完成。11-B已由cfee485、12-C由fc7d55b推送；12-C接近1秒/远5秒普通轮询、同一时钟边界、原身体几何准入、独立休息加速、7/12人新种子观察条件和真实采样导出。统一交付为[草稿PR #2](https://github.com/crapthings/game002/pull/2)，目标core，见[交付说明](../docs/world-ledger/next/DELIVERY.md)。未运行测试/build/lint、浏览器、容量或性能验证，不能标记RUNTIME_VERIFIED。最近fetch确认origin/core仍为3027b81，已完整吸收；原PR #1已被合并，不把旧验证当作本轮证明。后续从明确的运行授权或新需求继续，不重启已完成的29张实现卡。
+
+当前推进到 07-B。07-A 已由 `193ac89` 接本次会面、个人知识回答和地址告知；06-A 已接统一钱包/库存预留、初始石伯口信、告知/接受/拒绝/取消/到期/死亡/资金受损。见 [对话与委托记录](../docs/world-ledger/next/DIALOGUE-IMPLEMENTATION.md)。当前 12 张卡到源码审阅，未实际运行；下一步完成接单、带话回执、回程及同一事务付款，之后继续 06-B NPC 接单。Goal 保持 active，禁止在此将全部 29 卡报为完成。
+
+最新：P0、12-A、02-A、01-A、01-B、02-B、10-A 共 10 张卡已实现并完成源码审阅，实际运行均未验收。12-A 提交 7c641d8，02-A 为 69ce01c，住址/日程为 db25cf5，需求/中断为 52f3a6b，营业限制为 08f78a2；10-A 接固定地址与现场状态、可用按钮原因和折叠回顾。见 [生活接入记录](../docs/world-ledger/next/LIFE-IMPLEMENTATION.md)。下一卡 07-A：绑定当面会话、个人知识与公开地址告知；随后 06-A/07-B 接委托与兑现。当前未运行测试/build/lint，整个 29 卡 Goal active，不应在此结束。
+
+续进：P0 已由 12e5a20、b3f9461、78cf8df 提交并推送原功能分支。12-A 已实现并源码审阅：十二份旧 reducer 冻结且 Git 内容与 78cf8df 一致；新玩法 v2 基线由完整恢复的旧检查点推导；单一日历、旧 ID 去重、registry 身体登记与模板化到达接口接通。新写 living v3 / document schema 5，保留读取 living v1/v2。供货商模板已登记但没有自动出生。详见 [版本映射](../docs/world-ledger/next/VERSIONING.md)。尚未运行任何新增验证；下一卡为 02-A 场所登记，Goal active。
+
+用户要求取消 A/B 等待与分工，全部 29 张卡片由当前 Goal 连续完成。Goal active；未设置 token 预算。已核对 origin/core 仍为 3027b81，工作分支 feature/b-combat-rules，计划提交 b8c87b1。
+
+P0 四张卡已完成代码与源码审阅，实际运行仍待授权，详见 [P0 实现记录](../docs/world-ledger/next/P0-IMPLEMENTATION.md)。地点/道路图提交 12e5a20，独立导航缓存提交 b3f9461；场景已接七人分散落位、原事务链跨区行走、物主实际搬药、固定地点地图与便笺。新档 living v2 / document schema 4；旧 gameplay 配置与重放结果保留。根规则仍不运行测试/build/lint，没有新的实机场景或 FPS 证据。下一步 12-A：先形成旧规则冻结、迁移结构与映射说明，再接统一日历和生活领域；整个 Goal 保持 active。
+
+## 2026-09-08 — B 同步 A 的 core，形成下一阶段执行计划
+
+本地 feature/b-combat-rules 从 cff65ad 无冲突快进到 origin/core 的 3027b81afcbca9694df74b40e880746835f40989。远端 core 已包含原 B 战斗/场景分支全部提交；新增的是 A 的性能优化提交。
+
+用户本次要求更新并编写计划，供 A 分小任务执行。新增 [next/README](../docs/world-ledger/next/README.md)、共享契约、P0 城内分区、十二项详细任务、A 开工提示词和 29 张卡片状态表。卡片均尚未实施；本轮没有修改游戏源码、运行测试/build/lint或取得新的 FPS/场景验收数据。先做 P0-01 的地点候选和角色绑定，再逐卡接入跨区导航、迁移、日常与社会循环。提交/推送状态以 Git 为准。
+
 ## 2026-09-08 — core 合并与两轮性能优化交付
 
 本次 core 交付以 cff65ad 为基线，包含已快进合并的战斗系统分支 8 个提交。针对用户反馈的低 FPS，本轮修改角色 GPU 骨骼合批、静态实例矩阵冻结、寻路 Worker、HUD/空队列更新、环境 NPC 模型复用及高分屏渲染精度，并增加可选性能面板。详见 [性能说明](../docs/performance.md)。

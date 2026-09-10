@@ -1,4 +1,6 @@
+import { activeEventCount,findReceipt } from './historyArchive.js'
 import { assertInventory, consumeLot, transferLot, itemDefinition, InventoryError } from './inventory.js'
+import { requireAvailableFunds,requireAvailableLot } from './reservations.js'
 
 const clone = value => structuredClone(value)
 const natural = value => Number.isSafeInteger(value) && value >= 0
@@ -27,11 +29,17 @@ export function assertInteractionState(state,catalog) {
     requireValue(natural(actor.wallet) && natural(actor.health) && natural(actor.maxHealth) && actor.maxHealth > 0 && actor.health <= actor.maxHealth,'INVALID_ACTOR_VALUES')
     actorIds.add(actor.id); containers.add(actor.containerId)
   }
-  requireValue(state.events.length === state.revision && state.receipts.length === state.events.length && state.events.length <= 4096,'INVALID_HISTORY')
+  if(state.history) {
+    requireValue(state.history.version===1&&natural(state.history.eventSerial)&&natural(state.history.retainedCount)&&
+      state.history.retainedCount<=state.events.length&&state.history.eventSerial+activeEventCount(state)===state.revision&&
+      state.receipts.length===activeEventCount(state)&&activeEventCount(state)<=4096,'INVALID_HISTORY')
+  } else requireValue(state.events.length === state.revision && state.receipts.length === state.events.length && state.events.length <= 4096,'INVALID_HISTORY')
   const requests = new Set()
   for (const [i,event] of state.events.entries()) {
-    const receipt = state.receipts[i]
-    requireValue(event && event.id === `interaction:${i+1}` && kinds.includes(event.kind) && natural(event.at) && (!i || event.at >= state.events[i-1].at),'INVALID_EVENT')
+    const receipt = state.history?findReceipt(state,event.requestId):state.receipts[i]
+    const serial=Number(event?.id?.split(':')[1]),previousSerial=i?Number(state.events[i-1].id.split(':')[1]):0
+    requireValue(event && event.id === `interaction:${state.history?serial:i+1}` && natural(serial)&&serial>previousSerial&&serial<=state.revision&&
+      kinds.includes(event.kind) && natural(event.at) && (!i || event.at >= state.events[i-1].at),'INVALID_EVENT')
     requireValue(receipt && validId(receipt.requestId) && !requests.has(receipt.requestId) && receipt.eventId === event.id && typeof receipt.fingerprint === 'string','INVALID_RECEIPT')
     requests.add(receipt.requestId)
   }
@@ -46,13 +54,13 @@ export function executeInteraction(state,catalog,command,context) {
     assertInteractionState(state,catalog)
     requireValue(command && validId(command.id) && kinds.includes(command.kind) && validId(command.actorId) && validId(command.targetId) && typeof command.lotId === 'string' && natural(command.quantity) && command.quantity > 0 && natural(command.expectedRevision),'INVALID_COMMAND')
     const key = fingerprint(command)
-    const receipt = state.receipts.find(entry => entry.requestId === command.id)
+    const receipt = findReceipt(state,command.id)
     if (receipt) {
       requireValue(receipt.fingerprint === key,'REQUEST_ID_CONFLICT')
       return {ok:true,code:'ALREADY_APPLIED',duplicate:true,state:clone(state),events:[],appliedEventId:receipt.eventId}
     }
     requireValue(command.expectedRevision === state.revision,'STALE_REVISION')
-    requireValue(state.events.length < 4096,'HISTORY_FULL')
+    requireValue(activeEventCount(state)<4096,'HISTORY_FULL')
     requireValue(context?.allowed === true,'INTERACTION_DENIED')
     requireValue(natural(context.at) && (!state.events.length || context.at >= state.events.at(-1).at),'INVALID_TIME')
     const actor = state.actors.find(a => a.id === command.actorId)
@@ -66,6 +74,7 @@ export function executeInteraction(state,catalog,command,context) {
     requireValue(lot.holderId === sourceActor.containerId,'NOT_HELD')
     requireValue(lot.ownerId === sourceActor.id,'NOT_OWNED')
     requireValue(command.quantity <= lot.quantity,'INSUFFICIENT_QUANTITY')
+    requireAvailableLot(state,lot.id,command.quantity)
     const item = itemDefinition(catalog,lot.itemType)
     const next = clone(state)
     let amount = 0, restoredHealth = 0
@@ -84,6 +93,7 @@ export function executeInteraction(state,catalog,command,context) {
         amount = context.unitPrice * command.quantity
         requireValue(natural(amount),'AMOUNT_OVERFLOW')
         requireValue(recipient.wallet >= amount,'INSUFFICIENT_FUNDS')
+        requireAvailableFunds(state,recipient.id,amount)
         requireValue(natural(sourceActor.wallet+amount),'AMOUNT_OVERFLOW')
         next.actors.find(a => a.id === recipient.id).wallet -= amount
         next.actors.find(a => a.id === sourceActor.id).wallet += amount

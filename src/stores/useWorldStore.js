@@ -49,7 +49,7 @@ export const useWorldStore = create((set, get) => ({
         if (!document || document.world !== owner) return false
         const progress = applyProgress(document.world, document.progress, event)
         if (progress === document.progress) return true
-        const next = await (await asyncRepository()).save(document, progress)
+        const next = await (await asyncRepository()).save(document, progress,{archivePages:event.archivePages??[]})
         set({ document: next, error: null })
         return true
       } catch (error) {

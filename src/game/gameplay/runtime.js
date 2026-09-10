@@ -1,14 +1,38 @@
-import { createVillageState, executeVillage } from './village.js'
-import { createCatalog, createInventory, InventoryError } from './inventory.js'
-import { createInteractionState, executeInteraction } from './interactions.js'
-import { createKnowledgeState, executeKnowledge } from './knowledge.js'
-import { createCombatState, executeCombat, previewCombat } from './combat.js'
-import { createPropertyState, executeProperty } from './property.js'
-import { createEquipmentState, executeEquipment, equippedLot, refreshEquipment } from './equipment.js'
-import { createRobberyState, executeRobbery } from './robbery.js'
-import { createCrimeState, executeCrime } from './crime.js'
-import { createPursuitState, executePursuit } from './pursuit.js'
+import * as v1 from './versions/v1/runtime.js'
+import { createV2Baseline } from './migrations/v2.js'
+import { executeRegistry } from './registry.js'
+import { executePlaces,addArrivalPlace } from './places.js'
+import { executeLife,addArrivalLife } from './life.js'
+import { assertTradeService } from './commerce.js'
+import { executeDialogue } from './dialogue.js'
+import { executeOpportunities,applyOpportunityConsequences } from './opportunities.js'
+import { executeRelations } from './relations.js'
+import { executeExchange } from './exchange.js'
+import { executeEconomy } from './economy.js'
+import { applyLaborInterruptions } from './employment.js'
+import { executeFactions,addFactionArrival } from './factions.js'
+import { applyEscortConsequences } from './escorts.js'
+import { reconcileCaseKnowledge } from './caseSettlement.js'
+import { reconcileBounties } from './bounties.js'
+import { executeStanding,reconcileStanding } from './standing.js'
+import { executeGrowth,interruptGrowth } from './growth.js'
+import { executeContinuity,beforeRecoveryAction } from './continuity.js'
+import { executeStaffing } from './staffing.js'
+import { executeJustice,bodyLocked,applyBodyConsequences } from './justice.js'
+import { executeEstates,recordEstateClaims } from './estates.js'
+import { executeDaily,interruptDaily } from './dailyActivities.js'
+import { executeVillage } from './village.js'
+import { InventoryError } from './inventory.js'
+import { executeInteraction } from './interactions.js'
+import { executeKnowledge } from './knowledge.js'
+import { executeCombat, previewCombat } from './combat.js'
+import { executeProperty } from './property.js'
+import { executeEquipment, equippedLot, refreshEquipment } from './equipment.js'
+import { executeRobbery } from './robbery.js'
+import { executeCrime } from './crime.js'
+import { executePursuit } from './pursuit.js'
 import { classifyForce } from './forcePolicy.js'
+import { archivedRequest,compactGameplay,historyPage,historyCanonical } from './historyArchive.js'
 
 const clone = value => structuredClone(value)
 const natural = value => Number.isSafeInteger(value) && value >= 0
@@ -29,35 +53,7 @@ function canonical(value, depth = 0) {
 }
 
 export function createGameplay(config) {
-  requireValue(config && id(config.id),'INVALID_CONFIG')
-  const catalog = createCatalog(config.items)
-  const inventory = createInventory(catalog,{containers:config.containers,lots:config.lots ?? []})
-  const interactions = createInteractionState(catalog,inventory,config.actors)
-  const social = createKnowledgeState(config.actors.map(actor => actor.id))
-  requireValue(config.combat === undefined || config.combat === true,'INVALID_COMBAT_CONFIG')
-  const combat = config.combat ? {combat:createCombatState(config.actors),property:createPropertyState(),equipment:createEquipmentState(config.actors),robbery:createRobberyState(config.actors),crime:createCrimeState(config.actors.map(a => a.id),config.authorities),pursuit:createPursuitState()} : {}
-  const state={version:1,configId:config.id,configSignature:canonical(config),catalogSignature:canonical(catalog),revision:0,at:0,interactions,social,...combat,journal:[]}
-  if(config.village) {
-    requireValue(config.combat,'COMBAT_DISABLED')
-    state.village=createVillageState(config.village)
-    for(const e of state.village.events) registerFact(state,e,`seed:${e.id}`)
-    for(const [i,k] of config.village.knowledge.entries()) {
-      const fact=state.social.facts.find(f=>f.sourceEventId===k.sourceId)
-      requireValue(fact,'INVALID_LEGACY_KNOWLEDGE')
-      const result=executeKnowledge(state.social,{id:`seed:knowledge:${i}`,expectedRevision:state.social.revision,
-        kind:k.kind,actorId:k.actorId,...(k.kind==='report'?{targetId:'guard'}:{}),factId:fact.id},
-        {allowed:true,at:config.village.at,observed:true,observedAt:fact.at,identified:k.subjectId!==null,delivered:true,proofId:k.proofId,position:k.position})
-      requireValue(result.ok,result.code); state.social=result.state
-    }
-    if(config.village.trust) state.social.relationships.push({fromId:'resident-1',toId:'player',trust:config.village.trust})
-    for(const k of state.social.knowledge.filter(k=>k.npcId==='guard')) {
-      const result=executeCrime(state.crime,state,{id:`seed:case:${state.crime.revision}`,kind:'assess',actorId:'guard',factId:k.factId,expectedRevision:state.crime.revision},{allowed:true,at:config.village.at})
-      if(result.ok)state.crime=result.state
-      else requireValue(['NOT_CRIME_FACT','INCIDENT_RESOLVED'].includes(result.code),result.code)
-    }
-    state.at=config.village.at
-  }
-  return {catalog,state}
+  return v1.createGameplay(config)
 }
 
 
@@ -70,6 +66,7 @@ function registerFact(state,event,requestId) {
 }
 
 export function previewGameplayCombat(state,at) {
+  if(state?.version===1)return v1.previewGameplayCombat(state,at)
   requireValue(state.combat,'COMBAT_DISABLED')
   requireValue(natural(at) && at >= state.at,'INVALID_TIME')
   return previewCombat(state.combat,state.interactions.actors,at)
@@ -78,12 +75,13 @@ export function previewGameplayCombat(state,at) {
 // request.steps is assembled by a trusted adapter, not accepted directly from UI.
 // The coordinator assigns subcommand IDs/revisions and registers interaction facts.
 export function executeGameplay(state,catalog,request) {
+  if(state?.version===1)return v1.executeGameplay(state,catalog,request)
   try {
-    requireValue(state?.version === 1 && natural(state.revision) && Array.isArray(state.journal),'INVALID_STATE')
+    requireValue(state?.version === 2 && natural(state.revision) && Array.isArray(state.journal),'INVALID_STATE')
     requireValue(canonical(catalog) === state.catalogSignature,'CATALOG_MISMATCH')
     requireValue(request && id(request.id) && natural(request.expectedRevision) && Array.isArray(request.steps) && request.steps.length > 0 && request.steps.length <= 32,'INVALID_REQUEST')
     const key = canonical(request)
-    const prior = state.journal.find(entry => entry.id === request.id)
+    const prior = state.journal.find(entry => entry.id === request.id) ?? state.archive?.legacyCheckpoint.gameplay.journal.find(entry=>entry.id===request.id) ?? archivedRequest(state,request.id)
     if (prior) {
       requireValue(canonical(prior) === key,'REQUEST_ID_CONFLICT')
       return {ok:true,code:'ALREADY_APPLIED',duplicate:true,state:clone(state),events:[]}
@@ -92,14 +90,111 @@ export function executeGameplay(state,catalog,request) {
     requireValue(state.journal.length < 4096,'HISTORY_FULL')
     const next = clone(state), events = []
     for (const [i,step] of request.steps.entries()) {
-      requireValue(step && ['interaction','knowledge','combat','property','equipment','robbery','crime','pursuit','village'].includes(step.domain) && step.command && step.context,'INVALID_STEP')
+      requireValue(step && ['interaction','knowledge','combat','property','equipment','robbery','crime','pursuit','village','registry','places','life','dialogue','opportunities','relations','exchange','economy','factions','standing','continuity'].includes(step.domain) && step.command && step.context,'INVALID_STEP')
       requireValue(!Object.hasOwn(step.command,'id') && !Object.hasOwn(step.command,'expectedRevision'),'RESERVED_COMMAND_FIELDS')
       requireValue(natural(step.context.at) && step.context.at >= next.at,'INVALID_TIME')
-      const firstFact = next.social.facts.length
       const commandId = `${request.id}:${i}`
-      if (step.domain === 'interaction') {
+      if(bodyLocked(next,step.command.actorId)) {
+        const processing=step.domain==='continuity'&&['wake','process_custody','release_abandoned'].includes(step.command.kind)
+        const observation=step.domain==='knowledge'&&['fact','witness'].includes(step.command.kind)
+        const cleanup=step.domain==='continuity'&&step.command.kind==='stop_recovery'||step.domain==='standing'&&['pause_training','end_rest'].includes(step.command.kind)
+        requireValue(processing||observation||cleanup,'ACTOR_INCAPACITATED')
+      }
+      const rested=beforeRecoveryAction(next,step,commandId)
+      events.push(...rested)
+      for(const event of rested)events.push(...registerFact(next,event,`${commandId}:${event.id}`))
+      const firstFact = next.social.facts.length
+      const firstEvent=events.length
+      if(step.domain==='registry') {
+        const emitted=executeRegistry(next,catalog,{...step.command,id:commandId},step.context)
+        addArrivalPlace(next,next.registry.actors.find(a=>a.actorId===step.command.actorId),emitted[0].id)
+        addArrivalLife(next,step.command.actorId,step.context.at)
+        events.push(...emitted)
+        for(const event of emitted)events.push(...registerFact(next,event,commandId))
+        const memberships=addFactionArrival(next,step.command.actorId,emitted[0].id,step.context.at,commandId)
+        events.push(...memberships)
+        for(const event of memberships)events.push(...registerFact(next,event,`${commandId}:${event.id}`))
+      } else if(step.domain==='places') {
+        const emitted=executePlaces(next,{...step.command,id:commandId},step.context)
+        events.push(...emitted)
+        for(const event of emitted)events.push(...registerFact(next,event,commandId))
+      } else if(step.domain==='life') {
+        const emitted=executeLife(next,{...step.command,id:commandId},step.context)
+        events.push(...emitted)
+        for(const event of emitted)events.push(...registerFact(next,event,commandId))
+      } else if(step.domain==='dialogue') {
+        const emitted=executeDialogue(next,{...step.command,id:commandId},step.context)
+        events.push(...emitted)
+        for(const event of emitted) {
+          if(event.id.startsWith('dialogue:'))events.push(...registerFact(next,event,commandId))
+          else if(event.id.startsWith('relations:'))events.push(...registerFact(next,event,`${commandId}:${event.id}`))
+        }
+      } else if(step.domain==='exchange') {
+        const emitted=executeExchange(next,{...step.command,id:commandId},step.context)
+        events.push(...emitted)
+        for(const event of emitted)if(event.id.startsWith('relations:'))events.push(...registerFact(next,event,`${commandId}:${event.id}`))
+      } else if(step.domain==='relations') {
+        const daily=['enable_daily','start_daily','end_daily','finish_daily','begin_daily_return'].includes(step.command.kind)
+        const emitted=daily?executeDaily(next,catalog,{...step.command,id:commandId},step.context):executeRelations(next,{...step.command,id:commandId},step.context)
+        events.push(...emitted)
+        for(const event of emitted) {
+          events.push(...registerFact(next,event,`${commandId}:${event.id}`))
+          for(const participant of event.witnessIds??[])if(next.interactions.actors.some(a=>a.id===participant&&a.health>0)) {
+            const learned=executeKnowledge(next.social,{id:`${commandId}:daily:${event.id}:${participant}`,kind:'witness',actorId:participant,
+              factId:`fact:${event.id}`,expectedRevision:next.social.revision},{allowed:true,at:event.at,observedAt:event.at,observed:true,identified:true,proofId:event.proofId})
+            requireValue(learned.ok,learned.code);next.social=learned.state;events.push(...learned.events)
+          }
+        }
+      } else if(step.domain==='continuity') {
+        const staffAction=['accept_staff','arrive_staff','return_operator','read_staff_notice'].includes(step.command.kind)
+        const justiceAction=['enable_justice','wake','take_custody','process_custody','release_abandoned','pay_custody_debt'].includes(step.command.kind)
+        const estateAction=['take_estate_custody','collect_estate_claim','return_seized_property','surrender_due_property'].includes(step.command.kind)
+        const emitted=estateAction?executeEstates(next,catalog,{...step.command,id:commandId},step.context):staffAction?executeStaffing(next,{...step.command,id:commandId},step.context):justiceAction?
+          executeJustice(next,catalog,{...step.command,id:commandId},step.context):executeContinuity(next,catalog,{...step.command,id:commandId},step.context)
+        events.push(...emitted)
+        for(const event of emitted) {
+          events.push(...registerFact(next,event,`${commandId}:${event.id}`))
+          if(event.kind==='case_settled')for(const participant of [event.actorId,event.targetId]) {
+            const learned=executeKnowledge(next.social,{id:`${commandId}:receipt:${event.id}:${participant}`,kind:'witness',actorId:participant,
+              factId:`fact:${event.id}`,expectedRevision:next.social.revision},{allowed:true,at:event.at,observedAt:event.at,observed:true,identified:true,proofId:event.proofId})
+            requireValue(learned.ok,learned.code);next.social=learned.state;events.push(...learned.events)
+          }
+        }
+      } else if(step.domain==='standing') {
+        const handler=['initialize','present_record','review'].includes(step.command.kind)?executeStanding:executeGrowth
+        const emitted=handler(next,{...step.command,id:commandId},step.context)
+        events.push(...emitted)
+        for(const event of emitted)if(event.id.startsWith('standing:')||event.id.startsWith('life:'))events.push(...registerFact(next,event,`${commandId}:${event.id}`))
+      } else if(step.domain==='factions') {
+        const emitted=executeFactions(next,{...step.command,id:commandId},step.context,catalog)
+        events.push(...emitted)
+        for(const event of emitted)if(event.id.startsWith('factions:')) {
+          events.push(...registerFact(next,event,`${commandId}:${event.id}`))
+          if(event.kind==='case_settled')for(const participant of [event.actorId,event.targetId]) {
+            const learned=executeKnowledge(next.social,{id:`${commandId}:receipt:${participant}`,kind:'witness',actorId:participant,
+              factId:`fact:${event.id}`,expectedRevision:next.social.revision},{allowed:true,at:event.at,observedAt:event.at,observed:true,identified:true,proofId:event.proofId})
+            requireValue(learned.ok,learned.code);next.social=learned.state;events.push(...learned.events)
+          }
+        }
+      } else if(step.domain==='economy') {
+        const emitted=executeEconomy(next,catalog,{...step.command,id:commandId},step.context)
+        events.push(...emitted)
+        for(const event of emitted)events.push(...registerFact(next,event,`${commandId}:${event.id}`))
+      } else if(step.domain==='opportunities') {
+        const emitted=executeOpportunities(next,{...step.command,id:commandId},step.context,catalog)
+        events.push(...emitted)
+        for(const event of emitted) {
+          events.push(...registerFact(next,event,`${commandId}:${event.id}`))
+          if(['message_delivered','message_acknowledged'].includes(event.kind)||next.relations&&event.kind==='opportunity_fulfilled') {
+            const observed=executeKnowledge(next.social,{id:`${commandId}:message:${event.id}`,kind:'witness',expectedRevision:next.social.revision,
+              actorId:event.targetId,factId:`fact:${event.id}`},{allowed:true,at:event.at,observed:true,observedAt:event.at,identified:event.identified,proofId:event.proofId})
+            requireValue(observed.ok,observed.code);next.social=observed.state;events.push(...observed.events)
+          }
+        }
+      } else if (step.domain === 'interaction') {
+        const trade=assertTradeService(next,step.command,step.context)
         if (next.combat) {
-          const participants = [step.command.actorId,step.command.targetId]
+          const participants = [step.command.actorId,trade?.businessAuthorized?trade.operatorId:step.command.targetId]
           requireValue(participants.every(id => next.interactions.actors.some(a => a.id === id && a.health > 0)),'ACTOR_DEAD')
           requireValue(!equippedLot(next.equipment,step.command.lotId),'ITEM_EQUIPPED')
         }
@@ -123,12 +218,19 @@ export function executeGameplay(state,catalog,request) {
         requireValue(next.combat,'COMBAT_DISABLED')
         const justification = step.command.kind === 'hit'
           ? classifyForce(next,step.command.actorId,step.command.targetId,step.context.at) : null
+        if(step.command.nonlethal===true)requireValue(next.continuity?.justiceVersion===1,'JUSTICE_NOT_READY')
+        const nonlethal=next.continuity?.justiceVersion===1&&step.command.kind==='hit'&&
+          next.combat.fighters.find(f=>f.id===step.command.actorId)?.swing?.nonlethal===true
+        // Permission is recomputed at contact. A bystander cannot inherit a warrant.
+        const combatContext=nonlethal?{...step.context,nonlethal:justification?.ruleId==='force.enforcement.v1'&&!justification.unlawful}:step.context
+        requireValue(!nonlethal||!bodyLocked(next,step.command.targetId),'TARGET_ALREADY_DISABLED')
+        requireValue(!nonlethal||combatContext.nonlethal,'ENFORCEMENT_ENDED')
         const result = executeCombat(next.combat,next.interactions.actors,{
           ...step.command,id:commandId,expectedRevision:next.combat.revision,
-        },step.context)
+        },combatContext)
         requireValue(result.ok,result.code)
         for (const event of result.events) {
-          if (['parried','damaged','died'].includes(event.kind)) {
+          if (['parried','damaged','died','incapacitated'].includes(event.kind)) {
             event.justification = clone(justification)
             result.state.events.find(e => e.id === event.id).justification = clone(justification)
           }
@@ -137,7 +239,7 @@ export function executeGameplay(state,catalog,request) {
         // This is the only authoritative health array, shared with item use.
         next.interactions.actors = result.actors
         events.push(...result.events)
-        for (const event of result.events.filter(e => ['parried','damaged','died'].includes(e.kind))) {
+        for (const event of result.events.filter(e => ['parried','damaged','died','incapacitated'].includes(e.kind))) {
           const registration = executeKnowledge(next.social,{
             id:`${commandId}:fact:${event.id}`,kind:'fact',expectedRevision:next.social.revision,
             factId:`fact:${event.id}`,actorId:event.actorId,targetId:event.targetId,action:event.kind,
@@ -236,6 +338,38 @@ export function executeGameplay(state,catalog,request) {
           requireValue(result.ok,result.code); next.social=result.state; events.push(...result.events)
         }
       }
+      // Consequences are world facts; witnesses of the hit do not automatically
+      // learn the victim's private contracts or reserved budget.
+      const bodyEvents=applyBodyConsequences(next,events.slice(firstEvent),step.context.at,commandId)
+      events.push(...bodyEvents)
+      for(const event of bodyEvents)events.push(...registerFact(next,event,`${commandId}:${event.id}`))
+      const consequences=applyOpportunityConsequences(next,events.slice(firstEvent),step.context.at,commandId)
+      events.push(...consequences)
+      for(const event of consequences)events.push(...registerFact(next,event,`${commandId}:${event.id}`))
+      const caseEvents=reconcileCaseKnowledge(next,events.slice(firstEvent),step.context.at,commandId)
+      events.push(...caseEvents)
+      for(const event of caseEvents)events.push(...registerFact(next,event,`${commandId}:${event.id}`))
+      const bountyEvents=reconcileBounties(next,events.slice(firstEvent),step.context.at,commandId)
+      events.push(...bountyEvents)
+      for(const event of bountyEvents)events.push(...registerFact(next,event,`${commandId}:${event.id}`))
+      const estateEvents=recordEstateClaims(next,events.slice(firstEvent),step.context.at,commandId)
+      events.push(...estateEvents)
+      for(const event of estateEvents)events.push(...registerFact(next,event,`${commandId}:${event.id}`))
+      const escortEvents=applyEscortConsequences(next,events.slice(firstEvent),step.context.at,commandId)
+      events.push(...escortEvents)
+      for(const event of escortEvents)events.push(...registerFact(next,event,`${commandId}:${event.id}`))
+      const standingEvents=reconcileStanding(next,events.slice(firstEvent),step.context.at,commandId)
+      events.push(...standingEvents)
+      for(const event of standingEvents)events.push(...registerFact(next,event,`${commandId}:${event.id}`))
+      const growthEvents=interruptGrowth(next,events.slice(firstEvent),step.context.at,commandId)
+      events.push(...growthEvents)
+      for(const event of growthEvents)events.push(...registerFact(next,event,`${commandId}:${event.id}`))
+      const laborEvents=applyLaborInterruptions(next,events.slice(firstEvent),step.context.at,commandId)
+      events.push(...laborEvents)
+      for(const event of laborEvents)events.push(...registerFact(next,event,`${commandId}:${event.id}`))
+      const dailyEvents=interruptDaily(next,events.slice(firstEvent),step.context.at,commandId)
+      events.push(...dailyEvents)
+      for(const event of dailyEvents)events.push(...registerFact(next,event,`${commandId}:${event.id}`))
       if (next.equipment) refreshEquipment(next.equipment,next.combat,next.interactions,catalog)
       next.at = step.context.at
     }
@@ -253,11 +387,29 @@ export function executeGameplay(state,catalog,request) {
 // Replay derives state, but never runs scene callbacks, sends notifications or
 // credits an external wallet. It detects inconsistent snapshots, not forgery of
 // an entire local history and its claimed spatial evidence.
-export function restoreGameplay(config,saved) {
+export function restoreGameplay(config,saved,{pages=[]}={}) {
+  if(saved?.version===1)return v1.restoreGameplay(config,saved)
   try {
-    requireValue(saved?.version === 1 && saved.configId === config.id && Array.isArray(saved.journal) && saved.journal.length <= 4096,'INVALID_SAVE')
-    const initial = createGameplay(config)
+    requireValue(saved?.version === 2 && saved.configId === config.id && Array.isArray(saved.journal) && saved.journal.length <= 4096,'INVALID_SAVE')
+    const initial = createV2Baseline(config,saved.archive?.legacyCheckpoint,saved.migration)
     let state = initial.state
+    const history=saved.archive?.history
+    if(history) {
+      requireValue(saved.archive.version===2&&history.version===1&&Array.isArray(history.pages),'INVALID_ARCHIVE')
+      for(const [index,descriptor] of history.pages.entries()) {
+        requireValue(descriptor.index===index,'INVALID_ARCHIVE_ORDER')
+        const page=historyPage(history.id,index,pages)
+        requireValue(Array.isArray(page.journal)&&page.journal.length>0&&page.journal.length<=4096,'INVALID_ARCHIVE_PAGE')
+        for(const request of page.journal) {
+          const result=executeGameplay(state,initial.catalog,request)
+          requireValue(result.ok&&!result.duplicate,'INVALID_HISTORY');state=result.state
+        }
+        const compacted=compactGameplay(state,history.id)
+        requireValue(historyCanonical(compacted.page)===historyCanonical(page),'ARCHIVE_PROJECTION_MISMATCH')
+        requireValue(historyCanonical(compacted.state.archive.history.pages[index])===historyCanonical(descriptor),'INVALID_ARCHIVE_DESCRIPTOR')
+        state=compacted.state
+      }
+    }
     for (const request of saved.journal) {
       const result = executeGameplay(state,initial.catalog,request)
       requireValue(result.ok && !result.duplicate,'INVALID_HISTORY')
@@ -266,6 +418,36 @@ export function restoreGameplay(config,saved) {
     requireValue(canonical(state) === canonical(saved),'PROJECTION_MISMATCH')
     return {ok:true,code:'RESTORED',catalog:initial.catalog,state,events:[]}
   } catch (error) {
-    return {ok:false,code:error instanceof GameplayError ? error.code : 'INVALID_SAVE',events:[]}
+    return {ok:false,code:error instanceof GameplayError || error instanceof InventoryError ? error.code : 'INVALID_SAVE',events:[]}
   }
+}
+
+// `previous` is a private copy derived by repository load/replay or its last
+// verified commit. Never call this on an arbitrary imported snapshot baseline.
+export function verifyGameplayAdvance(previous,catalog,saved,{pages=[]}={}) {
+  try {
+    requireValue(previous.version===2&&saved?.version===2,'INVALID_SAVE')
+    let state=clone(previous)
+    const oldPages=previous.archive.history?.pages??[],newPages=saved.archive.history?.pages??[]
+    requireValue(newPages.length>=oldPages.length&&newPages.length<=oldPages.length+1&&
+      historyCanonical(newPages.slice(0,oldPages.length))===historyCanonical(oldPages),'INVALID_ARCHIVE_ORDER')
+    const replay=requests=>{
+      requireValue(Array.isArray(requests)&&requests.length>=state.journal.length&&requests.length<=4096&&
+        historyCanonical(requests.slice(0,state.journal.length))===historyCanonical(state.journal),'INVALID_HISTORY')
+      for(const request of requests.slice(state.journal.length)) {
+        const result=executeGameplay(state,catalog,request)
+        requireValue(result.ok&&!result.duplicate,'INVALID_HISTORY');state=result.state
+      }
+    }
+    if(newPages.length>oldPages.length) {
+      const history=saved.archive.history,page=historyPage(history.id,oldPages.length,pages)
+      replay(page.journal)
+      const compacted=compactGameplay(state,history.id)
+      requireValue(historyCanonical(compacted.page)===historyCanonical(page),'ARCHIVE_PROJECTION_MISMATCH')
+      state=compacted.state
+    }
+    replay(saved.journal)
+    requireValue(historyCanonical(state)===historyCanonical(saved),'PROJECTION_MISMATCH')
+    return {ok:true,state,catalog}
+  } catch(error){return {ok:false,code:error.code??'INVALID_SAVE'}}
 }

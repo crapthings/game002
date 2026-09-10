@@ -40,7 +40,13 @@ export interface InteractionEvent {
 export interface InteractionState {
   version: 1; revision: number; inventory: InventoryState; actors: Actor[];
   events: InteractionEvent[]; receipts: Receipt[];
+  reservations?:MoneyReservation[]; itemReservations?:ItemReservation[];
 }
+export interface Reservation {id:string;actorId:string;sourceId:string;status:'held'|'impaired'|'released'|'spent';at:number;reasonEventId:string|null}
+export interface MoneyReservation extends Reservation {amount:number}
+export interface ItemReservation extends Reservation {lotId:string;holderId:string;quantity:number}
+export function availableWallet(state:InteractionState,actorId:string,usingId?:string|null):number;
+export function availableQuantity(state:InteractionState,lotId:string,usingId?:string|null):number;
 export interface Fact {
   id: string; actorId: string; targetId: string | null; action: string;
   at: number; sourceEventId: string; eventId: string;
@@ -48,7 +54,9 @@ export interface Fact {
 export interface Knowledge {
   npcId: string; factId: string; subjectId: string | null; evidenceId: string;
 }
-export interface Relationship { fromId: string; toId: string; trust: number }
+export interface Relationship { fromId:string;toId:string;trust:number;type?:'acquaintance'|'neighbor'|'kin'|'colleague';fear?:number;gratitude?:number }
+export function relationFor(state:GameplayState,fromId:string,toId:string):Required<Relationship>;
+export function relationReaction(state:GameplayState,actorId:string,factId:string):null|{targetId:string;ruleId:string;trust:number;fear:number;gratitude:number;evidenceId:string};
 interface SocialEventBase { id: string; at: number; requestId: string }
 export type SocialEvent =
   | (SocialEventBase & { kind: 'fact'; cause: null; fact: Fact })
@@ -69,7 +77,22 @@ export interface InteractionCommand {
   lotId: string; quantity: number;
 }
 export type GameplayStep = (
+  | { domain: 'places'; command: {kind:'register'|'extend';actorId:string;definitions:RegisteredPlace[];bindings:RegistryBody['binding'][]}; context:Policy & {geometryConfirmed:true} }
+  | { domain: 'places'; command: {kind:'presence';actorId:string;placeId:string;status:'available'|'away'|'resting'|'danger'}; context:Policy & {present:boolean;proofId:string;cause?:string|null} }
+  | { domain: 'places'; command: {kind:'enable_services';actorId:string}; context:Policy }
+  | { domain:'life'; command:LifeCommand; context:Policy & {present?:boolean;proofId?:string;cause?:string|null;safe?:boolean} }
+  | { domain:'relations';command:{kind:'initialize';actorId:string}|{kind:'react';actorId:string;factId:string};context:Policy }
+  | { domain:'exchange';command:{kind:'enable';actorId:string}|{kind:'leave';actorId:string;relayId:string}|{kind:'share';actorId:string;targetId:string;factId:string};context:Policy & Partial<MeetingContext> & {separated?:boolean;solicited?:boolean} }
+  | { domain:'economy';command:{kind:'initialize';actorId:string}|{kind:'eat';actorId:string;lotId:string}|{kind:'notice_shortage';actorId:string}|{kind:'food_unavailable';actorId:string;reason:string};context:Policy & {present?:boolean;placeId?:string;proofId?:string} }
+  | { domain:'economy';command:{kind:'enable_employment';actorId:string}|{kind:'labor'|'wage_due';actorId:string;employmentId:string}|{kind:'pay_wage';actorId:string;employmentId:string;occurrence:number};context:Policy & {present?:boolean;working?:boolean;proofId?:string} }
+  | { domain:'dialogue'; command:{kind:'initialize';actorId:string}; context:Policy }
+  | { domain:'dialogue'; command:{kind:'tell_place';actorId:string;targetId:string;placeId:string}|{kind:'share_news';actorId:string;targetId:string;factId:string}; context:MeetingContext }
+  | { domain:'opportunities'; command:OpportunityCommand; context:Policy & Partial<MeetingContext> & {identified?:boolean;deadActorId?:string;present?:boolean;placeId?:string} }
+  | { domain: 'registry'; command: { kind: 'arrive'; actorId: string; templateId: string };
+      context: Policy & { geometryConfirmed: true; proofId: string; body: RegistryBody } }
   | { domain: 'village'; command: { kind: 'take' | 'settle' | 'return' | 'aid' | 'reward' | 'mask'; actorId: string; lotId?: string }; context: Policy & { identified?: boolean } }
+  | { domain: 'village'; command: { kind: 'relocate_pickup' | 'relocate_deliver'; actorId: 'merchant' };
+      context: Policy & { reachable: true; position: WorldPoint; proofId: string } }
   | { domain: 'pursuit'; command: { kind: 'sight'; actorId: string; targetId: string };
       context: Policy & { visible: boolean; identified: boolean; position: WorldPoint; proofId: string } }
   | { domain: 'pursuit'; command: { kind: 'lost'; actorId: string; targetId: string };
@@ -84,11 +107,11 @@ export type GameplayStep = (
       context: Policy & { reachable: boolean; proofId: string } }
   | { domain: 'property'; command: { kind: 'loot_money'; actorId: string; targetId: string; amount: number };
       context: Policy & { reachable: boolean; proofId: string } }
-  | { domain: 'combat'; command: { kind: 'attack'; actorId: string }; context: Policy }
+  | { domain: 'combat'; command: { kind: 'attack'; actorId: string; nonlethal?: boolean }; context: Policy }
   | { domain: 'combat'; command: { kind: 'guard'; actorId: string; held: boolean }; context: Policy }
   | { domain: 'combat'; command: { kind: 'hit'; actorId: string; targetId: string; swingId: string };
       context: Policy & { contact: boolean; clear: boolean; angleDegrees: number; proofId: string } }
-  | { domain: 'interaction'; command: InteractionCommand; context: Policy & { unitPrice?: number } }
+  | { domain: 'interaction'; command: InteractionCommand; context: Policy & { unitPrice?: number; service?:TradeContext } }
   | { domain: 'knowledge'; command: { kind: 'fact'; factId: string; actorId: string;
       targetId: string | null; action: string }; context: Policy & { sourceEventId: string } }
   | { domain: 'knowledge'; command: { kind: 'witness'; factId: string; actorId: string };
@@ -104,7 +127,7 @@ export function prepareGameplayRequest(state: GameplayState, catalog: Catalog, i
 }): Failure | { ok: true; code: 'PREPARED'; request: GameplayRequest };
 /** Treat as one snapshot; do not mutate projections or journal independently. */
 export interface GameplayState {
-  version: 1; configId: string; configSignature: string; catalogSignature: string;
+  version: 1 | 2; configId: string; configSignature: string; catalogSignature: string;
   revision: number; at: number; interactions: InteractionState; social: KnowledgeState;
   journal: GameplayRequest[];
   combat?: CombatState;
@@ -114,24 +137,137 @@ export interface GameplayState {
   crime?: CrimeState;
   pursuit?: PursuitState;
   village?: VillageState;
+  archive?: { version:1; legacyCheckpoint:WorldCheckpoint };
+  migration?: { clockOrigin:ClockOrigin; bodyActorIds:string[] };
+  calendar?: { version:1; clockOrigin:ClockOrigin };
+  registry?: { version:1; actors:RegistryActor[]; events:RegistryEvent[] };
+  places?: {version:1;serviceVersion?:1;definitions:RegisteredPlace[];bindings:RegistryBody['binding'][];entries:PlaceEntry[];events:PlaceEvent[]};
+  life?: {version:1;actors:LifeActor[];events:LifeEvent[]};
+  dialogue?: {version:1;addresses:KnownAddress[];events:DialogueEvent[]};
+  relations?:{version:1;exchangeVersion?:1;relays?:RelationRelay[];applications:{actorId:string;factId:string;eventId:string}[];events:RelationEvent[]};
+  economy?:{version:1;employmentVersion?:1;employments?:Employment[];needs:ProcurementNeed[];foodNeeds:{actorId:string;reason:string;sourceEventId:string;resolvedEventId:string|null}[];events:EconomyEvent[]};
+  opportunities?:{version:1;autonomyVersion?:1;needs:{id:string;templateId:string;issuerId:string;targetActorId:string;source:string}[];entries:Opportunity[];events:OpportunityEvent[]};
 }
+export interface Opportunity {
+  id:string;templateId:string;title:string;issuerId:string;rootCauseId:string;offeredEventId:string;
+  targetActorId:string;targetPlaceId:string;returnPlaceId:string;requirements:{kind:'message_roundtrip';messageId:string}|{kind:'procurement';lines:{itemType:'medicine'|'ration';quantity:number}[]};
+  proposedReward:number;rewardAmount:number|null;rewardReservationId:string|null;deadlineAt:number;
+  status:'offered'|'accepted'|'fulfilled'|'failed'|'cancelled'|'expired';assigneeId:string|null;acceptedAt:number|null;identifiedAssignee:boolean;
+  completionEventId:string|null;returnEventId?:string|null;reason:string|null;fundsBlocked:boolean;knownBy:string[];declinedBy:string[];
+  message?:{id:string;senderId:string;recipientId:string;contentType:string;deliveredEventId:string|null;receiptEventId:string|null}|null;
+  purchaseBudget?:number;purchaseReservationId?:string|null;
+  shipment?:{pickedUpEventId:string|null;deliveredEventId:string|null;cargo:CargoLot[]}|null;
+  restitution?:{ownerId:string;carrierId:string;sourceEventId:string;returnedEventId:string|null};
+}
+export interface CargoLot {lotId:string;sourceLotId:string;itemType:string;quantity:number;reservationId:string}
+export interface ProcurementNeed {id:string;templateId:'merchant-restock-v1';issuerId:string;targetActorId:string;sourceEventId:string;key:string;lines:{itemType:'medicine'|'ration';quantity:number}[];at:number}
+export interface EconomyEvent {id:string;kind:string;actorId:string;targetId:string|null;at:number;cause:string|null;requestId:string;sourceLotId?:string;itemType?:string;quantity?:number;hungerRelief?:number;placeId?:string;proofId?:string|null;reason?:string;rootCauseId?:string;lines?:{itemType:string;quantity:number}[];employmentId?:string;creditedMs?:number;workedMs?:number;earnedHours?:number;unpaidHours?:number;occurrenceId?:string;occurrence?:number;amount?:number}
+export interface Employment {id:string;workerId:string;employerId:string;placeId:string;wagePerHour:number;sourceEventId:string;lastWorkEventId:string;workedMs:number;activeSince:number|null;lastPaidOccurrence:number;unpaidNoticedHours:number}
+export function shopStock(state:GameplayState,itemType:string):number;
+export function shortageProposal(state:GameplayState,at:number):null|{key:string;sourceEventId:string;lines:{itemType:string;quantity:number}[]};
+export type OpportunityCommand =
+  | {kind:'initialize'|'enable_autonomy';actorId:string}
+  | {kind:'offer';actorId:string;needId:string}
+  | {kind:'reveal'|'tell_status';actorId:string;targetId:string;opportunityId:string}
+  | {kind:'accept';actorId:string;opportunityId:string;terms:'paid'|'unpaid'}
+  | {kind:'decline'|'cancel'|'expire'|'deliver_message'|'collect_reward'|'notice_outcome'|'pickup_cargo'|'deliver_cargo'|'return_cargo';actorId:string;opportunityId:string};
+export interface OpportunityEvent {
+  id:string;kind:string;actorId:string;targetId:string|null;at:number;cause:string|null;requestId:string;
+  opportunityId?:string;rootCauseId?:string;reason?:string;amount?:number;reservationId?:string|null;proofId?:string;identified?:boolean;declaredNeedIds?:string[];messageId?:string;contentType?:string;
+  knownState?:{status:string;stage:string;assigneeId:string|null;amount:number|null;reason:string|null;evidenceId:string};
+  cargo?:CargoLot[]|{lotId:string;quantity:number}[];placeId?:string;
+}
+export function opportunityQuote(state:GameplayState,opportunity:Opportunity):{amount:number;unpaid:boolean};
+export function knownOpportunities(state:GameplayState,actorId:string,at:number,meetingSpeakerId?:string|null):(Opportunity & {expired:boolean;paymentAvailable:boolean;purchaseFunded:boolean;quote:{amount:number|null;unpaid:boolean}})[];
+export function prepareCommitment(state:GameplayState,input:{kind:'accept'|'decline'|'cancel'|'deliver'|'collect'|'pickup'|'deliver_cargo'|'return_cargo';actorId:string;opportunityId:string;terms?:'paid'|'unpaid'},context:Policy & Partial<MeetingContext> & {identified?:boolean;present?:boolean;placeId?:string}):
+  {ok:false;code:string}|{ok:true;duplicate:boolean;receiptId:string|null;steps:GameplayStep[]};
+export interface MeetingContext extends Policy {withinRange:boolean;clear:boolean;facing:boolean;meetingId:string;proofId:string;identified?:boolean}
+export interface RelationEvent {
+  id:string;kind:string;actorId:string;targetId:string|null;at:number;cause:string|null;requestId:string;factId?:string;ruleId?:string;
+  delta?:{trust:number;fear:number;gratitude:number};deliveredEvidenceId?:string|null;subjectId?:string|null;depth?:number;meetingId?:string;proofId?:string;alreadyKnown?:boolean;
+}
+export interface RelationRelay {
+  id:string;key:string;speakerId:string;listenerId:string;factId:string;sourceEvidenceId:string;deliveredEvidenceId:string|null;
+  subjectId:string|null;depth:number;receivedAt:number;closedAt:number|null;
+}
+export interface KnownAddress {listenerId:string;speakerId:string;placeId:string;at:number;eventId:string}
+export interface DialogueEvent {
+  id:string;kind:'dialogue_initialized'|'address_told'|'news_told';actorId:string;targetId:string|null;at:number;cause:string|null;requestId:string;
+  meetingId?:string;proofId?:string;placeId?:string;factId?:string;subjectId?:string|null;deliveredEvidenceId?:string;
+}
+export function meetingEligibility(state:GameplayState,speakerId:string,listenerId:string,context:MeetingContext):{available:boolean;reason:string|null};
+export function dialogueTopics():{id:string;label:string}[];
+export function dialogueAnswer(state:GameplayState,speakerId:string,listenerId:string,topicId:string,context:MeetingContext):
+  {ok:false;code:string}|{ok:true;kind:'text'|'places'|'news'|'requests';text?:string;placeIds?:string[];factId?:string;subjectId?:string|null;evidenceId?:string;opportunityIds?:string[]};
+export type RoutineKind = 'work'|'rest'|'social'|'eat'|'patrol';
+export type InterruptionKind = 'combat'|'pursuit'|'report'|'delivery'|'reward'|'flee'|'seek_help'|'contract';
+export interface LifeIntent {
+  id:string;actorId:string;kind:RoutineKind;placeId:string;targetId:null;sourceEventId:string|null;
+  priority:number;startedAt:number;phase:'travelling'|'interacting'|'suspended';resumeIntentId:null;
+}
+export interface LifeActor {
+  actorId:string;activityId:string|null;activityStartedAt:number;energy:number;hunger:number;lastNeedsAt:number;
+  intent:LifeIntent|null;
+  interruption:null|{kind:InterruptionKind;priority:number;sourceEventId:string|null;at:number;resumeIntentId:string};
+  assignment?:{opportunityId:string;acceptedEventId:string;deadlineAt:number;outcomeEventId:string|null};
+}
+export type LifeCommand =
+  | {kind:'initialize';actorId:string}
+  | {kind:'activity';actorId:string;activity:RoutineKind;placeId:string;priority:10|40|50}
+  | {kind:'arrive';actorId:string;intentId:string}
+  | {kind:'interrupt';actorId:string;reason:InterruptionKind;priority:40|60|70|80|90}
+  | {kind:'resume';actorId:string};
+export interface LifeEvent {
+  id:string;kind:'life_initialized'|'activity_changed'|'activity_arrived'|'activity_interrupted'|'activity_resumed';
+  actorId:string;targetId:null;at:number;cause:string|null;requestId:string;
+  activity?:RoutineKind;placeId?:string;intentId?:string;proofId?:string;reason?:InterruptionKind;
+}
+export function projectedNeeds(row:LifeActor,at:number):{hunger:number;energy:number};
+export interface ClockOrigin { simulationAt:number; absoluteMinute:number }
+export interface RegisteredPlace {
+  id:string; label:string; kind:string; roadId:string; heading:number;
+  approach:WorldPoint; entrance:WorldPoint; access:WorldPoint;
+  public:boolean; hours:{startMinute:number;endMinute:number}[];
+  status:'confirmed'; geometryConfirmed:true;
+}
+export interface RegistryBody {
+  spawn:WorldPoint & {heading:number}; place:RegisteredPlace;
+  binding:{actorId:string;homePlaceId:string|null;workPlaceId:string|null;idlePlaceId:string;patrolPlaceIds:string[]};
+}
+export interface RegistryActor { actorId:string; hasBody:boolean; sourceEventId:string|null; templateId?:string; body?:RegistryBody }
+export interface PlaceEntry {placeId:string;operatorId:string|null;residentIds:string[];status:'unassessed'|'available'|'away'|'resting'|'danger';reasonEventId:string;presenceAt:number|null}
+export interface PlaceEvent {id:string;kind:'places_registered'|'places_extended'|'place_services_enabled'|'place_status_changed';actorId:string;targetId:null;at:number;cause:string|null;requestId:string;placeId?:string;status?:PlaceEntry['status'];proofId?:string}
+export interface TradeContext {at:number;placeId:string|null;operatorId:string|null;withinRange:boolean;clear:boolean;facing:boolean;operatorPresent:boolean;proofId:string}
+export function tradeEligibility(state:GameplayState,actorId:string,targetId:string,context:TradeContext):{available:boolean;reason:string|null;placeId:string|null;operatorId:string|null};
+export function servicePresence(state:GameplayState,entry:PlaceEntry,context:{present:boolean;phase:string}):PlaceEntry['status'];
+export function placeStatus(state:GameplayState,placeId:string,at:number):{placeId:string;status:string;reason:string|null;open:boolean;operatorId?:string|null;residentIds?:string[];reasonEventId?:string;inHours?:boolean;label?:string};
+export function availablePlaceActions(state:GameplayState,actorId:string,placeId:string,context:{at:number;withinRange:boolean;clear:boolean;facing:boolean;targetId:string|null}):{kind:string;available:boolean;reason:string|null;targetId:string|null}[];
+export interface RegistryEvent {
+  id:string; kind:'arrived'; actorId:string; targetId:null; cause:null; at:number;
+  templateId:string; source:string; initialWallet:number; initialLots:{itemType:string;quantity:number}[]; proofId:string; requestId:string;
+}
+export function physicalActorIds(state:GameplayState):string[];
+/** Validates source with frozen v1 rules; sequence is not incremented until a save. */
+export function migrateWorldToV2(config:GameplayConfig,source:WorldCheckpoint,migration:{clockOrigin:ClockOrigin;bodyActorIds:string[]}):
+  Failure | {ok:true;code:'MIGRATED';catalog:Catalog;checkpoint:WorldCheckpoint;events:[]};
 export interface Fighter {
   id: string; attack: number; defense: number; stamina: number;
   guardHeld: boolean; guarding: boolean; mustRelease: boolean; regenAt: number; brokenUntil: number;
-  swing: null | { id: string; cause: string; activeAt: number; recoveryAt: number; endsAt: number; hitIds: string[] };
+  condition?: 'incapacitated' | 'custody' | 'dead' | null;
+  swing: null | { id: string; cause: string; activeAt: number; recoveryAt: number; endsAt: number; hitIds: string[]; nonlethal?: true };
 }
 export interface CombatEvent {
   id: string; kind: 'attack_started' | 'guard_started' | 'guard_released' | 'guard_exhausted' |
-    'parried' | 'guard_broken' | 'damaged' | 'died';
+    'parried' | 'guard_broken' | 'damaged' | 'died' | 'incapacitated';
   at: number; actorId: string; cause: string | null; targetId?: string;
-  swingId?: string; damage?: number; proofId?: string;
+  swingId?: string; damage?: number; proofId?: string; position?: WorldPoint; nonlethal?: true;
   justification?: { unlawful: boolean; ruleId: string; basisIds: string[] };
 }
 export interface CombatState {
   version: 1; revision: number; at: number; fighters: Fighter[]; events: CombatEvent[];
   receipts: { requestId: string; fingerprint: string }[];
 }
-export type CombatView = Fighter & { health: number; phase: 'dead' | 'broken' | 'guard' | 'idle' | 'windup' | 'active' | 'recovery' };
+export type CombatView = Fighter & { health: number; phase: 'dead' | 'broken' | 'guard' | 'idle' | 'windup' | 'active' | 'recovery' | 'incapacitated' | 'custody' };
 /** Read-only projection; stamina uses milli-points (100000 = 100). */
 export function previewGameplayCombat(state: GameplayState, at: number): CombatView[];
 export const COMBAT_RULES: Readonly<{
@@ -206,7 +342,7 @@ export function pursuitFor(world: GameplayState, authorityId: string, subjectId:
   response: 'none' | 'question' | 'arrest' | 'reinforce';
   mode: 'idle' | 'follow' | 'search'; destination: WorldPoint | null; mayEngage: boolean;
 };
-export type GameplayEvent = VillageEvent | InteractionEvent | SocialEvent | CombatEvent | PropertyEvent | EquipmentEvent | RobberyEvent | CrimeEvent | PursuitEvent;
+export type GameplayEvent = OpportunityEvent | DialogueEvent | LifeEvent | PlaceEvent | RegistryEvent | VillageEvent | InteractionEvent | SocialEvent | CombatEvent | PropertyEvent | EquipmentEvent | RobberyEvent | CrimeEvent | PursuitEvent;
 export type Failure = { ok: false; code: string; events: [] };
 export type ExecuteResult = Failure | {
   ok: true; code: 'APPLIED' | 'ALREADY_APPLIED'; duplicate: boolean;
@@ -270,9 +406,10 @@ export function createWorldSession(config: GameplayConfig, options: {
 }): WorldSession;
 
 export interface VillageEvent {
-  id: string; kind: 'take'|'settle'|'return'|'aid'|'reward'|'mask'; at:number;
+  id: string; kind: 'take'|'settle'|'return'|'aid'|'reward'|'mask'|'relocate_pickup'|'relocate_deliver'; at:number;
   actorId:string; targetId:string|null; cause:string|null; requestId:string;
   amount?:number; masked?:boolean; subjectId?:string|null;
+  operationId?:string; position?:WorldPoint; proofId?:string;
 }
 export interface VillageState {
   version:1; masked:boolean; events:VillageEvent[]; settled:string[];

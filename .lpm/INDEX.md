@@ -1,7 +1,20 @@
 # Living Project Manual
 
-先读仓库根目录 AGENTS.md。本说明书为用户 B 新增的协作草案，不改变已有规则。
+先读仓库根目录 AGENTS.md。当前持续 Goal 统一推进全部开发；旧 A/B 文件名仅为保留历史链接，不再表示等待另一方。
 
+- [活世界下一阶段：城内分布、12 项能力与 29 张任务卡](../docs/world-ledger/next/README.md)
+- [持续 Goal 执行记录](../docs/world-ledger/next/A-START.md)
+- [本轮统一交付与待运行边界](../docs/world-ledger/next/DELIVERY.md)
+- [生活、营业与现场表达接入](../docs/world-ledger/next/LIFE-IMPLEMENTATION.md)
+- [当面对话、委托与报酬接入](../docs/world-ledger/next/DIALOGUE-IMPLEMENTATION.md)
+- [关系、传播与经济接入](../docs/world-ledger/next/SOCIETY-IMPLEMENTATION.md)
+- [旧规则冻结与版本映射](../docs/world-ledger/next/VERSIONING.md)
+- [历史分页、恢复校验与原子保存](../docs/world-ledger/next/ARCHIVE-IMPLEMENTATION.md)
+- [组织接案、逐案处理、悬赏与真实护送](../docs/world-ledger/next/FACTION-ACTIONS.md)
+- [个人认可、租住和一次武艺入门](../docs/world-ledger/next/GROWTH-IMPLEMENTATION.md)
+- [休养、代班和失能/财物善后](../docs/world-ledger/next/CONTINUITY-IMPLEMENTATION.md)
+- [普通生活、帮运和提示节奏](../docs/world-ledger/next/DAILY-IMPLEMENTATION.md)
+- [远近调度、休息加速与规模观察](../docs/world-ledger/next/SCALE-IMPLEMENTATION.md)
 - [B接手场景接入与验证边界](../docs/world-ledger/SCENE-INTEGRATION.md)
 - [当前状态](CURRENT_STATE.md)
 - [渲染、GPU 骨骼与 Worker 性能优化](../docs/performance.md)

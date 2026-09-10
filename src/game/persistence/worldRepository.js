@@ -1,4 +1,5 @@
-import { validateLiving } from '../living/persistence.js'
+import { validateLiving,validateLivingEnvelope } from '../living/persistence.js'
+import { installHistoryPages } from '../gameplay/historyArchive.js'
 import { createFortifications } from '../world/fortifications/createFortifications.js'
 import { generateWorld, normalizeSeed, appendNewRegions, GENERATOR_VERSION } from '../world/generation/generateWorld.js'
 import { createProgress } from '../world/progress.js'
@@ -15,8 +16,10 @@ const ACTIVE_KEY = 'game002:active-seed:512:v10'
 const point = value => Array.isArray(value) && value.length === 2 && value.every(Number.isFinite)
 const bounds = b => b && ['minX','maxX','minZ','maxZ'].every(key => Number.isFinite(b[key])) && b.minX < b.maxX && b.minZ < b.maxZ && b.minX >= WORLD_BOUNDS.minX && b.maxX <= WORLD_BOUNDS.maxX && b.minZ >= WORLD_BOUNDS.minZ && b.maxZ <= WORLD_BOUNDS.maxZ
 
-export function validateDocument(document, seed) {
-  if (![SCHEMA_VERSION,3].includes(document?.schemaVersion) || !Number.isInteger(document.revision) || document.revision < 0) throw new Error('存档版本无效，已保留原始数据。')
+export function validateDocument(document, seed,{onLivingValidated}={}) {
+  if (![SCHEMA_VERSION,3,4,5,6].includes(document?.schemaVersion) || !Number.isInteger(document.revision) || document.revision < 0) throw new Error('存档版本无效，已保留原始数据。')
+  if(document.progress?.living?.version===4&&document.schemaVersion!==6)throw new Error('分页存档版本不匹配，保留原始数据。')
+  if(document.historyPages)installHistoryPages(document.progress?.living?.checkpoint.gameplay.archive?.history?.id,document.historyPages)
   const world = document.world, progress = document.progress
   if (world?.seed !== seed || world.generatorVersion !== GENERATOR_VERSION || world.planVersion !== 2 || world.unitSize !== 1 || world.size !== WORLD_SIZE || !bounds(world.bounds) || !Object.entries(WORLD_BOUNDS).every(([key,value]) => world.bounds[key] === value) || !point(world.spawn) || !insideWorld(world.bounds,...world.spawn,1)) throw new Error('512 米世界规格无效。')
   if (!Array.isArray(world.settlements) || world.settlements.length || !Array.isArray(world.roads) || world.spawnPlan) throw new Error('城市基础规划无效。')
@@ -40,14 +43,20 @@ export function validateDocument(document, seed) {
   if(city?.version!==4 || !Number.isFinite(city.elevation) || city.extent!==160 || city.gardenMask?.length!==256 || !city.gardenMask.every(v=>typeof v==='boolean') || !Array.isArray(city.placements) || !Array.isArray(city.parcels) || city.bridges?.length!==5 || !bounds(city.water) || !Number.isFinite(city.water.level) || !city.bridges.every(b=>['x','z','width','length'].every(k=>Number.isFinite(b[k]))&&b.width>0&&b.length>0) || !city.placements.every(p=>typeof p.assetId==='string'&&Array.isArray(p.position)&&p.position.length===3&&p.position.every(Number.isFinite)&&Number.isFinite(p.rotation)&&p.scale===1)) throw new Error('城内规划无效。')
   if(!world.roads.every(r=>point(r.from)&&point(r.to)&&Number.isFinite(r.width)&&r.width>0)) throw new Error('街巷数据无效。')
   if (JSON.stringify(world.fortifications) !== JSON.stringify(createFortifications(t))) throw new Error('城防规划数据无效。')
+  validateProgressEnvelope(progress,world)
+  if (progress.living!==undefined) {const validated=validateLiving(progress.living,world);onLivingValidated?.(validated)}
+  return document
+}
+
+export function validateProgressEnvelope(progress,world) {
+  const ids=new Set(world.regions.map(r=>r.id))
   if (!progress || !Array.isArray(progress.discoveredRegionIds) || !progress.discoveredRegionIds.every(id=>ids.has(id)) || !progress.annotations || typeof progress.annotations !== 'object' || Array.isArray(progress.annotations) || !Object.entries(progress.annotations).every(([id,text])=>ids.has(id) && typeof text==='string' && text.length<=160) || (progress.lastRegionId!==null && !ids.has(progress.lastRegionId))) throw new Error('探索进度无效。')
   if (progress.playerPosition!=null && (!point(progress.playerPosition) || !insideWorld(world.bounds,...progress.playerPosition,1))) throw new Error('角色位置无效。')
   if (progress.exploredFog!==undefined && !validFog(progress.exploredFog)) throw new Error('探索迷雾无效。')
   if (progress.stamina!==undefined && !validStamina(progress.stamina)) throw new Error('体力无效。')
   if (progress.worldTime!==undefined && !validWorldTime(progress.worldTime)) throw new Error('时间无效。')
   if (progress.ledger!==undefined && !validFirstLoop(progress.ledger,world)) throw new Error('江湖账本存档无效，已保留原始数据。')
-  if (progress.living!==undefined) validateLiving(progress.living,world)
-  return document
+  if(progress.living!==undefined)validateLivingEnvelope(progress.living)
 }
 
 export function createWorldRepository(storage) {
@@ -74,13 +83,19 @@ export function createWorldRepository(storage) {
       if (world === document.world) return document
       return this.save({ ...document, world }, document.progress)
     },
-    save(document, progress) {
+    save(document, progress,{archivePages=[]}={}) {
       const key = keyFor(document.world.seed)
       const raw = storage.getItem(key)
       const current = raw === null ? null : validateDocument(JSON.parse(raw), document.world.seed)
       if (!current || current.revision !== document.revision) throw new Error('存档已在其他页面更新，请返回菜单重新进入该种子。')
-      const next = { ...document, schemaVersion:progress.living?3:document.schemaVersion, revision: document.revision + 1, progress }
+      const history=progress.living?.checkpoint.gameplay.archive?.history
+      const bundled=[...(current.historyPages??[]),...archivePages]
+      if(history&&bundled.length!==history.pages.length)throw new Error('同步存档缺少历史页，保留原档。')
+      const next = { ...document, schemaVersion:progress.living?.version===4?6:progress.living?.version===3?5:progress.living?.version===2?4:progress.living?3:document.schemaVersion, revision: document.revision + 1, progress,
+        ...(history?{historyPages:bundled}:{}) }
       validateDocument(next, document.world.seed)
+      // Fallback bundles pages with the pointer in ONE atomic setItem. It keeps
+      // localStorage's quota; it does not claim IndexedDB's storage capacity.
       storage.setItem(key, JSON.stringify(next))
       return next
     },

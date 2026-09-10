@@ -3,6 +3,7 @@ import { SceneInstrumentation } from '@babylonjs/core/Instrumentation/sceneInstr
 import '@babylonjs/core/Engines/Extensions/engine.query'
 import { useGraphicsStore } from '../../stores/useGraphicsStore.js'
 import { usePerformanceStore } from '../../stores/usePerformanceStore.js'
+import { useGameStore } from '../../stores/useGameStore.js'
 
 // Opt-in, sampled twice per second. GPU queries are asynchronous and unsupported
 // timers are reported as null, never as an invented zero-cost GPU frame.
@@ -35,6 +36,8 @@ export function createPerformanceMonitor(engine, scene, canvas) {
       if (now - since < 500) return
       const counter = gpu.captureGPUFrameTime ? gpu.gpuFrameTimeCounter : null
       const sample = {
+        sampledAtMs:now,windowMs:now-since,frames,phase:useGameStore.getState().phase,
+        graphics:{viewDistance:useGraphicsStore.getState().viewDistance,renderScale:useGraphicsStore.getState().renderScale},
         fps: frames * 1000 / (now - since), frameMs: (now - since) / frames,
         sceneCpuMs: cpu / frames, gpuMs: counter?.count > 0 ? counter.current / 1e6 : null,
         meshEvaluationMs: instrumentation.activeMeshesEvaluationTimeCounter.current,

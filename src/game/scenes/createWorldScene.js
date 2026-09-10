@@ -51,7 +51,7 @@ export function createWorldScene(engine, canvas, { onLoading, onReady } = {}) {
   audio.setActive(useGameStore.getState().phase==='playing')
   const input = createMovementInput(scene, () => useGameStore.getState().phase === 'playing' && !useLivingStore.getState().panel && (ledger?.isAlive()??true))
   let world = null, activePlan = null, lastSaved = null, lastSavedFog = null
-  scene.metadata = { readPerformanceStats: () => world?.getStats() ?? null }
+  scene.metadata = { readPerformanceStats: () => world?{...world.getStats(),living:ledger?.performanceStats()??null}:null }
   let ledger = null, lastSavedLedgerRevision = -1
   let stamina = createStamina(), lastSavedStamina = null
   let dayNight = createDayNightCycle(), lastSavedWorldTime = null
@@ -244,15 +244,16 @@ export function createWorldScene(engine, canvas, { onLoading, onReady } = {}) {
     }
     if (useGameStore.getState().phase !== 'playing') return
     if (ledger && !ledger.canAdvance()) { ledger.present(); return }
-    const dt = Math.min(engine.getDeltaTime() / 1000, 0.05)
-    dayNight.update(dt)
+    const dt = ledger?.stepSeconds(Math.min(engine.getDeltaTime() / 1000, 0.05))??Math.min(engine.getDeltaTime() / 1000, 0.05)
+    const worldHour=ledger?.worldHour()
+    if(Number.isFinite(worldHour))dayNight.setTime(worldHour)
     lightingTimer += dt
     if (lightingTimer >= 0.1) {
       lightingTimer = 0
       applyLighting()
     }
     const combat=ledger?.fighter('player')
-    const immobilized=useLivingStore.getState().panel || ledger && !ledger.isAlive() || combat&&['windup','active','recovery','broken','guard'].includes(combat.phase)
+    const immobilized=useLivingStore.getState().panel || ledger && !ledger.isAlive() || combat&&['windup','active','recovery','broken','guard','incapacitated','custody'].includes(combat.phase)
     if(immobilized){input.clear();locomotion.clearInput()}
     if(document.pointerLockElement===canvas && (!combat||combat.phase==='idle'||combat.phase==='guard')) player.root.rotation.y=Math.atan2(-Math.cos(camera.alpha),-Math.sin(camera.alpha))
     const direction = immobilized?{x:0,z:0}:input.direction()
@@ -283,7 +284,10 @@ export function createWorldScene(engine, canvas, { onLoading, onReady } = {}) {
       return road.distance<=road.width/2+.5?'stone':'grass'
     })
     world.updateNpcs(dt,position.x,position.z)
-    ledger?.update(dt)
+    const restSeconds=ledger?.update(dt)??0
+    if(restSeconds>0){stamina.update(restSeconds,false,false);saveTimer+=restSeconds;exploreTimer+=restSeconds}
+    const updatedHour=ledger?.worldHour()
+    if(Number.isFinite(updatedHour))dayNight.setTime(updatedHour)
     thirdPerson.follow(player.root, world.terrain, dt)
     navigationTimer += dt
     if (navigationTimer >= 0.1) {
